@@ -12,9 +12,9 @@ type Options = {
 
 export function usePanZoom({
   initial = { x: 0, y: 0, zoom: 1 },
-  minZoom = 0.25,
-  maxZoom = 3,
-  zoomStep = 1.15,
+  minZoom = 0.1,
+  maxZoom = 1,
+  zoomStep = 0.02,
 }: Options = {}) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const draggingRef = useRef(false);
@@ -67,7 +67,8 @@ export function usePanZoom({
     function onWheel(e: WheelEvent) {
       e.preventDefault();
       const direction = e.deltaY > 0 ? -1 : 1;
-      const factor = Math.pow(zoomStep, direction);
+      // treat zoomStep as a % change per wheel tick instead of an exponential base
+      const factor = 1 + direction * zoomStep;
 
       setTransform((t) => {
         const newZoomUnclamped = t.zoom * factor;
