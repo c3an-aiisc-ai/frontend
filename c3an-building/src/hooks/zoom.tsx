@@ -8,6 +8,7 @@ type Options = {
   minZoom?: number;
   maxZoom?: number;
   zoomStep?: number;
+  shouldAllowPan?: (event: PointerEvent) => boolean;
 };
 
 export function usePanZoom({
@@ -15,6 +16,7 @@ export function usePanZoom({
   minZoom = 0.1,
   maxZoom = 1,
   zoomStep = 0.02,
+  shouldAllowPan,
 }: Options = {}) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const draggingRef = useRef(false);
@@ -28,6 +30,8 @@ export function usePanZoom({
 
     function onPointerDown(e: PointerEvent) {
       if (e.button !== 0) return;
+      // bail if consumer wants to ignore pan (e.g., on note drag)
+      if (shouldAllowPan && !shouldAllowPan(e)) return;
       draggingRef.current = true;
       lastPosRef.current = { x: e.clientX, y: e.clientY };
       (e.target as Element | null)?.setPointerCapture?.(e.pointerId);
@@ -56,7 +60,7 @@ export function usePanZoom({
       window.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("pointerup", onPointerUp);
     };
-  }, []);
+  }, [shouldAllowPan]);
 
   // wheel to zoom (centered on the cursor)
   useEffect(() => {
@@ -88,20 +92,7 @@ export function usePanZoom({
     return () => element.removeEventListener("wheel", onWheel);
   }, [maxZoom, minZoom, zoomStep]);
 
-  // double click to reset to origin and regular zoom
   const reset = useCallback(() => setTransform(initial), [initial]);
-
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-
-    function onDoubleClick() {
-      reset();
-    }
-
-    el.addEventListener("dblclick", onDoubleClick);
-    return () => el.removeEventListener("dblclick", onDoubleClick);
-  }, [reset]);
 
   return { containerRef, transform, setTransform, reset };
 }
