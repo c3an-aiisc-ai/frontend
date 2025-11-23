@@ -3,6 +3,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -23,18 +24,35 @@ type AgentBlock = {
   y: number;
   name: string;
   description: string;
+  inputCount: number;
+  outputCount: number;
 };
+
+type ToolNode = {
+  id: string;
+  x: number;
+  y: number;
+  name: string;
+  tagline: string;
+  gradient: string;
+  ring: string;
+  accent: string;
+};
+
+type ToolPreset = Omit<ToolNode, "id" | "x" | "y">;
 
 type Connection = {
   id: string;
   from:
-    | { type: "block"; id: string; port: "A" | "B" }
-    | { type: "operation"; id: string; port: number };
-  to: { type: "block" | "operation"; id: string; inputIndex?: number };
+    | { type: "block"; id: string; port: number }
+    | { type: "operation"; id: string; port: number }
+    | { type: "tool"; id: string; port: number };
+  to: { type: "block" | "operation" | "tool"; id: string; inputIndex?: number };
 };
 
 type LinkSource = Connection["from"];
 type LinkTarget = Connection["to"];
+type AnchorPoint = { x: number; y: number; dir?: "left" | "right" | "up" | "down" };
 
 type OperationKind = "branch" | "sequential" | "aggregate";
 
@@ -49,44 +67,89 @@ type Selection =
   | { type: "note"; id: string }
   | { type: "block"; id: string }
   | { type: "operation"; id: string }
+  | { type: "tool"; id: string }
   | null;
 
+type PanelKey = "blocks" | "operations" | "tools" | "settings";
+
 export default function App() {
+  const linkingRef = useRef(false);
   const { containerRef, transform, reset } = usePanZoom({
     initial: { x: 0, y: 0, zoom: 1 },
     shouldAllowPan: (event) => {
+      if (linkingRef.current) return false;
       const target = event.target as HTMLElement | null;
-      return !target?.closest("[data-note],[data-block],[data-operation]");
+      return !target?.closest("[data-note],[data-block],[data-operation],[data-tool]");
     },
+    isPanDisabled: () => linkingRef.current,
   });
-  const [activePanel, setActivePanel] = useState<
-    "blocks" | "operations" | "settings" | null
-  >("blocks");
+  const [activePanel, setActivePanel] = useState<PanelKey | null>("blocks");
   const [notes, setNotes] = useState<Note[]>([]);
   const [operations, setOperations] = useState<Operation[]>([]);
   const [blocks, setBlocks] = useState<AgentBlock[]>([]);
+  const [tools, setTools] = useState<ToolNode[]>([]);
+  const [agentJsonInput, setAgentJsonInput] = useState<string>(`{
+  "metadata": {
+    "version": "1.0.0",
+    "registry_type": "agent_registry",
+    "compatible_protocols": ["a2a", "mcp"],
+    "description": "PolicyReasoner agent specification describing how detector signals map to mitigation actions."
+  },
+  "global_protocols": ["a2a", "mcp"],
+  "agents": [
+    {
+      "id": "policy_reasoner",
+      "name": "PolicyReasoner",
+      "description": "Scores detector outputs using configured weights and thresholds to choose actions such as PASS, PARAPHRASE, REDACT, REFUSE, or ESCALATE.",
+      "capabilities": ["policy_weighting", "risk_scoring", "mitigation_decision"],
+      "input_data_streams": {
+        "mandatory": ["detection"],
+        "optional": ["policy_override"]
+      },
+      "output_data_streams": {
+        "mandatory": ["action", "score"],
+        "optional": ["rationale"]
+      }
+    }
+  ]
+}`);
+  const [agentParseError, setAgentParseError] = useState<string | null>(null);
   const [connections, setConnections] = useState<Connection[]>([]);
   const [linking, setLinking] = useState<{
+    origin: "output";
     from: LinkSource;
     current: { x: number; y: number };
+  } | {
+    origin: "input";
+    target: LinkTarget;
+    current: { x: number; y: number };
   } | null>(null);
+  useEffect(() => {
+    linkingRef.current = Boolean(linking);
+  }, [linking]);
   const [hoveredInput, setHoveredInput] = useState<{
-    type: "block" | "operation";
+    type: "block" | "operation" | "tool";
     id: string;
     inputIndex?: number;
   } | null>(null);
+  const [hoveredOutput, setHoveredOutput] = useState<LinkSource | null>(null);
   const nextIdRef = useRef(1);
   const nextOperationIdRef = useRef(1);
   const nextBlockIdRef = useRef(1);
+  const nextToolIdRef = useRef(1);
   const nextConnectionIdRef = useRef(1);
   const dragOffsetRef = useRef({ x: 0, y: 0 });
   const operationDragOffsetRef = useRef({ x: 0, y: 0 });
   const blockDragOffsetRef = useRef({ x: 0, y: 0 });
+  const toolDragOffsetRef = useRef({ x: 0, y: 0 });
   const [draggingNoteId, setDraggingNoteId] = useState<string | null>(null);
   const [draggingOperationId, setDraggingOperationId] = useState<string | null>(null);
   const [draggingBlockId, setDraggingBlockId] = useState<string | null>(null);
+  const [draggingToolId, setDraggingToolId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Selection>(null);
   const [hoveredOperationId, setHoveredOperationId] = useState<string | null>(null);
+  const [hoveredBlockId, setHoveredBlockId] = useState<string | null>(null);
+  const [hoveredToolId, setHoveredToolId] = useState<string | null>(null);
 
   const operationMeta: Record<
     OperationKind,
@@ -118,6 +181,63 @@ export default function App() {
     },
   };
   const operationKinds: OperationKind[] = ["branch", "sequential", "aggregate"];
+  const panelTitles: Record<PanelKey, string> = {
+    blocks: "Blocks",
+    operations: "Operations",
+    tools: "Tools",
+    settings: "Settings",
+  };
+  const panelTabs: { id: PanelKey; label: string; symbol: string }[] = [
+    { id: "blocks", label: "Blocks", symbol: "[]" },
+    { id: "operations", label: "Operations", symbol: "Ops" },
+    { id: "tools", label: "Tools", symbol: "TL" },
+    { id: "settings", label: "Settings", symbol: ":" },
+  ];
+  const handleCircle = useCallback(
+    () => ({
+      width: 12,
+      height: 12,
+      borderRadius: "9999px",
+      backgroundColor: "rgba(250, 204, 21, 0.9)",
+      boxShadow: "0 0 0 1px rgba(234, 179, 8, 0.5), 0 3px 8px rgba(234, 179, 8, 0.22)",
+    }),
+    [],
+  );
+  const handleHalo = useCallback(
+    () => ({
+      width: 18,
+      height: 18,
+      borderRadius: "9999px",
+      backgroundColor: "rgba(250, 204, 21, 0.12)",
+      boxShadow: "0 0 0 1.5px rgba(234, 179, 8, 0.6)",
+    }),
+    [],
+  );
+  const HandleDot = useCallback(
+    () => (
+      <div className="relative flex items-center justify-center w-full h-full">
+        <div className="absolute" style={handleHalo()} />
+        <div style={handleCircle()} />
+      </div>
+    ),
+    [handleCircle, handleHalo],
+  );
+  const toolPalette = useMemo<ToolPreset[]>(
+    () => [
+      { name: "Lumen Trace", tagline: "Quick spotlight", gradient: "from-sky-50 via-white to-indigo-100", ring: "ring-sky-200", accent: "bg-sky-600" },
+      { name: "Drift Beacon", tagline: "Signal check", gradient: "from-emerald-50 via-white to-teal-100", ring: "ring-emerald-200", accent: "bg-emerald-600" },
+      { name: "Quartz Forge", tagline: "Shape drafts", gradient: "from-amber-50 via-white to-orange-100", ring: "ring-amber-200", accent: "bg-amber-600" },
+      { name: "Echo Loom", tagline: "Thread replies", gradient: "from-slate-50 via-white to-cyan-100", ring: "ring-cyan-200", accent: "bg-cyan-600" },
+      { name: "Prism Warden", tagline: "Guard rails", gradient: "from-fuchsia-50 via-white to-purple-100", ring: "ring-fuchsia-200", accent: "bg-fuchsia-600" },
+      { name: "Static Tuner", tagline: "Noise filter", gradient: "from-gray-50 via-white to-slate-100", ring: "ring-slate-200", accent: "bg-slate-700" },
+      { name: "Nova Draft", tagline: "Fresh canvas", gradient: "from-rose-50 via-white to-amber-100", ring: "ring-rose-200", accent: "bg-rose-600" },
+      { name: "Polar Kite", tagline: "Flow navigator", gradient: "from-blue-50 via-white to-sky-100", ring: "ring-blue-200", accent: "bg-blue-600" },
+      { name: "Ember Chisel", tagline: "Quick trim", gradient: "from-orange-50 via-white to-amber-100", ring: "ring-orange-200", accent: "bg-orange-600" },
+      { name: "Cipher Lens", tagline: "Inspect payloads", gradient: "from-violet-50 via-white to-indigo-100", ring: "ring-violet-200", accent: "bg-indigo-600" },
+      { name: "Vapor Prism", tagline: "Soft preview", gradient: "from-lime-50 via-white to-emerald-100", ring: "ring-lime-200", accent: "bg-lime-600" },
+    ],
+    [],
+  );
 
   const toWorldPoint = useCallback(
     (clientX: number, clientY: number) => {
@@ -156,6 +276,19 @@ export default function App() {
       [],
     );
 
+  const handleToolDragStart =
+    useCallback(
+      (toolName: string) => (event: DragEvent<HTMLDivElement>) => {
+        event.dataTransfer.effectAllowed = "copy";
+        event.dataTransfer.setData(
+          "application/json",
+          JSON.stringify({ type: "tool", name: toolName }),
+        );
+        event.dataTransfer.setData("text/plain", `tool-${toolName}`);
+      },
+      [],
+    );
+
   const handleCanvasDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
     event.dataTransfer.dropEffect = "copy";
@@ -173,10 +306,12 @@ export default function App() {
 
       let payloadType: string | null = null;
       let payloadKind: OperationKind | null = null;
+      let payloadToolName: string | null = null;
       try {
         const parsed = payloadRaw ? JSON.parse(payloadRaw) : null;
         payloadType = parsed?.type ?? null;
         payloadKind = parsed?.kind ?? null;
+        payloadToolName = parsed?.name ?? null;
       } catch {
         // ignore JSON parse errors, fall back to plain text matching
       }
@@ -184,10 +319,14 @@ export default function App() {
       if (!payloadType && payloadRaw?.includes("sticky-note")) payloadType = "sticky-note";
       if (!payloadType && payloadRaw?.includes("agent-block")) payloadType = "agent-block";
       if (!payloadType && payloadRaw?.includes("operation")) payloadType = "operation";
+      if (!payloadType && payloadRaw?.includes("tool")) payloadType = "tool";
       if (payloadType === "operation" && !payloadKind) {
         if (payloadRaw?.includes("branch")) payloadKind = "branch";
         else if (payloadRaw?.includes("sequential")) payloadKind = "sequential";
         else if (payloadRaw?.includes("aggregate")) payloadKind = "aggregate";
+      }
+      if (payloadType === "tool" && !payloadToolName && payloadRaw) {
+        payloadToolName = payloadRaw.replace(/^tool-/, "");
       }
       if (!payloadType) return;
 
@@ -234,39 +373,151 @@ export default function App() {
             y: worldY,
             name: "Agent Block",
             description: "1 input, 2 outputs",
+            inputCount: 1,
+            outputCount: 2,
+          },
+        ]);
+      }
+
+      if (payloadType === "tool") {
+        const paletteItem = toolPalette.find((tool) => tool.name === payloadToolName);
+        if (!paletteItem) return;
+        const id = nextToolIdRef.current++;
+        setTools((prev) => [
+          ...prev,
+          {
+            ...paletteItem,
+            id: `tool-${id}`,
+            x: worldX,
+            y: worldY,
           },
         ]);
       }
     },
-    [containerRef, transform.x, transform.y, transform.zoom],
+    [containerRef, toolPalette, transform.x, transform.y, transform.zoom],
   );
+
+  const handleGenerateAgentsFromJson = useCallback(() => {
+    setAgentParseError(null);
+    let parsed: any;
+    try {
+      parsed = JSON.parse(agentJsonInput);
+    } catch (error) {
+      setAgentParseError("Invalid JSON: please check formatting.");
+      return;
+    }
+    const agents: any[] | null = Array.isArray(parsed?.agents) ? parsed.agents : null;
+    if (!agents || agents.length === 0) {
+      setAgentParseError("No agents found in JSON (expected an `agents` array).");
+      return;
+    }
+
+    const newBlocks: AgentBlock[] = [];
+    const newTools: ToolNode[] = [];
+    const newConnections: Connection[] = [];
+    const baseX = 140 + blocks.length * 40;
+    const baseY = 200;
+    const blockSpacing = 340;
+    const toolSpacingX = 150;
+    const toolSpacingY = 150;
+
+    agents.forEach((agent, idx) => {
+      const inputCount =
+        (Array.isArray(agent?.input_data_streams?.mandatory) ? agent.input_data_streams.mandatory.length : 0) +
+        (Array.isArray(agent?.input_data_streams?.optional) ? agent.input_data_streams.optional.length : 0);
+      const outputCount =
+        (Array.isArray(agent?.output_data_streams?.mandatory) ? agent.output_data_streams.mandatory.length : 0) +
+        (Array.isArray(agent?.output_data_streams?.optional) ? agent.output_data_streams.optional.length : 0);
+      const blockId = `block-${nextBlockIdRef.current++}`;
+      const blockX = baseX + idx * blockSpacing;
+      const blockY = baseY;
+
+      newBlocks.push({
+        id: blockId,
+        x: blockX,
+        y: blockY,
+        name: agent?.name ?? agent?.id ?? `Agent ${idx + 1}`,
+        description: agent?.description ?? "Generated from JSON",
+        inputCount: Math.max(1, inputCount || 1),
+        outputCount: Math.max(1, outputCount || 1),
+      });
+
+      const capabilities: string[] = Array.isArray(agent?.capabilities) ? agent.capabilities : [];
+      capabilities.forEach((cap, capIdx) => {
+        const palette = toolPalette[capIdx % toolPalette.length];
+        const toolId = `tool-${nextToolIdRef.current++}`;
+        const toolX = blockX + (capIdx % 2) * toolSpacingX - 40;
+        const toolY = blockY + 220 + Math.floor(capIdx / 2) * toolSpacingY;
+        newTools.push({
+          ...palette,
+          id: toolId,
+          x: toolX,
+          y: toolY,
+          name: typeof cap === "string" ? cap : `Capability ${capIdx + 1}`,
+          tagline: "Capability tool",
+        });
+        const connId = `conn-${nextConnectionIdRef.current++}`;
+        newConnections.push({
+          id: connId,
+          from: { type: "tool", id: toolId, port: 0 },
+          to: { type: "block", id: blockId, inputIndex: Math.max(1, inputCount || 1) },
+        });
+      });
+    });
+
+    setBlocks((prev) => [...prev, ...newBlocks]);
+    setTools((prev) => [...prev, ...newTools]);
+    setConnections((prev) => [...prev, ...newConnections]);
+  }, [agentJsonInput, blocks.length, toolPalette]);
 
   const getBlockHandles = useCallback(
     (block: AgentBlock) => {
-      const isActive =
-        (selected?.type === "block" && selected.id === block.id) || draggingBlockId === block.id;
-      const width = isActive ? 256 : 192;
-      const height = isActive ? 140 : 96;
-      // positions aligned to the visual handle placements:
-      // input handle sits centered vertically with slight offset for its own size (h-8 top-1/2)
-      const input = { x: block.x, y: block.y + height / 2 + 16 };
-      // outputs sit near top/bottom corners (-right-4 top-4 / bottom-4)
-      const outputA = { x: block.x + width, y: block.y + 32 };
-      const outputB = { x: block.x + width, y: block.y + height - 8 };
-      return { width, height, input, outputA, outputB, isActive };
+      const width = 220;
+      const baseHeight = 120;
+      const inputSlots = Math.max(1, block.inputCount);
+      const outputSlots = Math.max(1, block.outputCount);
+      const maxSlots = Math.max(inputSlots, outputSlots);
+      const topPadding = 18;
+      const slotGap = 28;
+      const height =
+        maxSlots > 1
+          ? Math.max(baseHeight, topPadding * 2 + slotGap * (maxSlots - 1))
+          : baseHeight;
+
+      const buildAnchors = (count: number, side: "left" | "right"): AnchorPoint[] => {
+        if (count <= 1) {
+          return [
+            {
+              x: side === "left" ? block.x : block.x + width,
+              y: block.y + height / 2,
+              dir: side,
+            },
+          ];
+        }
+        const gap = (height - topPadding * 2) / (count - 1);
+        return Array.from({ length: count }, (_, idx) => ({
+          x: side === "left" ? block.x : block.x + width,
+          y: block.y + topPadding + idx * gap,
+          dir: side,
+        }));
+      };
+
+      const inputAnchors = buildAnchors(inputSlots, "left");
+      const outputAnchors = buildAnchors(outputSlots, "right");
+      const toolPortIndex = inputSlots;
+      const toolInput: AnchorPoint = { x: block.x + width / 2, y: block.y + height + 4, dir: "down" };
+      return { width, height, inputAnchors, outputAnchors, toolInput, toolPortIndex };
     },
-    [draggingBlockId, selected],
+    [],
   );
 
   const getOperationHandles = useCallback(
     (operation: Operation) => {
       const width = 260;
-      const baseHeight = 76;
-      const isAggregate = operation.kind === "aggregate";
-      const isBranch = operation.kind === "branch";
-      const inputSlots = isAggregate ? 5 : 1;
-      const outputSlots = isBranch ? 5 : 1;
-      const topPadding = 16;
+      const baseHeight = 60;
+      const inputSlots = 1;
+      const outputSlots = 1;
+      const topPadding = 12;
       const maxSlots = Math.max(inputSlots, outputSlots);
       const slotGap = 24;
       const height =
@@ -274,12 +525,13 @@ export default function App() {
           ? Math.max(baseHeight, topPadding * 2 + slotGap * (maxSlots - 1))
           : baseHeight;
 
-      const buildAnchors = (count: number, side: "left" | "right") => {
+      const buildAnchors = (count: number, side: "left" | "right"): AnchorPoint[] => {
         if (count <= 1) {
           return [
             {
               x: side === "left" ? operation.x : operation.x + width,
               y: operation.y + height / 2,
+              dir: side,
             },
           ];
         }
@@ -287,15 +539,24 @@ export default function App() {
         return Array.from({ length: count }, (_, idx) => ({
           x: side === "left" ? operation.x : operation.x + width,
           y: operation.y + topPadding + idx * gap,
+          dir: side,
         }));
       };
 
       const inputAnchors = buildAnchors(inputSlots, "left");
       const outputAnchors = buildAnchors(outputSlots, "right");
-      return { width, height, inputAnchors, outputAnchors, isAggregate, isBranch };
+      return { width, height, inputAnchors, outputAnchors };
     },
     [],
   );
+
+  const getToolHandles = useCallback((tool: ToolNode) => {
+    const width = 180;
+    const height = 110;
+    const output: AnchorPoint = { x: tool.x + width / 2, y: tool.y - 6, dir: "up" };
+    const input: AnchorPoint = { x: tool.x, y: tool.y + height / 2, dir: "left" };
+    return { width, height, output, input };
+  }, []);
 
   const getOutputAnchor = useCallback(
     (endpoint: LinkSource) => {
@@ -303,7 +564,17 @@ export default function App() {
         const block = blocks.find((b) => b.id === endpoint.id);
         if (!block) return null;
         const handles = getBlockHandles(block);
-        return endpoint.port === "A" ? handles.outputA : handles.outputB;
+        const index = Math.min(
+          handles.outputAnchors.length - 1,
+          Math.max(0, endpoint.port),
+        );
+        return handles.outputAnchors[index];
+      }
+      if (endpoint.type === "tool") {
+        const tool = tools.find((t) => t.id === endpoint.id);
+        if (!tool) return null;
+        const handles = getToolHandles(tool);
+        return handles.output;
       }
       const operation = operations.find((op) => op.id === endpoint.id);
       if (!operation) return null;
@@ -314,7 +585,7 @@ export default function App() {
       );
       return handles.outputAnchors[index];
     },
-    [blocks, getBlockHandles, getOperationHandles, operations],
+    [blocks, getBlockHandles, getOperationHandles, getToolHandles, operations, tools],
   );
 
   const getInputAnchor = useCallback(
@@ -323,6 +594,18 @@ export default function App() {
         const block = blocks.find((b) => b.id === target.id);
         if (!block) return null;
         const handles = getBlockHandles(block);
+        const inputIndex = target.inputIndex ?? 0;
+        if (inputIndex === handles.toolPortIndex) return handles.toolInput;
+        const boundedIndex = Math.min(
+          handles.inputAnchors.length - 1,
+          Math.max(0, inputIndex),
+        );
+        return handles.inputAnchors[boundedIndex];
+      }
+      if (target.type === "tool") {
+        const tool = tools.find((t) => t.id === target.id);
+        if (!tool) return null;
+        const handles = getToolHandles(tool);
         return handles.input;
       }
       const operation = operations.find((op) => op.id === target.id);
@@ -334,7 +617,35 @@ export default function App() {
       );
       return handles.inputAnchors[index];
     },
-    [blocks, getBlockHandles, getOperationHandles, operations],
+    [blocks, getBlockHandles, getOperationHandles, getToolHandles, operations, tools],
+  );
+
+  const buildConnectionPath = useCallback(
+    (start: AnchorPoint, end: AnchorPoint) => {
+      const pad = 16;
+      const startDir = start.dir;
+      const first: AnchorPoint = { ...start };
+      if (startDir === "left") first.x -= pad;
+      else if (startDir === "right") first.x += pad;
+      else if (startDir === "up") first.y -= pad;
+      else if (startDir === "down") first.y += pad;
+
+      const dx = end.x - first.x;
+      const dy = end.y - first.y;
+      const absDx = Math.abs(dx);
+      if (absDx < 12 && Math.abs(dy) < 12) {
+        return `M ${start.x} ${start.y} L ${first.x} ${first.y} L ${end.x} ${end.y}`;
+      }
+
+      const curveDir =
+        startDir === "left" ? -1 : startDir === "right" ? 1 : dx >= 0 ? 1 : -1;
+      const curve = Math.min(240, Math.max(70, absDx * 0.68));
+      const yEase = dy * 0.24;
+      const cx1 = first.x + curveDir * curve;
+      const cx2 = end.x - curveDir * curve;
+      return `M ${start.x} ${start.y} L ${first.x} ${first.y} C ${cx1} ${first.y + yEase} ${cx2} ${end.y - yEase} ${end.x} ${end.y}`;
+    },
+    [],
   );
 
   const handleNotePointerDown = useCallback(
@@ -390,6 +701,8 @@ export default function App() {
 
   const handleOperationPointerDown = useCallback(
     (operationId: string) => (event: ReactPointerEvent<HTMLDivElement>) => {
+      const target = event.target as HTMLElement | null;
+      if (linkingRef.current || target?.closest("[data-connector]")) return;
       event.stopPropagation();
       event.preventDefault();
       setSelected((prev) =>
@@ -455,6 +768,8 @@ export default function App() {
 
   const handleBlockPointerDown = useCallback(
     (blockId: string) => (event: ReactPointerEvent<HTMLDivElement>) => {
+      const target = event.target as HTMLElement | null;
+      if (linkingRef.current || target?.closest("[data-connector]")) return;
       event.stopPropagation();
       event.preventDefault();
       setSelected((prev) =>
@@ -513,15 +828,77 @@ export default function App() {
     [draggingBlockId, selected],
   );
 
+  const handleToolPointerDown = useCallback(
+    (toolId: string) => (event: ReactPointerEvent<HTMLDivElement>) => {
+      const target = event.target as HTMLElement | null;
+      if (linkingRef.current || target?.closest("[data-connector]")) return;
+      event.stopPropagation();
+      event.preventDefault();
+      setSelected((prev) =>
+        prev?.type === "tool" && prev.id === toolId ? null : { type: "tool", id: toolId },
+      );
+      const tool = tools.find((t) => t.id === toolId);
+      const world = toWorldPoint(event.clientX, event.clientY);
+      if (!tool || !world) return;
+      toolDragOffsetRef.current = { x: world.x - tool.x, y: world.y - tool.y };
+      setDraggingToolId(toolId);
+      setSelected({ type: "tool", id: toolId });
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+    },
+    [tools, toWorldPoint],
+  );
+
+  const handleToolPointerMove = useCallback(
+    (toolId: string) => (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (draggingToolId !== toolId) return;
+      const world = toWorldPoint(event.clientX, event.clientY);
+      if (!world) return;
+      const newX = world.x - toolDragOffsetRef.current.x;
+      const newY = world.y - toolDragOffsetRef.current.y;
+      setTools((prev) =>
+        prev.map((tool) => (tool.id === toolId ? { ...tool, x: newX, y: newY } : tool)),
+      );
+    },
+    [draggingToolId, toWorldPoint],
+  );
+
+  const handleToolPointerUp = useCallback(
+    (toolId: string) => (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (draggingToolId !== toolId) return;
+      setDraggingToolId(null);
+      toolDragOffsetRef.current = { x: 0, y: 0 };
+      event.currentTarget.releasePointerCapture?.(event.pointerId);
+    },
+    [draggingToolId],
+  );
+
+  const handleRemoveTool = useCallback(
+    (toolId: string) => {
+      setTools((prev) => prev.filter((t) => t.id !== toolId));
+      if (draggingToolId === toolId) setDraggingToolId(null);
+      if (selected?.type === "tool" && selected.id === toolId) setSelected(null);
+      setConnections((prev) =>
+        prev.filter(
+          (conn) =>
+            !(
+              (conn.from.type === "tool" && conn.from.id === toolId) ||
+              (conn.to.type === "tool" && conn.to.id === toolId)
+            ),
+        ),
+      );
+    },
+    [draggingToolId, selected],
+  );
+
   const handleInputEnter = useCallback(
-    (target: { type: "block" | "operation"; id: string; inputIndex?: number }) => () => {
+    (target: { type: "block" | "operation" | "tool"; id: string; inputIndex?: number }) => () => {
       if (linking) setHoveredInput(target);
     },
     [linking],
   );
 
   const handleInputLeave = useCallback(
-    (target: { type: "block" | "operation"; id: string; inputIndex?: number }) => () => {
+    (target: { type: "block" | "operation" | "tool"; id: string; inputIndex?: number }) => () => {
       if (
         hoveredInput &&
         hoveredInput.type === target.type &&
@@ -534,34 +911,51 @@ export default function App() {
     [hoveredInput],
   );
 
+  const handleOutputEnter = useCallback(
+    (source: LinkSource) => () => {
+      if (linking) setHoveredOutput(source);
+    },
+    [linking],
+  );
+
+  const handleOutputLeave = useCallback(
+    (source: LinkSource) => () => {
+      if (
+        hoveredOutput &&
+        hoveredOutput.type === source.type &&
+        hoveredOutput.id === source.id &&
+        hoveredOutput.port === source.port
+      ) {
+        setHoveredOutput(null);
+      }
+    },
+    [hoveredOutput],
+  );
+
+  const startLinkingFromInput = useCallback(
+    (target: LinkTarget) =>
+      (event: ReactPointerEvent<HTMLDivElement | HTMLButtonElement>) => {
+        event.stopPropagation();
+        event.preventDefault();
+        const anchor = getInputAnchor(target);
+        if (!anchor) return;
+        linkingRef.current = true;
+        setLinking({ origin: "input", target, current: anchor });
+      },
+    [getInputAnchor],
+  );
+
   const startLinkingFromOutput = useCallback(
     (from: LinkSource) =>
       (event: ReactPointerEvent<HTMLButtonElement | HTMLDivElement>) => {
         event.stopPropagation();
         event.preventDefault();
-        const anchor =
-          from.type === "block"
-            ? (() => {
-                const block = blocks.find((b) => b.id === from.id);
-                if (!block) return null;
-                const handles = getBlockHandles(block);
-                return from.port === "A" ? handles.outputA : handles.outputB;
-              })()
-            : (() => {
-                const operation = operations.find((op) => op.id === from.id);
-                if (!operation) return null;
-                const handles = getOperationHandles(operation);
-                const index = Math.min(
-                  handles.outputAnchors.length - 1,
-                  Math.max(0, from.port),
-                );
-                return handles.outputAnchors[index];
-              })();
+        const anchor = getOutputAnchor(from);
         if (!anchor) return;
-        setLinking({ from, current: anchor });
-        setSelected({ type: from.type, id: from.id });
+        linkingRef.current = true;
+        setLinking({ origin: "output", from, current: anchor });
       },
-    [blocks, getBlockHandles, operations, getOperationHandles],
+    [getOutputAnchor],
   );
 
   const moveLinking = useCallback(
@@ -574,39 +968,72 @@ export default function App() {
     [linking, toWorldPoint],
   );
 
-  const finalizeLinking = useCallback(() => {
+  const finalizeLinking = useCallback((overrideTarget?: LinkTarget) => {
     if (!linking) return;
-    const target = hoveredInput;
-    const from = linking.from;
+    const target =
+      overrideTarget ??
+      (linking.origin === "output" ? hoveredInput : linking.target);
+    const from = linking.origin === "output" ? linking.from : hoveredOutput;
+
     if (
       target &&
+      from &&
       !(target.type === from.type && target.id === from.id)
     ) {
       const id = nextConnectionIdRef.current++;
-      setConnections((prev) => [
-        // enforce single connection per target slot (block input or specific operation input)
-        ...prev.filter(
-          (conn) =>
-            !(
-              conn.to.type === target.type &&
-              conn.to.id === target.id &&
-              (conn.to.inputIndex ?? null) === (target.inputIndex ?? null)
-            ),
-        ),
-        { id: `conn-${id}`, from, to: target },
-      ]);
+      const targetBlock =
+        target.type === "block" ? blocks.find((b) => b.id === target.id) : null;
+      const targetHandles = targetBlock ? getBlockHandles(targetBlock) : null;
+      const isBlockToolTarget =
+        target.type === "block" &&
+        targetHandles &&
+        (target.inputIndex ?? -1) === targetHandles.toolPortIndex;
+      setConnections((prev) => {
+        if (isBlockToolTarget) {
+          const withoutDuplicate = prev.filter(
+            (conn) =>
+              !(
+                conn.from.type === from.type &&
+                conn.from.id === from.id &&
+                conn.to.type === target.type &&
+                conn.to.id === target.id &&
+                (conn.to.inputIndex ?? 0) === 1
+              ),
+          );
+          return [...withoutDuplicate, { id: `conn-${id}`, from, to: target }];
+        }
+        const targetSlot = target.inputIndex ?? 0;
+        // enforce single connection per target slot (block/operation/tool inputs)
+        return [
+          ...prev.filter(
+            (conn) =>
+              !(
+                conn.to.type === target.type &&
+                conn.to.id === target.id &&
+                (conn.to.inputIndex ?? 0) === targetSlot
+              ),
+          ),
+          { id: `conn-${id}`, from, to: target },
+        ];
+      });
     }
     setLinking(null);
+    linkingRef.current = false;
     setHoveredInput(null);
-  }, [hoveredInput, linking]);
+    setHoveredOutput(null);
+  }, [blocks, getBlockHandles, hoveredInput, hoveredOutput, linking]);
 
   const handleCanvasPointerDown = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
       const target = event.target as HTMLElement | null;
-      if (target?.closest("[data-note],[data-block],[data-operation]")) return;
+      if (target?.closest("[data-note],[data-block],[data-operation],[data-tool]")) return;
       setSelected(null);
       setHoveredInput(null);
+      setHoveredOutput(null);
+      setHoveredBlockId(null);
+      setHoveredToolId(null);
       setLinking(null);
+      linkingRef.current = false;
     },
     [],
   );
@@ -626,22 +1053,20 @@ export default function App() {
         handleRemoveBlock(selected.id);
       } else if (selected.type === "operation") {
         handleRemoveOperation(selected.id);
+      } else if (selected.type === "tool") {
+        handleRemoveTool(selected.id);
       }
     }
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handleRemoveBlock, handleRemoveNote, handleRemoveOperation, selected]);
+  }, [handleRemoveBlock, handleRemoveNote, handleRemoveOperation, handleRemoveTool, selected]);
 
   return (
     <div className="relative h-screen w-screen bg-slate-50 overflow-hidden">
       <div className="absolute left-0 top-0 bottom-0 z-30 flex">
         <div className="flex flex-col items-center gap-2 bg-slate-900/95 px-2 py-3 text-white shadow-xl">
-          {[
-            { id: "blocks", label: "Blocks", symbol: "[]" },
-            { id: "operations", label: "Operations", symbol: "Ops" },
-            { id: "settings", label: "Settings", symbol: ":" },
-          ].map((item) => (
+          {panelTabs.map((item) => (
             <button
               key={item.id}
               className={`h-12 w-12 rounded-md border border-slate-700 text-sm font-semibold transition ${
@@ -649,9 +1074,7 @@ export default function App() {
                   ? "bg-white text-slate-900 shadow-sm"
                   : "bg-slate-800/70 text-white hover:bg-slate-800"
               }`}
-              onClick={() =>
-                setActivePanel((prev) => (prev === item.id ? null : (item.id as typeof activePanel)))
-              }
+              onClick={() => setActivePanel((prev) => (prev === item.id ? null : item.id))}
               aria-pressed={activePanel === item.id}
               aria-label={item.label}
             >
@@ -661,16 +1084,12 @@ export default function App() {
         </div>
 
         {activePanel && (
-          <div className="w-72 border-r border-slate-200 bg-white/95 backdrop-blur px-4 py-5 shadow-xl transition-all">
+          <div className="w-72 border-r border-slate-200 bg-white/95 backdrop-blur px-4 py-5 shadow-xl transition-all flex flex-col overflow-hidden">
             <div className="flex items-start justify-between">
               <div>
                 <p className="text-xs uppercase tracking-wide text-slate-500">Panel</p>
                 <h2 className="text-lg font-semibold text-slate-900">
-                  {activePanel === "blocks"
-                    ? "Blocks"
-                    : activePanel === "operations"
-                      ? "Operations"
-                      : "Settings"}
+                  {activePanel ? panelTitles[activePanel] : ""}
                 </h2>
               </div>
               <button
@@ -718,6 +1137,38 @@ export default function App() {
                   <p className="mt-3 text-xs text-slate-600">
                     Drag this to the canvas to place your agent with one input and two outputs.
                   </p>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-white/90 p-4 shadow-sm">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">Generate from JSON</p>
+                      <p className="text-xs text-slate-600">Build agents, inputs, outputs, and capability tools.</p>
+                    </div>
+                    <span className="rounded-full bg-slate-900/90 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-white shadow-sm">
+                      Beta
+                    </span>
+                  </div>
+                  <textarea
+                    className="mt-3 w-full rounded-lg border border-slate-200 bg-white/80 px-3 py-2 text-xs font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                    rows={10}
+                    value={agentJsonInput}
+                    onChange={(e) => setAgentJsonInput(e.target.value)}
+                    spellCheck={false}
+                  />
+                  {agentParseError && (
+                    <p className="mt-2 text-xs font-semibold text-rose-600">{agentParseError}</p>
+                  )}
+                  <div className="mt-3 flex items-center justify-between">
+                    <p className="text-[11px] text-slate-600">
+                      Agents become blocks with matching input/output counts; capabilities become tools linked underneath.
+                    </p>
+                    <button
+                      className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-emerald-500"
+                      onClick={handleGenerateAgentsFromJson}
+                    >
+                      Generate agents
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
@@ -772,6 +1223,54 @@ export default function App() {
               </div>
             )}
 
+            {activePanel === "tools" && (
+              <div className="mt-4 flex-1 space-y-4 overflow-hidden">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-slate-500">Tools</p>
+                    <p className="text-sm text-slate-600">Eleven trapezoid picks ready to drop</p>
+                  </div>
+                  <span className="rounded-full bg-slate-900/90 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-white shadow-sm">
+                    11 tools
+                  </span>
+                </div>
+                <div className="mt-3 h-[calc(100vh-240px)] overflow-y-auto pr-2">
+                  <div className="grid grid-cols-2 gap-3 auto-rows-max">
+                    {toolPalette.map((tool) => (
+                      <div
+                        key={tool.name}
+                        className="group relative flex items-center justify-center cursor-grab active:cursor-grabbing"
+                        draggable
+                        onDragStart={handleToolDragStart(tool.name)}
+                      >
+                        <div
+                          className={`relative h-28 w-32 rounded-xl bg-gradient-to-br ${tool.gradient} ring-1 ring-inset ${tool.ring} shadow-sm transition duration-200 group-hover:shadow-md group-hover:-translate-y-0.5`}
+                          aria-label={tool.name}
+                          style={{ clipPath: "polygon(16% 0%, 84% 0%, 100% 100%, 0 100%)" }}
+                        >
+                          <div className="absolute -top-4 left-1/2 -translate-x-1/2">
+                            <span className={`inline-flex items-center rounded-full ${tool.accent} px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-white shadow-sm ring-1 ring-inset ring-white/40`}>
+                              Tool
+                            </span>
+                          </div>
+                          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 px-3 text-center">
+                            <div className="h-8 w-8 rounded-full bg-white/80 ring-1 ring-slate-200 shadow-sm shadow-slate-200/60 flex items-center justify-center">
+                              <span className={`h-2 w-2 rounded-full ${tool.accent}`} />
+                            </div>
+                            <p className="text-sm font-semibold text-slate-900">{tool.name}</p>
+                            <p className="text-[11px] text-slate-600">{tool.tagline}</p>
+                          </div>
+                          <div className="absolute -bottom-3 left-1/2 -translate-x-1/2">
+                            <div className={`h-2 w-12 rounded-full bg-white/80 ring-1 ring-inset ${tool.ring}`} />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {activePanel === "settings" && (
               <div className="mt-4 space-y-3 text-sm text-slate-700">
                 <p className="text-xs uppercase tracking-wide text-slate-500">Workspace</p>
@@ -786,6 +1285,7 @@ export default function App() {
         <div
           ref={containerRef}
           className="absolute inset-0"
+          style={{ touchAction: "none" }}
           onDragOver={handleCanvasDragOver}
           onDrop={handleCanvasDrop}
         >
@@ -799,7 +1299,7 @@ export default function App() {
               transformOrigin: "0 0",
               width: "100%",
               height: "100%",
-              transition: "transform 120ms ease-out",
+              transition: "none",
               willChange: "transform",
               pointerEvents: "auto",
             }}
@@ -810,13 +1310,16 @@ export default function App() {
             }}
           >
             {/* existing connections */}
-            <svg className="absolute inset-0 w-full h-full pointer-events-none" xmlns="http://www.w3.org/2000/svg">
+            <svg
+              className="absolute inset-0 w-full h-full pointer-events-none"
+              xmlns="http://www.w3.org/2000/svg"
+              overflow="visible"
+            >
               {connections.map((conn) => {
                 const start = getOutputAnchor(conn.from);
                 const end = getInputAnchor(conn.to);
                 if (!start || !end) return null;
-                const curve = 80;
-                const d = `M ${start.x} ${start.y} C ${start.x + curve} ${start.y} ${end.x - curve} ${end.y} ${end.x} ${end.y}`;
+                const d = buildConnectionPath(start, end);
                 const stroke =
                   conn.from.type === "operation"
                     ? "rgba(99, 102, 241, 0.7)"
@@ -834,11 +1337,13 @@ export default function App() {
               })}
 
               {linking && (() => {
-                const start = getOutputAnchor(linking.from);
+                const start =
+                  linking.origin === "output"
+                    ? getOutputAnchor(linking.from)
+                    : getInputAnchor(linking.target);
                 if (!start) return null;
                 const end = linking.current;
-                const curve = 80;
-                const d = `M ${start.x} ${start.y} C ${start.x + curve} ${start.y} ${end.x - curve} ${end.y} ${end.x} ${end.y}`;
+                const d = buildConnectionPath(start, end);
                 return (
                   <path
                     d={d}
@@ -855,13 +1360,24 @@ export default function App() {
             {blocks.map((block) => {
               const isActive = selected?.type === "block" && selected.id === block.id;
               const linkingActive = Boolean(linking);
-              const showConnections = isActive || draggingBlockId === block.id || linkingActive;
+              const showConnections =
+                isActive ||
+                draggingBlockId === block.id ||
+                linkingActive ||
+                hoveredBlockId === block.id;
+              const handles = getBlockHandles(block);
               return (
-                <div key={block.id} className="absolute" style={{ left: block.x, top: block.y }}>
+                <div
+                  key={block.id}
+                  className="absolute"
+                  style={{ left: block.x, top: block.y }}
+                  onPointerEnter={() => setHoveredBlockId(block.id)}
+                  onPointerLeave={() =>
+                    setHoveredBlockId((prev) => (prev === block.id ? null : prev))
+                  }
+                >
                   <div
-                    className={`relative rounded-lg border border-slate-200 bg-white/90 shadow-md backdrop-blur-sm transition-all duration-150 ${
-                      isActive ? "w-64 p-4 min-h-[140px]" : "w-48 p-3 scale-[0.97] min-h-[96px]"
-                    } ${
+                    className={`relative rounded-lg border border-slate-200 bg-white/90 shadow-md backdrop-blur-sm transition-all duration-150 w-[220px] p-3 scale-[0.97] min-h-[120px] ${
                       showConnections ? "ring-2 ring-emerald-300" : ""
                     } cursor-grab active:cursor-grabbing select-none`}
                     data-block
@@ -890,110 +1406,141 @@ export default function App() {
                     <div className="flex items-start justify-between">
                       <div>
                         <p className="text-sm font-semibold text-slate-900">{block.name}</p>
-                        {isActive && <p className="text-xs text-slate-600">{block.description}</p>}
                       </div>
                       <span className="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
                         Agent
                       </span>
                     </div>
 
-                    <div
-                      className={`mt-4 grid grid-cols-[auto,1fr,auto] gap-3 items-center transition-all duration-150 ${
-                        showConnections ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-1 pointer-events-none"
-                      }`}
-                    >
-                      <div className="flex items-center gap-2">
-                        <div className="h-3 w-3 rounded-full bg-emerald-500 shadow-sm shadow-emerald-200" />
-                        <span className="text-xs font-medium text-emerald-900">Input</span>
-                      </div>
-                    <div className="h-px bg-gradient-to-r from-emerald-200 via-emerald-100 to-transparent" />
-                    <div className="flex flex-col gap-2">
-                      <div className="flex items-center gap-2 justify-end">
-                        <span className="text-xs font-medium text-slate-700">Output A</span>
-                        <div
-                          className="h-3 w-3 rounded-full bg-sky-500 shadow-sm shadow-sky-200"
-                          data-output
-                          data-port="A"
-                          onPointerDown={startLinkingFromOutput({ type: "block", id: block.id, port: "A" })}
-                          onPointerMove={moveLinking}
-                          onPointerUp={finalizeLinking}
-                        />
-                      </div>
-                      <div className="flex items-center gap-2 justify-end">
-                        <span className="text-xs font-medium text-slate-700">Output B</span>
-                        <div
-                          className="h-3 w-3 rounded-full bg-sky-500 shadow-sm shadow-sky-200"
-                          data-output
-                          data-port="B"
-                          onPointerDown={startLinkingFromOutput({ type: "block", id: block.id, port: "B" })}
-                          onPointerMove={moveLinking}
-                          onPointerUp={finalizeLinking}
-                        />
-                      </div>
+                    <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] font-semibold text-slate-700">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 ring-1 ring-emerald-100">
+                        <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
+                        {block.inputCount} inputs
+                      </span>
+                      <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2 py-1 ring-1 ring-sky-100">
+                        <span className="h-2.5 w-2.5 rounded-full bg-sky-500" />
+                        {block.outputCount} outputs
+                      </span>
                     </div>
                   </div>
 
                   {/* connection handles for visual targeting */}
                   <div
-                    className={`absolute -left-4 top-1/2 flex h-8 w-8 items-center justify-center rounded-full bg-white shadow-md ring-1 ring-emerald-100 transition-all duration-150 ${
-                      showConnections ? "opacity-100 scale-100" : "opacity-0 scale-75 pointer-events-none"
-                    } ${
-                      hoveredInput?.type === "block" && hoveredInput.id === block.id
-                        ? "ring-2 ring-emerald-300 shadow-emerald-100"
-                        : ""
+                      className={`absolute left-1/2 -bottom-4 -translate-x-1/2 flex h-8 w-8 items-center justify-center transition-all duration-150 z-10 ${
+                      showConnections ? "opacity-100 scale-100" : "opacity-0 scale-75"
                     }`}
+                    style={{ width: 24, height: 24, pointerEvents: "auto" }}
                     data-input
-                    onPointerEnter={handleInputEnter({ type: "block", id: block.id })}
-                    onPointerLeave={handleInputLeave({ type: "block", id: block.id })}
-                    onPointerUp={finalizeLinking}
+                    data-connector
+                    onPointerEnter={handleInputEnter({
+                      type: "block",
+                      id: block.id,
+                      inputIndex: handles.toolPortIndex,
+                    })}
+                    onPointerLeave={handleInputLeave({
+                      type: "block",
+                      id: block.id,
+                      inputIndex: handles.toolPortIndex,
+                    })}
+                    onPointerDownCapture={startLinkingFromInput({
+                      type: "block",
+                      id: block.id,
+                      inputIndex: handles.toolPortIndex,
+                    })}
+                    onPointerDown={startLinkingFromInput({
+                      type: "block",
+                      id: block.id,
+                      inputIndex: handles.toolPortIndex,
+                    })}
+                    onPointerUp={() =>
+                      finalizeLinking({
+                        type: "block",
+                        id: block.id,
+                        inputIndex: handles.toolPortIndex,
+                      })
+                    }
+                    aria-label="Attach tool"
                   >
-                    <div className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
+                    <HandleDot />
                   </div>
-                  <div
-                    className={`absolute -right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full bg-white shadow-md ring-1 ring-sky-100 transition-all duration-150 ${
-                      showConnections ? "opacity-100 scale-100" : "opacity-0 scale-75 pointer-events-none"
-                    }`}
-                    data-output
-                    data-port="A"
-                    onPointerDown={startLinkingFromOutput({ type: "block", id: block.id, port: "A" })}
-                    onPointerMove={moveLinking}
-                    onPointerUp={finalizeLinking}
-                  >
-                    <div className="h-2.5 w-2.5 rounded-full bg-sky-500" />
-                  </div>
-                  <div
-                    className={`absolute -right-4 bottom-4 flex h-8 w-8 items-center justify-center rounded-full bg-white shadow-md ring-1 ring-sky-100 transition-all duration-150 ${
-                      showConnections ? "opacity-100 scale-100" : "opacity-0 scale-75 pointer-events-none"
-                    }`}
-                    data-output
-                    data-port="B"
-                    onPointerDown={startLinkingFromOutput({ type: "block", id: block.id, port: "B" })}
-                    onPointerMove={moveLinking}
-                    onPointerUp={finalizeLinking}
-                  >
-                    <div className="h-2.5 w-2.5 rounded-full bg-sky-500" />
-                  </div>
+                  {handles.inputAnchors.map((anchor, idx) => (
+                    <div
+                      key={idx}
+                      className={`absolute flex items-center justify-center transition-all duration-150 z-10 ${
+                        showConnections ? "opacity-100 scale-100" : "opacity-0 scale-75"
+                      }`}
+                      style={{
+                        top: anchor.y - block.y - 12,
+                        left: anchor.x - block.x - 12,
+                        width: 24,
+                        height: 24,
+                        pointerEvents: "auto",
+                      }}
+                      data-input
+                      data-connector
+                      onPointerDownCapture={startLinkingFromInput({ type: "block", id: block.id, inputIndex: idx })}
+                      onPointerEnter={handleInputEnter({ type: "block", id: block.id, inputIndex: idx })}
+                      onPointerLeave={handleInputLeave({ type: "block", id: block.id, inputIndex: idx })}
+                      onPointerDown={startLinkingFromInput({ type: "block", id: block.id, inputIndex: idx })}
+                      onPointerUp={() =>
+                        finalizeLinking({
+                          type: "block",
+                          id: block.id,
+                          inputIndex: idx,
+                        })
+                      }
+                    >
+                      <HandleDot />
+                    </div>
+                  ))}
+                  {handles.outputAnchors.map((anchor, idx) => (
+                    <div
+                      key={idx}
+                      className={`absolute flex items-center justify-center transition-all duration-150 z-10 ${
+                        showConnections ? "opacity-100 scale-100" : "opacity-0 scale-75"
+                      }`}
+                      style={{
+                        top: anchor.y - block.y - 12,
+                        left: anchor.x - block.x - 12,
+                        width: 24,
+                        height: 24,
+                        pointerEvents: "auto",
+                      }}
+                      data-output
+                      data-connector
+                      data-port={idx}
+                      onPointerDownCapture={startLinkingFromOutput({ type: "block", id: block.id, port: idx })}
+                      onPointerDown={startLinkingFromOutput({ type: "block", id: block.id, port: idx })}
+                      onPointerEnter={handleOutputEnter({ type: "block", id: block.id, port: idx })}
+                      onPointerLeave={handleOutputLeave({ type: "block", id: block.id, port: idx })}
+                      onPointerMove={moveLinking}
+                      onPointerUp={() => finalizeLinking()}
+                    >
+                      <HandleDot />
+                    </div>
+                  ))}
                 </div>
-              </div>
               );
             })}
             {operations.map((operation) => {
               const meta = operationMeta[operation.kind];
               const isActive =
                 selected?.type === "operation" && selected.id === operation.id;
-              const isDragging = draggingOperationId === operation.id;
-              const linkingFromThis =
-                linking?.from.type === "operation" && linking.from.id === operation.id;
               const handles = getOperationHandles(operation);
-              const isLinkingNear = (() => {
-                if (!linking) return false;
-                const cx = operation.x + handles.width / 2;
-                const cy = operation.y + handles.height / 2;
-                const dist = Math.hypot(linking.current.x - cx, linking.current.y - cy);
-                return dist < 140;
-              })();
+              const isSourceLinking =
+                linking?.origin === "output" &&
+                linking.from.type === "operation" &&
+                linking.from.id === operation.id;
+              const isTargetLinking =
+                linking?.origin === "input" &&
+                linking.target.type === "operation" &&
+                linking.target.id === operation.id;
               const showHandles =
-                hoveredOperationId === operation.id || isDragging || linkingFromThis || isLinkingNear;
+                hoveredOperationId === operation.id ||
+                draggingOperationId === operation.id ||
+                isSourceLinking ||
+                isTargetLinking ||
+                Boolean(linking);
               const pillHeight = 60;
               return (
                 <div
@@ -1046,53 +1593,183 @@ export default function App() {
 
                     {/* connection handles */}
                     {handles.inputAnchors.map((anchor, idx) => (
-                      <div
-                        key={idx}
-                        className={`absolute -left-4 flex h-8 w-8 items-center justify-center rounded-full bg-white shadow-md ring-1 ring-emerald-100 transition-all duration-150 ${
+                    <div
+                      key={idx}
+                      className={`absolute flex items-center justify-center transition-all duration-150 z-10 ${
                           showHandles ? "opacity-100 scale-100" : "opacity-0 scale-75 pointer-events-none"
-                        } ${
-                          hoveredInput?.type === "operation" &&
-                          hoveredInput.id === operation.id &&
-                          (hoveredInput.inputIndex ?? 0) === idx
-                            ? "ring-2 ring-emerald-300 shadow-emerald-100"
-                            : ""
                         }`}
-                        style={{ top: anchor.y - operation.y - 4 }}
+                        style={{
+                          top: anchor.y - operation.y - 12,
+                          left: anchor.x - operation.x - 12,
+                          width: 24,
+                          height: 24,
+                          pointerEvents: "auto",
+                        }}
                         data-input
-                        onPointerEnter={handleInputEnter({
+                      data-connector
+                      onPointerEnter={handleInputEnter({
+                        type: "operation",
+                        id: operation.id,
+                        inputIndex: idx,
+                      })}
+                      onPointerLeave={handleInputLeave({
+                        type: "operation",
+                        id: operation.id,
+                        inputIndex: idx,
+                      })}
+                      onPointerDownCapture={startLinkingFromInput({
+                        type: "operation",
+                        id: operation.id,
+                        inputIndex: idx,
+                      })}
+                      onPointerDown={startLinkingFromInput({
+                        type: "operation",
+                        id: operation.id,
+                        inputIndex: idx,
+                      })}
+                      onPointerUp={() =>
+                        finalizeLinking({
                           type: "operation",
                           id: operation.id,
                           inputIndex: idx,
-                        })}
-                        onPointerLeave={handleInputLeave({
-                          type: "operation",
-                          id: operation.id,
-                          inputIndex: idx,
-                        })}
-                        onPointerUp={finalizeLinking}
+                          })
+                        }
                       >
-                        <div className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
+                        <HandleDot />
                       </div>
                     ))}
                     {handles.outputAnchors.map((anchor, idx) => (
-                      <div
-                        key={idx}
-                        className={`absolute -right-4 flex h-8 w-8 items-center justify-center rounded-full bg-white shadow-md ring-1 ring-sky-100 transition-all duration-150 ${
+                    <div
+                      key={idx}
+                        className={`absolute flex items-center justify-center transition-all duration-150 z-10 ${
                           showHandles ? "opacity-100 scale-100" : "opacity-0 scale-75 pointer-events-none"
                         }`}
-                        style={{ top: anchor.y - operation.y - 4 }}
+                        style={{
+                          top: anchor.y - operation.y - 12,
+                          left: anchor.x - operation.x - 12,
+                          width: 24,
+                          height: 24,
+                          pointerEvents: "auto",
+                        }}
                         data-output
+                        data-connector
                         onPointerDown={startLinkingFromOutput({
                           type: "operation",
                           id: operation.id,
                           port: idx,
                         })}
+                        onPointerDownCapture={startLinkingFromOutput({
+                          type: "operation",
+                          id: operation.id,
+                          port: idx,
+                        })}
+                        onPointerEnter={handleOutputEnter({
+                          type: "operation",
+                          id: operation.id,
+                          port: idx,
+                        })}
+                        onPointerLeave={handleOutputLeave({
+                          type: "operation",
+                          id: operation.id,
+                          port: idx,
+                        })}
                         onPointerMove={moveLinking}
-                        onPointerUp={finalizeLinking}
+                        onPointerUp={() => finalizeLinking()}
                       >
-                        <div className="h-2.5 w-2.5 rounded-full bg-sky-500" />
+                        <HandleDot />
                       </div>
                     ))}
+                  </div>
+                </div>
+              );
+            })}
+            {tools.map((tool) => {
+              const isActive = selected?.type === "tool" && selected.id === tool.id;
+              const isDragging = draggingToolId === tool.id;
+              const handles = getToolHandles(tool);
+              const width = handles.width;
+              const height = handles.height;
+              const showHandles =
+                isActive ||
+                isDragging ||
+                hoveredToolId === tool.id ||
+                (linking?.origin === "output" && linking.from.id === tool.id) ||
+                (linking?.origin === "input" && linking.target.id === tool.id) ||
+                (linking
+                  ? Math.hypot(linking.current.x - (tool.x + width / 2), linking.current.y - (tool.y + height / 2)) < 140
+                  : false);
+              return (
+                <div
+                  key={tool.id}
+                  className="absolute"
+                  style={{ left: tool.x, top: tool.y }}
+                  onPointerEnter={() => setHoveredToolId(tool.id)}
+                  onPointerLeave={() =>
+                    setHoveredToolId((prev) => (prev === tool.id ? null : prev))
+                  }
+                >
+                  <div
+                    className={`relative overflow-visible ${isActive ? "ring-2 ring-offset-2 ring-offset-white shadow-lg" : ""} ${
+                      isDragging ? "scale-[1.01]" : ""
+                    } cursor-grab active:cursor-grabbing select-none`}
+                    data-tool
+                    style={{ width, height }}
+                    onPointerDown={handleToolPointerDown(tool.id)}
+                    onPointerMove={handleToolPointerMove(tool.id)}
+                    onPointerUp={handleToolPointerUp(tool.id)}
+                  >
+                    <div className="absolute inset-0 rounded-lg bg-white/90 border border-slate-200 shadow-sm transition-all duration-150 pointer-events-none" />
+                    <div className="relative h-full w-full flex items-center justify-center px-4 text-center">
+                      <button
+                        className={`absolute -right-3 -top-3 flex h-6 w-6 items-center justify-center rounded-full bg-slate-900 text-white text-xs shadow-md transition-all duration-150 ${
+                          isActive ? "scale-100 opacity-100" : "scale-75 opacity-0 pointer-events-none"
+                        }`}
+                        onPointerDown={(e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                        }}
+                        onClick={() => handleRemoveTool(tool.id)}
+                        aria-label="Remove tool"
+                      >
+                        ×
+                      </button>
+                      <p className="text-base font-semibold text-slate-900">{tool.name}</p>
+                    </div>
+                    <div
+                    className={`absolute left-1/2 -top-4 -translate-x-1/2 flex h-8 w-8 items-center justify-center transition-all duration-150 z-10 ${
+                        showHandles ? "opacity-100 scale-100" : "opacity-0 scale-75"
+                      }`}
+                    style={{ top: handles.output.y - tool.y - 16, pointerEvents: "auto" }}
+                    data-output
+                    data-connector
+                    onPointerDown={startLinkingFromOutput({ type: "tool", id: tool.id, port: 0 })}
+                    onPointerDownCapture={startLinkingFromOutput({ type: "tool", id: tool.id, port: 0 })}
+                    onPointerEnter={handleOutputEnter({ type: "tool", id: tool.id, port: 0 })}
+                    onPointerLeave={handleOutputLeave({ type: "tool", id: tool.id, port: 0 })}
+                    onPointerMove={moveLinking}
+                    onPointerUp={() => finalizeLinking()}
+                  >
+                    <HandleDot />
+                  </div>
+                    <div
+                      className={`absolute flex h-8 w-8 items-center justify-center transition-all duration-150 z-10 ${
+                        showHandles ? "opacity-100 scale-100" : "opacity-0 scale-75"
+                      }`}
+                      style={{ top: handles.input.y - tool.y - 6, left: -6, pointerEvents: "auto" }}
+                      data-input
+                      data-connector
+                      onPointerEnter={handleInputEnter({ type: "tool", id: tool.id })}
+                      onPointerLeave={handleInputLeave({ type: "tool", id: tool.id })}
+                      onPointerDown={startLinkingFromInput({ type: "tool", id: tool.id })}
+                      onPointerUp={() =>
+                        finalizeLinking({
+                          type: "tool",
+                          id: tool.id,
+                        })
+                      }
+                    >
+                      <HandleDot />
+                    </div>
                   </div>
                 </div>
               );

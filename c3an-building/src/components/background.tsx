@@ -27,13 +27,13 @@ export default function Background({
 
   // movement smoothing and alignment
   // something about making the canvas move opposite the direction of movement, like a top down movie approach
-  const tx = ((-transform.x / transform.zoom) % majorSpacing + majorSpacing) % majorSpacing;
-  const ty = ((-transform.y / transform.zoom) % majorSpacing + majorSpacing) % majorSpacing;
+  const tx = -transform.x / transform.zoom;
+  const ty = -transform.y / transform.zoom;
 
   const rectStyle: CSSProperties = {
     transform: `translate(${tx}px, ${ty}px) scale(${transform.zoom})`,
     transformOrigin: "0 0",
-    transition: "transform 120ms ease-out",
+    transition: "none",
     willChange: "transform",
     // pointer events so none of canvas interactions pass through
     pointerEvents: "none",
