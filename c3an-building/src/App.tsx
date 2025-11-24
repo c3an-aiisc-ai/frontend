@@ -1,4 +1,5 @@
 import {
+  type ChangeEvent,
   type DragEvent,
   type PointerEvent as ReactPointerEvent,
   useCallback,
@@ -26,6 +27,7 @@ type AgentBlock = {
   description: string;
   inputCount: number;
   outputCount: number;
+  presetId?: string;
 };
 
 type ToolNode = {
@@ -41,13 +43,41 @@ type ToolNode = {
 
 type ToolPreset = Omit<ToolNode, "id" | "x" | "y">;
 
+type UploadNode = {
+  id: string;
+  x: number;
+  y: number;
+  name: string;
+  status: "idle" | "ready";
+  fileName?: string;
+  fileSize?: number;
+  fileType?: string;
+};
+
+type OutputNode = {
+  id: string;
+  x: number;
+  y: number;
+  name: string;
+  format: string;
+};
+
+type ClipboardItem =
+  | { type: "block"; data: AgentBlock }
+  | { type: "operation"; data: Operation }
+  | { type: "tool"; data: ToolNode }
+  | { type: "upload"; data: UploadNode }
+  | { type: "output"; data: OutputNode }
+  | { type: "note"; data: Note };
+
 type Connection = {
   id: string;
   from:
     | { type: "block"; id: string; port: number }
     | { type: "operation"; id: string; port: number }
-    | { type: "tool"; id: string; port: number };
-  to: { type: "block" | "operation" | "tool"; id: string; inputIndex?: number };
+    | { type: "tool"; id: string; port: number }
+    | { type: "upload"; id: string; port: number };
+  to: { type: "block" | "operation" | "tool" | "output"; id: string; inputIndex?: number };
 };
 
 type LinkSource = Connection["from"];
@@ -68,9 +98,11 @@ type Selection =
   | { type: "block"; id: string }
   | { type: "operation"; id: string }
   | { type: "tool"; id: string }
+  | { type: "upload"; id: string }
+  | { type: "output"; id: string }
   | null;
 
-type PanelKey = "blocks" | "operations" | "tools" | "settings";
+type PanelKey = "blocks" | "operations" | "tools" | "io" | "settings";
 
 export default function App() {
   const linkingRef = useRef(false);
@@ -79,7 +111,7 @@ export default function App() {
     shouldAllowPan: (event) => {
       if (linkingRef.current) return false;
       const target = event.target as HTMLElement | null;
-      return !target?.closest("[data-note],[data-block],[data-operation],[data-tool]");
+      return !target?.closest("[data-note],[data-block],[data-operation],[data-tool],[data-upload],[data-output]");
     },
     isPanDisabled: () => linkingRef.current,
   });
@@ -88,6 +120,26 @@ export default function App() {
   const [operations, setOperations] = useState<Operation[]>([]);
   const [blocks, setBlocks] = useState<AgentBlock[]>([]);
   const [tools, setTools] = useState<ToolNode[]>([]);
+  const [uploads, setUploads] = useState<UploadNode[]>([]);
+  const [outputs, setOutputs] = useState<OutputNode[]>([]);
+  const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [userThemeLocked, setUserThemeLocked] = useState(false);
+  const [backgroundPreset, setBackgroundPreset] = useState<"grid" | "aurora" | "blueprint">("grid");
+  const [clipboard, setClipboard] = useState<ClipboardItem | null>(null);
+  const [showStart, setShowStart] = useState(true);
+  const [startExiting, setStartExiting] = useState(false);
+  const startTimeoutRef = useRef<number | null>(null);
+  const agentPresets = useMemo(
+    () => [
+      { id: "router", name: "Router", description: "Split to two paths", inputCount: 1, outputCount: 2 },
+      { id: "fanout", name: "Fan-out", description: "Broadcast to three", inputCount: 1, outputCount: 3 },
+      { id: "collector", name: "Collector", description: "Merge two inputs", inputCount: 2, outputCount: 1 },
+      { id: "triage", name: "Triage", description: "Route with fallback", inputCount: 1, outputCount: 4 },
+      { id: "analysis", name: "Analysis", description: "Ingest two, emit two", inputCount: 2, outputCount: 2 },
+      { id: "expander", name: "Expander", description: "Multi-branch", inputCount: 1, outputCount: 5 },
+    ],
+    [],
+  );
   const [agentJsonInput, setAgentJsonInput] = useState<string>(`{
   "metadata": {
     "version": "1.0.0",
@@ -128,7 +180,7 @@ export default function App() {
     linkingRef.current = Boolean(linking);
   }, [linking]);
   const [hoveredInput, setHoveredInput] = useState<{
-    type: "block" | "operation" | "tool";
+    type: "block" | "operation" | "tool" | "output";
     id: string;
     inputIndex?: number;
   } | null>(null);
@@ -137,19 +189,27 @@ export default function App() {
   const nextOperationIdRef = useRef(1);
   const nextBlockIdRef = useRef(1);
   const nextToolIdRef = useRef(1);
+  const nextUploadIdRef = useRef(1);
+  const nextOutputIdRef = useRef(1);
   const nextConnectionIdRef = useRef(1);
   const dragOffsetRef = useRef({ x: 0, y: 0 });
   const operationDragOffsetRef = useRef({ x: 0, y: 0 });
   const blockDragOffsetRef = useRef({ x: 0, y: 0 });
   const toolDragOffsetRef = useRef({ x: 0, y: 0 });
+  const outputDragOffsetRef = useRef({ x: 0, y: 0 });
+  const uploadDragOffsetRef = useRef({ x: 0, y: 0 });
   const [draggingNoteId, setDraggingNoteId] = useState<string | null>(null);
   const [draggingOperationId, setDraggingOperationId] = useState<string | null>(null);
   const [draggingBlockId, setDraggingBlockId] = useState<string | null>(null);
   const [draggingToolId, setDraggingToolId] = useState<string | null>(null);
+  const [draggingUploadId, setDraggingUploadId] = useState<string | null>(null);
+  const [draggingOutputId, setDraggingOutputId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Selection>(null);
   const [hoveredOperationId, setHoveredOperationId] = useState<string | null>(null);
   const [hoveredBlockId, setHoveredBlockId] = useState<string | null>(null);
   const [hoveredToolId, setHoveredToolId] = useState<string | null>(null);
+  const [hoveredUploadId, setHoveredUploadId] = useState<string | null>(null);
+  const [hoveredOutputId, setHoveredOutputId] = useState<string | null>(null);
 
   const operationMeta: Record<
     OperationKind,
@@ -185,12 +245,14 @@ export default function App() {
     blocks: "Blocks",
     operations: "Operations",
     tools: "Tools",
+    io: "Inputs / Outputs",
     settings: "Settings",
   };
   const panelTabs: { id: PanelKey; label: string; symbol: string }[] = [
     { id: "blocks", label: "Blocks", symbol: "[]" },
     { id: "operations", label: "Operations", symbol: "Ops" },
     { id: "tools", label: "Tools", symbol: "TL" },
+    { id: "io", label: "I/O", symbol: "IO" },
     { id: "settings", label: "Settings", symbol: ":" },
   ];
   const handleCircle = useCallback(
@@ -238,6 +300,19 @@ export default function App() {
     ],
     [],
   );
+  const formatBytes = useCallback((size?: number) => {
+    if (size === undefined || size === null) return "";
+    if (size < 1024) return `${size} B`;
+    const units = ["KB", "MB", "GB"];
+    let value = size / 1024;
+    let unitIndex = 0;
+    while (value >= 1024 && unitIndex < units.length - 1) {
+      value /= 1024;
+      unitIndex += 1;
+    }
+    const formatted = value >= 10 ? value.toFixed(0) : value.toFixed(1);
+    return `${formatted} ${units[unitIndex]}`;
+  }, []);
 
   const toWorldPoint = useCallback(
     (clientX: number, clientY: number) => {
@@ -288,6 +363,22 @@ export default function App() {
       },
       [],
     );
+  const handleUploadDragStart = useCallback((event: DragEvent<HTMLDivElement>) => {
+    event.dataTransfer.effectAllowed = "copy";
+    event.dataTransfer.setData(
+      "application/json",
+      JSON.stringify({ type: "upload-block" }),
+    );
+    event.dataTransfer.setData("text/plain", "upload-block");
+  }, []);
+  const handleOutputDragStart = useCallback((event: DragEvent<HTMLDivElement>) => {
+    event.dataTransfer.effectAllowed = "copy";
+    event.dataTransfer.setData(
+      "application/json",
+      JSON.stringify({ type: "output-block" }),
+    );
+    event.dataTransfer.setData("text/plain", "output-block");
+  }, []);
 
   const handleCanvasDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -318,6 +409,8 @@ export default function App() {
 
       if (!payloadType && payloadRaw?.includes("sticky-note")) payloadType = "sticky-note";
       if (!payloadType && payloadRaw?.includes("agent-block")) payloadType = "agent-block";
+      if (!payloadType && payloadRaw?.includes("upload-block")) payloadType = "upload-block";
+      if (!payloadType && payloadRaw?.includes("output-block")) payloadType = "output-block";
       if (!payloadType && payloadRaw?.includes("operation")) payloadType = "operation";
       if (!payloadType && payloadRaw?.includes("tool")) payloadType = "tool";
       if (payloadType === "operation" && !payloadKind) {
@@ -365,16 +458,46 @@ export default function App() {
 
       if (payloadType === "agent-block") {
         const id = nextBlockIdRef.current++;
+        const preset = agentPresets[0];
         setBlocks((prev) => [
           ...prev,
           {
             id: `block-${id}`,
             x: worldX,
             y: worldY,
-            name: "Agent Block",
-            description: "1 input, 2 outputs",
-            inputCount: 1,
-            outputCount: 2,
+            name: preset?.name ?? "Agent Block",
+            description: preset?.description ?? "1 input, 2 outputs",
+            inputCount: preset?.inputCount ?? 1,
+            outputCount: preset?.outputCount ?? 2,
+            presetId: preset?.id,
+          },
+        ]);
+      }
+
+      if (payloadType === "upload-block") {
+        const id = nextUploadIdRef.current++;
+        setUploads((prev) => [
+          ...prev,
+          {
+            id: `upload-${id}`,
+            x: worldX,
+            y: worldY,
+            name: "Upload data",
+            status: "idle",
+          },
+        ]);
+      }
+
+      if (payloadType === "output-block") {
+        const id = nextOutputIdRef.current++;
+        setOutputs((prev) => [
+          ...prev,
+          {
+            id: `output-${id}`,
+            x: worldX,
+            y: worldY,
+            name: "Output",
+            format: "Describe the format here (e.g., JSON summary, Markdown bullets, CSV schema).",
           },
         ]);
       }
@@ -394,7 +517,7 @@ export default function App() {
         ]);
       }
     },
-    [containerRef, toolPalette, transform.x, transform.y, transform.zoom],
+    [agentPresets, containerRef, toolPalette, transform.x, transform.y, transform.zoom],
   );
 
   const handleGenerateAgentsFromJson = useCallback(() => {
@@ -554,9 +677,129 @@ export default function App() {
     const width = 180;
     const height = 110;
     const output: AnchorPoint = { x: tool.x + width / 2, y: tool.y - 6, dir: "up" };
-    const input: AnchorPoint = { x: tool.x, y: tool.y + height / 2, dir: "left" };
+    const input: AnchorPoint = output; // single connector used for both directions
     return { width, height, output, input };
   }, []);
+  const getUploadHandles = useCallback((upload: UploadNode) => {
+    const width = 240;
+    const height = 210;
+    const output: AnchorPoint = { x: upload.x + width, y: upload.y + height / 2, dir: "right" };
+    return { width, height, output };
+  }, []);
+  const getOutputHandles = useCallback((output: OutputNode) => {
+    const width = 240;
+    const height = 240;
+    const input: AnchorPoint = { x: output.x, y: output.y + height / 2, dir: "left" };
+    return { width, height, input };
+  }, []);
+  const clamp = useCallback((value: number, min: number, max: number) => Math.min(max, Math.max(min, value)), []);
+  const MIN_IO = 1;
+  const MAX_IO = 6;
+  const applyBlockIO = useCallback(
+    (
+      blockId: string,
+      nextInputCount: number,
+      nextOutputCount: number,
+      extra?: Partial<Pick<AgentBlock, "name" | "description" | "presetId">>,
+    ) => {
+      const targetBlock = blocks.find((b) => b.id === blockId);
+      if (!targetBlock) return;
+      const oldInputCount = targetBlock.inputCount;
+      const newInputs = clamp(nextInputCount, MIN_IO, MAX_IO);
+      const newOutputs = clamp(nextOutputCount, MIN_IO, MAX_IO);
+      const oldToolPortIndex = oldInputCount;
+      const newToolPortIndex = newInputs;
+
+      setBlocks((prev) =>
+        prev.map((b) =>
+          b.id === blockId
+            ? {
+                ...b,
+                inputCount: newInputs,
+                outputCount: newOutputs,
+                ...extra,
+              }
+            : b,
+        ),
+      );
+
+      setConnections((prev) => {
+        // drop output connections past new output count
+        let next = prev.filter(
+          (conn) => !(conn.from.type === "block" && conn.from.id === blockId && conn.from.port >= newOutputs),
+        );
+
+        // remap tool-port connections, drop inputs that are out of range
+        next = next
+          .map((conn) => {
+            if (conn.to.type === "block" && conn.to.id === blockId) {
+              const idx = conn.to.inputIndex ?? 0;
+              if (idx === oldToolPortIndex) {
+                return { ...conn, to: { ...conn.to, inputIndex: newToolPortIndex } };
+              }
+            }
+            return conn;
+          })
+          .filter((conn) => {
+            if (conn.to.type === "block" && conn.to.id === blockId) {
+              const idx = conn.to.inputIndex ?? 0;
+              if (idx === newToolPortIndex) return true;
+              return idx < newInputs;
+            }
+            return true;
+          });
+
+        return next;
+      });
+    },
+    [MAX_IO, MIN_IO, blocks, clamp],
+  );
+  const changeBlockInputs = useCallback(
+    (blockId: string, delta: number) => {
+      const block = blocks.find((b) => b.id === blockId);
+      if (!block) return;
+      const newInputs = clamp(block.inputCount + delta, MIN_IO, MAX_IO);
+      applyBlockIO(blockId, newInputs, block.outputCount, { presetId: "custom" });
+    },
+    [MAX_IO, MIN_IO, applyBlockIO, blocks, clamp],
+  );
+  const changeBlockOutputs = useCallback(
+    (blockId: string, delta: number) => {
+      const block = blocks.find((b) => b.id === blockId);
+      if (!block) return;
+      const newOutputs = clamp(block.outputCount + delta, MIN_IO, MAX_IO);
+      applyBlockIO(blockId, block.inputCount, newOutputs, { presetId: "custom" });
+    },
+    [MAX_IO, MIN_IO, applyBlockIO, blocks, clamp],
+  );
+  const applyPresetToBlock = useCallback(
+    (blockId: string, presetId: string) => {
+      const preset = agentPresets.find((p) => p.id === presetId);
+      if (!preset) return;
+      applyBlockIO(
+        blockId,
+        preset.inputCount,
+        preset.outputCount,
+        { name: preset.name, description: preset.description, presetId: preset.id },
+      );
+    },
+    [agentPresets, applyBlockIO],
+  );
+  const markBlockCustom = useCallback((blockId: string) => {
+    setBlocks((prev) =>
+      prev.map((b) => (b.id === blockId ? { ...b, presetId: "custom" } : b)),
+    );
+  }, []);
+  const handleEnterWorkspace = useCallback(() => {
+    if (startExiting) return;
+    setStartExiting(true);
+    if (startTimeoutRef.current) clearTimeout(startTimeoutRef.current);
+    startTimeoutRef.current = window.setTimeout(() => {
+      setShowStart(false);
+      setStartExiting(false);
+      startTimeoutRef.current = null;
+    }, 450);
+  }, [startExiting]);
 
   const getOutputAnchor = useCallback(
     (endpoint: LinkSource) => {
@@ -576,6 +819,12 @@ export default function App() {
         const handles = getToolHandles(tool);
         return handles.output;
       }
+      if (endpoint.type === "upload") {
+        const upload = uploads.find((u) => u.id === endpoint.id);
+        if (!upload) return null;
+        const handles = getUploadHandles(upload);
+        return handles.output;
+      }
       const operation = operations.find((op) => op.id === endpoint.id);
       if (!operation) return null;
       const handles = getOperationHandles(operation);
@@ -585,7 +834,7 @@ export default function App() {
       );
       return handles.outputAnchors[index];
     },
-    [blocks, getBlockHandles, getOperationHandles, getToolHandles, operations, tools],
+    [blocks, getBlockHandles, getOperationHandles, getToolHandles, getUploadHandles, operations, tools, uploads],
   );
 
   const getInputAnchor = useCallback(
@@ -608,6 +857,12 @@ export default function App() {
         const handles = getToolHandles(tool);
         return handles.input;
       }
+      if (target.type === "output") {
+        const output = outputs.find((o) => o.id === target.id);
+        if (!output) return null;
+        const handles = getOutputHandles(output);
+        return handles.input;
+      }
       const operation = operations.find((op) => op.id === target.id);
       if (!operation) return null;
       const handles = getOperationHandles(operation);
@@ -617,33 +872,16 @@ export default function App() {
       );
       return handles.inputAnchors[index];
     },
-    [blocks, getBlockHandles, getOperationHandles, getToolHandles, operations, tools],
+    [blocks, getBlockHandles, getOperationHandles, getOutputHandles, getToolHandles, operations, outputs, tools],
   );
 
   const buildConnectionPath = useCallback(
     (start: AnchorPoint, end: AnchorPoint) => {
-      const pad = 16;
-      const startDir = start.dir;
-      const first: AnchorPoint = { ...start };
-      if (startDir === "left") first.x -= pad;
-      else if (startDir === "right") first.x += pad;
-      else if (startDir === "up") first.y -= pad;
-      else if (startDir === "down") first.y += pad;
-
-      const dx = end.x - first.x;
-      const dy = end.y - first.y;
-      const absDx = Math.abs(dx);
-      if (absDx < 12 && Math.abs(dy) < 12) {
-        return `M ${start.x} ${start.y} L ${first.x} ${first.y} L ${end.x} ${end.y}`;
-      }
-
-      const curveDir =
-        startDir === "left" ? -1 : startDir === "right" ? 1 : dx >= 0 ? 1 : -1;
-      const curve = Math.min(240, Math.max(70, absDx * 0.68));
-      const yEase = dy * 0.24;
-      const cx1 = first.x + curveDir * curve;
-      const cx2 = end.x - curveDir * curve;
-      return `M ${start.x} ${start.y} L ${first.x} ${first.y} C ${cx1} ${first.y + yEase} ${cx2} ${end.y - yEase} ${end.x} ${end.y}`;
+      const dx = end.x - start.x;
+      const offset = Math.max(Math.abs(dx) * 0.5, 40);
+      const c1x = start.x + offset;
+      const c2x = end.x - offset;
+      return `M ${start.x} ${start.y} C ${c1x} ${start.y} ${c2x} ${end.y} ${end.x} ${end.y}`;
     },
     [],
   );
@@ -889,16 +1127,186 @@ export default function App() {
     },
     [draggingToolId, selected],
   );
+  const handleUploadPointerDown = useCallback(
+    (uploadId: string) => (event: ReactPointerEvent<HTMLDivElement>) => {
+      const target = event.target as HTMLElement | null;
+      if (
+        linkingRef.current ||
+        target?.closest("[data-connector]") ||
+        target?.closest("[data-upload-control]")
+      ) {
+        return;
+      }
+      event.stopPropagation();
+      event.preventDefault();
+      setSelected((prev) =>
+        prev?.type === "upload" && prev.id === uploadId ? null : { type: "upload", id: uploadId },
+      );
+      const upload = uploads.find((u) => u.id === uploadId);
+      const world = toWorldPoint(event.clientX, event.clientY);
+      if (!upload || !world) return;
+      uploadDragOffsetRef.current = { x: world.x - upload.x, y: world.y - upload.y };
+      setDraggingUploadId(uploadId);
+      setSelected({ type: "upload", id: uploadId });
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+    },
+    [uploads, toWorldPoint],
+  );
+
+  const handleUploadPointerMove = useCallback(
+    (uploadId: string) => (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (draggingUploadId !== uploadId) return;
+      const world = toWorldPoint(event.clientX, event.clientY);
+      if (!world) return;
+      const newX = world.x - uploadDragOffsetRef.current.x;
+      const newY = world.y - uploadDragOffsetRef.current.y;
+      setUploads((prev) =>
+        prev.map((upload) => (upload.id === uploadId ? { ...upload, x: newX, y: newY } : upload)),
+      );
+    },
+    [draggingUploadId, toWorldPoint],
+  );
+
+  const handleUploadPointerUp = useCallback(
+    (uploadId: string) => (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (draggingUploadId !== uploadId) return;
+      setDraggingUploadId(null);
+      uploadDragOffsetRef.current = { x: 0, y: 0 };
+      event.currentTarget.releasePointerCapture?.(event.pointerId);
+    },
+    [draggingUploadId],
+  );
+
+  const handleRemoveUpload = useCallback(
+    (uploadId: string) => {
+      setUploads((prev) => prev.filter((upload) => upload.id !== uploadId));
+      if (draggingUploadId === uploadId) setDraggingUploadId(null);
+      if (selected?.type === "upload" && selected.id === uploadId) setSelected(null);
+      setConnections((prev) =>
+        prev.filter(
+          (conn) =>
+            !(
+              conn.from.type === "upload" && conn.from.id === uploadId
+            ),
+        ),
+      );
+    },
+    [draggingUploadId, selected],
+  );
+
+  const handleUploadFileChange = useCallback(
+    (uploadId: string) => (event: ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      setUploads((prev) =>
+        prev.map((upload) =>
+          upload.id === uploadId
+            ? {
+                ...upload,
+                status: file ? "ready" : "idle",
+                fileName: file?.name,
+                fileSize: file?.size,
+                fileType: file?.type || (file?.name ? `.${file.name.split(".").pop() ?? ""}` : undefined),
+              }
+            : upload,
+        ),
+      );
+      event.target.value = "";
+    },
+    [],
+  );
+
+  const handleOutputPointerDown = useCallback(
+    (outputId: string) => (event: ReactPointerEvent<HTMLDivElement>) => {
+      const target = event.target as HTMLElement | null;
+      if (
+        linkingRef.current ||
+        target?.closest("[data-connector]") ||
+        target?.closest("[data-output-control]")
+      ) {
+        return;
+      }
+      event.stopPropagation();
+      event.preventDefault();
+      setSelected((prev) =>
+        prev?.type === "output" && prev.id === outputId ? null : { type: "output", id: outputId },
+      );
+      const output = outputs.find((o) => o.id === outputId);
+      const world = toWorldPoint(event.clientX, event.clientY);
+      if (!output || !world) return;
+      outputDragOffsetRef.current = { x: world.x - output.x, y: world.y - output.y };
+      setDraggingOutputId(outputId);
+      setSelected({ type: "output", id: outputId });
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+    },
+    [outputs, toWorldPoint],
+  );
+
+  const handleOutputPointerMove = useCallback(
+    (outputId: string) => (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (draggingOutputId !== outputId) return;
+      const world = toWorldPoint(event.clientX, event.clientY);
+      if (!world) return;
+      const newX = world.x - outputDragOffsetRef.current.x;
+      const newY = world.y - outputDragOffsetRef.current.y;
+      setOutputs((prev) =>
+        prev.map((output) => (output.id === outputId ? { ...output, x: newX, y: newY } : output)),
+      );
+    },
+    [draggingOutputId, toWorldPoint],
+  );
+
+  const handleOutputPointerUp = useCallback(
+    (outputId: string) => (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (draggingOutputId !== outputId) return;
+      setDraggingOutputId(null);
+      outputDragOffsetRef.current = { x: 0, y: 0 };
+      event.currentTarget.releasePointerCapture?.(event.pointerId);
+    },
+    [draggingOutputId],
+  );
+
+  const handleRemoveOutput = useCallback(
+    (outputId: string) => {
+      setOutputs((prev) => prev.filter((output) => output.id !== outputId));
+      if (draggingOutputId === outputId) setDraggingOutputId(null);
+      if (selected?.type === "output" && selected.id === outputId) setSelected(null);
+      setConnections((prev) =>
+        prev.filter(
+          (conn) =>
+            !(
+              (conn.to.type === "output" && conn.to.id === outputId)
+            ),
+        ),
+      );
+    },
+    [draggingOutputId, selected],
+  );
+
+  const handleOutputFormatChange = useCallback(
+    (outputId: string) => (event: ChangeEvent<HTMLTextAreaElement>) => {
+      const value = event.target.value;
+      setOutputs((prev) =>
+        prev.map((output) => (output.id === outputId ? { ...output, format: value } : output)),
+      );
+    },
+    [],
+  );
+  const handleOutputFormatBlur = useCallback((outputId: string) => () => {
+    // delay so clicks on other elements can set selection first
+    setTimeout(() => {
+      setSelected((prev) => (prev?.type === "output" && prev.id === outputId ? null : prev));
+    }, 0);
+  }, []);
 
   const handleInputEnter = useCallback(
-    (target: { type: "block" | "operation" | "tool"; id: string; inputIndex?: number }) => () => {
+    (target: { type: "block" | "operation" | "tool" | "output"; id: string; inputIndex?: number }) => () => {
       if (linking) setHoveredInput(target);
     },
     [linking],
   );
 
   const handleInputLeave = useCallback(
-    (target: { type: "block" | "operation" | "tool"; id: string; inputIndex?: number }) => () => {
+    (target: { type: "block" | "operation" | "tool" | "output"; id: string; inputIndex?: number }) => () => {
       if (
         hoveredInput &&
         hoveredInput.type === target.type &&
@@ -937,6 +1345,7 @@ export default function App() {
       (event: ReactPointerEvent<HTMLDivElement | HTMLButtonElement>) => {
         event.stopPropagation();
         event.preventDefault();
+        if (event.detail >= 2) return;
         const anchor = getInputAnchor(target);
         if (!anchor) return;
         linkingRef.current = true;
@@ -950,6 +1359,7 @@ export default function App() {
       (event: ReactPointerEvent<HTMLButtonElement | HTMLDivElement>) => {
         event.stopPropagation();
         event.preventDefault();
+        if (event.detail >= 2) return;
         const anchor = getOutputAnchor(from);
         if (!anchor) return;
         linkingRef.current = true;
@@ -988,6 +1398,10 @@ export default function App() {
         target.type === "block" &&
         targetHandles &&
         (target.inputIndex ?? -1) === targetHandles.toolPortIndex;
+      const targetOperation =
+        target.type === "operation" ? operations.find((op) => op.id === target.id) : null;
+      const allowMultipleForTarget =
+        target.type === "operation" && targetOperation?.kind === "aggregate";
       setConnections((prev) => {
         if (isBlockToolTarget) {
           const withoutDuplicate = prev.filter(
@@ -1003,6 +1417,19 @@ export default function App() {
           return [...withoutDuplicate, { id: `conn-${id}`, from, to: target }];
         }
         const targetSlot = target.inputIndex ?? 0;
+        if (allowMultipleForTarget) {
+          const withoutExactDuplicate = prev.filter(
+            (conn) =>
+              !(
+                conn.from.type === from.type &&
+                conn.from.id === from.id &&
+                conn.to.type === target.type &&
+                conn.to.id === target.id &&
+                (conn.to.inputIndex ?? 0) === targetSlot
+              ),
+          );
+          return [...withoutExactDuplicate, { id: `conn-${id}`, from, to: target }];
+        }
         // enforce single connection per target slot (block/operation/tool inputs)
         return [
           ...prev.filter(
@@ -1021,17 +1448,19 @@ export default function App() {
     linkingRef.current = false;
     setHoveredInput(null);
     setHoveredOutput(null);
-  }, [blocks, getBlockHandles, hoveredInput, hoveredOutput, linking]);
+  }, [blocks, getBlockHandles, hoveredInput, hoveredOutput, linking, operations]);
 
   const handleCanvasPointerDown = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
       const target = event.target as HTMLElement | null;
-      if (target?.closest("[data-note],[data-block],[data-operation],[data-tool]")) return;
+      if (target?.closest("[data-note],[data-block],[data-operation],[data-tool],[data-upload],[data-output]")) return;
       setSelected(null);
       setHoveredInput(null);
       setHoveredOutput(null);
       setHoveredBlockId(null);
       setHoveredToolId(null);
+      setHoveredUploadId(null);
+      setHoveredOutputId(null);
       setLinking(null);
       linkingRef.current = false;
     },
@@ -1040,12 +1469,90 @@ export default function App() {
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
-      if (!selected) return;
-      if (event.key !== "Backspace" && event.key !== "Delete") return;
       const target = event.target as HTMLElement | null;
       if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) {
         return;
       }
+      const isMac = navigator.platform.toUpperCase().includes("MAC");
+      const modKey = isMac ? event.metaKey : event.ctrlKey;
+      const key = event.key.toLowerCase();
+
+      if (modKey && key === "c" && selected) {
+        event.preventDefault();
+        if (selected.type === "block") {
+          const block = blocks.find((b) => b.id === selected.id);
+          if (block) setClipboard({ type: "block", data: block });
+        } else if (selected.type === "operation") {
+          const op = operations.find((o) => o.id === selected.id);
+          if (op) setClipboard({ type: "operation", data: op });
+        } else if (selected.type === "tool") {
+          const tool = tools.find((t) => t.id === selected.id);
+          if (tool) setClipboard({ type: "tool", data: tool });
+        } else if (selected.type === "upload") {
+          const upload = uploads.find((u) => u.id === selected.id);
+          if (upload) setClipboard({ type: "upload", data: upload });
+        } else if (selected.type === "output") {
+          const output = outputs.find((o) => o.id === selected.id);
+          if (output) setClipboard({ type: "output", data: output });
+        } else if (selected.type === "note") {
+          const note = notes.find((n) => n.id === selected.id);
+          if (note) setClipboard({ type: "note", data: note });
+        }
+        return;
+      }
+
+      if (modKey && key === "v" && clipboard) {
+        event.preventDefault();
+        const OFFSET = 26;
+        if (clipboard.type === "block") {
+          const base = clipboard.data;
+          const id = nextBlockIdRef.current++;
+          const newBlock: AgentBlock = {
+            ...base,
+            id: `block-${id}`,
+            x: base.x + OFFSET,
+            y: base.y + OFFSET,
+            inputCount: clamp(base.inputCount, MIN_IO, MAX_IO),
+            outputCount: clamp(base.outputCount, MIN_IO, MAX_IO),
+          };
+          setBlocks((prev) => [...prev, newBlock]);
+          setSelected({ type: "block", id: newBlock.id });
+        } else if (clipboard.type === "operation") {
+          const base = clipboard.data;
+          const id = nextOperationIdRef.current++;
+          const newOp: Operation = { ...base, id: `op-${id}`, x: base.x + OFFSET, y: base.y + OFFSET };
+          setOperations((prev) => [...prev, newOp]);
+          setSelected({ type: "operation", id: newOp.id });
+        } else if (clipboard.type === "tool") {
+          const base = clipboard.data;
+          const id = nextToolIdRef.current++;
+          const newTool: ToolNode = { ...base, id: `tool-${id}`, x: base.x + OFFSET, y: base.y + OFFSET };
+          setTools((prev) => [...prev, newTool]);
+          setSelected({ type: "tool", id: newTool.id });
+        } else if (clipboard.type === "upload") {
+          const base = clipboard.data;
+          const id = nextUploadIdRef.current++;
+          const newUpload: UploadNode = { ...base, id: `upload-${id}`, x: base.x + OFFSET, y: base.y + OFFSET };
+          setUploads((prev) => [...prev, newUpload]);
+          setSelected({ type: "upload", id: newUpload.id });
+        } else if (clipboard.type === "output") {
+          const base = clipboard.data;
+          const id = nextOutputIdRef.current++;
+          const newOutput: OutputNode = { ...base, id: `output-${id}`, x: base.x + OFFSET, y: base.y + OFFSET };
+          setOutputs((prev) => [...prev, newOutput]);
+          setSelected({ type: "output", id: newOutput.id });
+        } else if (clipboard.type === "note") {
+          const base = clipboard.data;
+          const id = nextIdRef.current++;
+          const newNote: Note = { ...base, id: `note-${id}`, x: base.x + OFFSET, y: base.y + OFFSET };
+          setNotes((prev) => [...prev, newNote]);
+          setSelected({ type: "note", id: newNote.id });
+        }
+        return;
+      }
+
+      if (!selected) return;
+      if (event.key !== "Backspace" && event.key !== "Delete") return;
       event.preventDefault();
       if (selected.type === "note") {
         handleRemoveNote(selected.id);
@@ -1055,15 +1562,63 @@ export default function App() {
         handleRemoveOperation(selected.id);
       } else if (selected.type === "tool") {
         handleRemoveTool(selected.id);
+      } else if (selected.type === "upload") {
+        handleRemoveUpload(selected.id);
+      } else if (selected.type === "output") {
+        handleRemoveOutput(selected.id);
       }
     }
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handleRemoveBlock, handleRemoveNote, handleRemoveOperation, handleRemoveTool, selected]);
+  }, [
+    MAX_IO,
+    MIN_IO,
+    blocks,
+    clipboard,
+    clamp,
+    handleRemoveBlock,
+    handleRemoveNote,
+    handleRemoveOperation,
+    handleRemoveOutput,
+    handleRemoveTool,
+    handleRemoveUpload,
+    notes,
+    operations,
+    outputs,
+    selected,
+    tools,
+    uploads,
+  ]);
+
+  useEffect(() => {
+    return () => {
+      if (startTimeoutRef.current) clearTimeout(startTimeoutRef.current);
+    };
+  }, []);
+
+  const appThemeClass =
+    theme === "dark"
+      ? "bg-slate-950 text-slate-100"
+      : "bg-slate-50 text-slate-900";
+  const actionButtonClass =
+    theme === "dark"
+      ? "rounded-full border border-slate-700 bg-slate-800/90 px-4 py-2 text-sm font-semibold text-slate-100 shadow-sm hover:bg-slate-700"
+      : "rounded-full border border-slate-200 bg-white/90 px-4 py-2 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-100";
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const applySystemTheme = (prefersDark: boolean) => {
+      if (userThemeLocked) return;
+      setTheme(prefersDark ? "dark" : "light");
+    };
+    applySystemTheme(media.matches);
+    const listener = (event: MediaQueryListEvent) => applySystemTheme(event.matches);
+    media.addEventListener("change", listener);
+    return () => media.removeEventListener("change", listener);
+  }, [userThemeLocked]);
 
   return (
-    <div className="relative h-screen w-screen bg-slate-50 overflow-hidden">
+    <div className={`relative h-screen w-screen overflow-hidden transition-colors duration-200 ${appThemeClass}`}>
       <div className="absolute left-0 top-0 bottom-0 z-30 flex">
         <div className="flex flex-col items-center gap-2 bg-slate-900/95 px-2 py-3 text-white shadow-xl">
           {panelTabs.map((item) => (
@@ -1084,10 +1639,15 @@ export default function App() {
         </div>
 
         {activePanel && (
-          <div className="w-72 border-r border-slate-200 bg-white/95 backdrop-blur px-4 py-5 shadow-xl transition-all flex flex-col overflow-hidden">
+          <div
+            className={`w-72 backdrop-blur px-4 py-5 shadow-xl transition-all flex flex-col overflow-hidden ${
+              theme === "dark"
+                ? "border-r border-slate-800 bg-slate-900/90 text-slate-100"
+                : "border-r border-slate-200 bg-white/95 text-slate-900"
+            }`}
+          >
             <div className="flex items-start justify-between">
               <div>
-                <p className="text-xs uppercase tracking-wide text-slate-500">Panel</p>
                 <h2 className="text-lg font-semibold text-slate-900">
                   {activePanel ? panelTitles[activePanel] : ""}
                 </h2>
@@ -1230,9 +1790,6 @@ export default function App() {
                     <p className="text-xs uppercase tracking-wide text-slate-500">Tools</p>
                     <p className="text-sm text-slate-600">Eleven trapezoid picks ready to drop</p>
                   </div>
-                  <span className="rounded-full bg-slate-900/90 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-white shadow-sm">
-                    11 tools
-                  </span>
                 </div>
                 <div className="mt-3 h-[calc(100vh-240px)] overflow-y-auto pr-2">
                   <div className="grid grid-cols-2 gap-3 auto-rows-max">
@@ -1244,24 +1801,12 @@ export default function App() {
                         onDragStart={handleToolDragStart(tool.name)}
                       >
                         <div
-                          className={`relative h-28 w-32 rounded-xl bg-gradient-to-br ${tool.gradient} ring-1 ring-inset ${tool.ring} shadow-sm transition duration-200 group-hover:shadow-md group-hover:-translate-y-0.5`}
+                          className={`relative h-[110px] w-[180px] rounded-lg bg-gradient-to-br ${tool.gradient} ring-1 ring-inset ${tool.ring} shadow-sm transition duration-150 group-hover:shadow-md group-hover:-translate-y-0.5`}
                           aria-label={tool.name}
-                          style={{ clipPath: "polygon(16% 0%, 84% 0%, 100% 100%, 0 100%)" }}
                         >
-                          <div className="absolute -top-4 left-1/2 -translate-x-1/2">
-                            <span className={`inline-flex items-center rounded-full ${tool.accent} px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-white shadow-sm ring-1 ring-inset ring-white/40`}>
-                              Tool
-                            </span>
-                          </div>
-                          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 px-3 text-center">
-                            <div className="h-8 w-8 rounded-full bg-white/80 ring-1 ring-slate-200 shadow-sm shadow-slate-200/60 flex items-center justify-center">
-                              <span className={`h-2 w-2 rounded-full ${tool.accent}`} />
-                            </div>
-                            <p className="text-sm font-semibold text-slate-900">{tool.name}</p>
-                            <p className="text-[11px] text-slate-600">{tool.tagline}</p>
-                          </div>
-                          <div className="absolute -bottom-3 left-1/2 -translate-x-1/2">
-                            <div className={`h-2 w-12 rounded-full bg-white/80 ring-1 ring-inset ${tool.ring}`} />
+                          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-4 text-center">
+                            <p className="text-sm font-semibold text-slate-900 drop-shadow-sm">{tool.name}</p>
+                            <p className="text-[11px] text-slate-700 leading-tight">{tool.tagline}</p>
                           </div>
                         </div>
                       </div>
@@ -1271,10 +1816,152 @@ export default function App() {
               </div>
             )}
 
+            {activePanel === "io" && (
+              <div className="mt-4 space-y-5">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-slate-500">Inputs / Outputs</p>
+                    <p className="text-sm text-slate-600">Place data ingress and egress blocks</p>
+                  </div>
+                  <span className="rounded-full bg-slate-900/90 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-white shadow-sm">
+                    IO
+                  </span>
+                </div>
+
+                <div className="space-y-4">
+                  <div
+                    className="cursor-grab rounded-xl border border-slate-200 bg-gradient-to-br from-indigo-50 via-white to-sky-100 p-4 shadow-sm ring-1 ring-inset ring-indigo-100 active:cursor-grabbing"
+                    draggable
+                    onDragStart={handleUploadDragStart}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900">Upload block</p>
+                        <p className="text-xs text-slate-600">PDF, CSV, Excel, JSON, TXT and more</p>
+                      </div>
+                      <span className="rounded-full bg-white/80 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-700 ring-1 ring-slate-200">
+                        Drag
+                      </span>
+                    </div>
+                    <div className="mt-3 grid grid-cols-[auto,1fr] gap-3 items-center text-[11px] text-slate-700">
+                      <div className="h-10 w-10 rounded-lg bg-white/80 ring-1 ring-slate-200 shadow-sm flex items-center justify-center font-semibold text-indigo-600">
+                        ⬆
+                      </div>
+                      <div className="space-y-1">
+                        <p className="font-semibold text-slate-800">Drop onto canvas</p>
+                        <p className="text-slate-600">Click “Choose file” on the block to attach your data.</p>
+                      </div>
+                    </div>
+                    <p className="mt-3 text-[11px] text-slate-600">
+                      Use this as a data source before branching into agents or tools.
+                    </p>
+                  </div>
+
+                  <div
+                    className="cursor-grab rounded-xl border border-slate-200 bg-gradient-to-br from-emerald-50 via-white to-amber-100 p-4 shadow-sm ring-1 ring-inset ring-emerald-100 active:cursor-grabbing"
+                    draggable
+                    onDragStart={handleOutputDragStart}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900">Output block</p>
+                        <p className="text-xs text-slate-600">Define response/formatting requirements</p>
+                      </div>
+                      <span className="rounded-full bg-white/80 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-700 ring-1 ring-slate-200">
+                        Drag
+                      </span>
+                    </div>
+                    <div className="mt-3 grid grid-cols-[auto,1fr] gap-3 items-center text-[11px] text-slate-700">
+                      <div className="h-10 w-10 rounded-lg bg-white/80 ring-1 ring-emerald-100 shadow-sm flex items-center justify-center font-semibold text-emerald-600">
+                        ⬇
+                      </div>
+                      <div className="space-y-1">
+                        <p className="font-semibold text-slate-800">Connect to outputs</p>
+                        <p className="text-slate-600">Collect results and specify final format.</p>
+                      </div>
+                    </div>
+                    <p className="mt-3 text-[11px] text-slate-600">
+                      Ideal for summarizing, shaping JSON payloads, or preparing reports.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {activePanel === "settings" && (
-              <div className="mt-4 space-y-3 text-sm text-slate-700">
-                <p className="text-xs uppercase tracking-wide text-slate-500">Workspace</p>
-                <p>Adjust canvas options here later. Reset view is under Operations for now.</p>
+              <div className="mt-4 space-y-5 text-sm">
+                <div className="space-y-2">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">Theme</p>
+                  <div className="flex items-center gap-2">
+                    {(["light", "dark"] as const).map((mode) => (
+                      <button
+                        key={mode}
+                        className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold transition ${
+                          theme === mode
+                            ? "bg-slate-900 text-white border-slate-700 shadow-sm"
+                            : "bg-white/80 border-slate-200 text-slate-700 hover:bg-slate-100"
+                        }`}
+                        onClick={() => {
+                          setUserThemeLocked(true);
+                          setTheme(mode);
+                        }}
+                      >
+                        <span
+                          className={`h-2.5 w-2.5 rounded-full ${
+                            mode === "light" ? "bg-amber-400" : "bg-emerald-400"
+                          }`}
+                        />
+                        {mode === "light" ? "Light" : "Dark"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">Canvas background</p>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { id: "grid", name: "Soft grid", accent: "from-slate-100 via-white to-slate-200" },
+                      { id: "aurora", name: "Aurora", accent: "from-emerald-100 via-teal-100 to-indigo-100" },
+                      { id: "blueprint", name: "Blueprint", accent: "from-sky-100 via-blue-100 to-indigo-200" },
+                    ].map((preset) => (
+                      <button
+                        key={preset.id}
+                        className={`relative h-24 rounded-xl border text-left p-3 shadow-sm transition ${
+                          backgroundPreset === preset.id
+                            ? "border-slate-900 ring-2 ring-slate-900"
+                            : "border-slate-200 hover:border-slate-300"
+                        } bg-gradient-to-br ${preset.accent}`}
+                        onClick={() => setBackgroundPreset(preset.id as typeof backgroundPreset)}
+                      >
+                        <span className="text-xs font-semibold text-slate-800">{preset.name}</span>
+                        {backgroundPreset === preset.id && (
+                          <span className="absolute right-2 top-2 rounded-full bg-slate-900 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
+                            Active
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[11px] text-slate-600">
+                    Backgrounds apply to the canvas; theme updates surrounding UI chrome.
+                  </p>
+                </div>
+
+                <div className="space-y-3">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">Links</p>
+                  <div className="flex flex-wrap gap-2">
+                    {["Docs", "Changelog", "Support"].map((label) => (
+                      <button
+                        key={label}
+                        className="rounded-full border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                        onClick={() => setSelected(null)}
+                      >
+                        Add {label} link
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
             )}
           </div>
@@ -1282,14 +1969,42 @@ export default function App() {
       </div>
 
       <main className="relative z-0 h-full w-full">
+        <div className="absolute top-4 right-6 z-30 flex items-center gap-3">
+          <button
+            className={actionButtonClass}
+            onClick={() => {
+              if (startTimeoutRef.current) clearTimeout(startTimeoutRef.current);
+              setStartExiting(false);
+              setShowStart(true);
+            }}
+          >
+            Flow
+          </button>
+          <button
+            className={actionButtonClass}
+            onClick={() => setActivePanel("settings")}
+          >
+            About
+          </button>
+          <button
+            className={actionButtonClass}
+            onClick={() => {
+              reset();
+              setSelected(null);
+            }}
+          >
+            Reset
+          </button>
+        </div>
         <div
           ref={containerRef}
           className="absolute inset-0"
           style={{ touchAction: "none" }}
           onDragOver={handleCanvasDragOver}
           onDrop={handleCanvasDrop}
+          onPointerDownCapture={handleCanvasPointerDown}
         >
-          <Background transform={transform} />
+          <Background transform={transform} theme={theme} preset={backgroundPreset} />
           <div
             style={{
               position: "absolute",
@@ -1303,7 +2018,6 @@ export default function App() {
               willChange: "transform",
               pointerEvents: "auto",
             }}
-            onPointerDown={handleCanvasPointerDown}
             onPointerMove={moveLinking}
             onPointerUp={() => {
               if (linking) finalizeLinking();
@@ -1365,6 +2079,10 @@ export default function App() {
                 draggingBlockId === block.id ||
                 linkingActive ||
                 hoveredBlockId === block.id;
+              const blockPresetValue =
+                block.presetId && agentPresets.some((p) => p.id === block.presetId)
+                  ? block.presetId
+                  : "custom";
               const handles = getBlockHandles(block);
               return (
                 <div
@@ -1404,8 +2122,28 @@ export default function App() {
                       ×
                     </button>
                     <div className="flex items-start justify-between">
-                      <div>
+                      <div className="flex items-center gap-2">
                         <p className="text-sm font-semibold text-slate-900">{block.name}</p>
+                        <select
+                          className="rounded border border-slate-200 bg-white/80 text-xs font-semibold text-slate-700 px-2 py-1"
+                          value={blockPresetValue}
+                          onChange={(e) => {
+                            if (e.target.value === "custom") {
+                              markBlockCustom(block.id);
+                            } else {
+                              applyPresetToBlock(block.id, e.target.value);
+                            }
+                          }}
+                          onPointerDown={(e) => e.stopPropagation()}
+                          onDoubleClick={(e) => e.stopPropagation()}
+                        >
+                          <option value="custom">Custom</option>
+                          {agentPresets.map((preset) => (
+                            <option key={preset.id} value={preset.id}>
+                              {preset.name}
+                            </option>
+                          ))}
+                        </select>
                       </div>
                       <span className="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
                         Agent
@@ -1489,6 +2227,11 @@ export default function App() {
                           inputIndex: idx,
                         })
                       }
+                      onDoubleClick={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        changeBlockInputs(block.id, e.altKey ? -1 : 1);
+                      }}
                     >
                       <HandleDot />
                     </div>
@@ -1515,10 +2258,238 @@ export default function App() {
                       onPointerLeave={handleOutputLeave({ type: "block", id: block.id, port: idx })}
                       onPointerMove={moveLinking}
                       onPointerUp={() => finalizeLinking()}
+                      onDoubleClick={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        changeBlockOutputs(block.id, e.altKey ? -1 : 1);
+                      }}
                     >
                       <HandleDot />
                     </div>
                   ))}
+                </div>
+              );
+            })}
+            {uploads.map((upload) => {
+              const isActive = selected?.type === "upload" && selected.id === upload.id;
+              const isDragging = draggingUploadId === upload.id;
+              const handles = getUploadHandles(upload);
+              const showHandles =
+                isActive ||
+                isDragging ||
+                hoveredUploadId === upload.id ||
+                Boolean(linking);
+              const fileLabel = upload.fileName ?? "No file attached";
+              const fileMeta =
+                upload.status === "ready"
+                  ? `${upload.fileType ?? "File"}${upload.fileSize ? ` • ${formatBytes(upload.fileSize)}` : ""}`
+                  : "Accepted: PDF, CSV, Excel, JSON, TXT";
+              return (
+                <div
+                  key={upload.id}
+                  className="absolute"
+                  style={{ left: upload.x, top: upload.y }}
+                  onPointerEnter={() => setHoveredUploadId(upload.id)}
+                  onPointerLeave={() =>
+                    setHoveredUploadId((prev) => (prev === upload.id ? null : prev))
+                  }
+                >
+                  <div
+                    className={`relative rounded-xl border border-slate-200 bg-white/90 p-4 shadow-md backdrop-blur-sm transition-all duration-150 ${
+                      isActive ? "ring-2 ring-indigo-300" : ""
+                    } ${isDragging ? "scale-[1.01]" : "scale-[0.98]"} cursor-grab active:cursor-grabbing select-none`}
+                    data-upload
+                    style={{ width: handles.width, height: handles.height }}
+                    onPointerDown={handleUploadPointerDown(upload.id)}
+                    onPointerMove={handleUploadPointerMove(upload.id)}
+                    onPointerUp={handleUploadPointerUp(upload.id)}
+                  >
+                    <button
+                      className={`absolute -right-3 -top-3 flex h-7 w-7 items-center justify-center rounded-full bg-slate-900 text-white text-xs shadow-md transition-all duration-150 ${
+                        isActive ? "scale-100 opacity-100" : "scale-75 opacity-0 pointer-events-none"
+                      }`}
+                      onPointerDown={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                      }}
+                      onClick={() => handleRemoveUpload(upload.id)}
+                      aria-label="Remove upload block"
+                    >
+                      ×
+                    </button>
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900">{upload.name}</p>
+                        <p className="text-xs text-slate-600">Attach data to feed the flow</p>
+                      </div>
+                      <span
+                        className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-wide ring-1 ${
+                          upload.status === "ready"
+                            ? "bg-emerald-50 text-emerald-700 ring-emerald-100"
+                            : "bg-amber-50 text-amber-700 ring-amber-100"
+                        }`}
+                      >
+                        {upload.status === "ready" ? "Ready" : "No file"}
+                      </span>
+                    </div>
+
+                    <div className="mt-3 rounded-lg border border-dashed border-slate-300 bg-slate-50/70 p-3 text-left">
+                      <p className="text-xs font-semibold text-slate-800 break-words">{fileLabel}</p>
+                      <p className="text-[11px] text-slate-600">{fileMeta}</p>
+                      <div className="mt-3 flex items-center gap-2">
+                        <input
+                          id={`upload-input-${upload.id}`}
+                          type="file"
+                          className="hidden"
+                          onChange={handleUploadFileChange(upload.id)}
+                          accept=".pdf,.csv,.xlsx,.xls,.json,.txt,.doc,.docx,.xml,.zip"
+                          data-upload-control
+                        />
+                        <label
+                          htmlFor={`upload-input-${upload.id}`}
+                          className="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-indigo-500 cursor-pointer"
+                          data-upload-control
+                        >
+                          Choose file
+                        </label>
+                        {upload.fileName && (
+                          <button
+                            className="text-[11px] font-semibold text-slate-600 underline decoration-dotted underline-offset-2"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setUploads((prev) =>
+                                prev.map((item) =>
+                                  item.id === upload.id
+                                    ? { ...item, status: "idle", fileName: undefined, fileSize: undefined, fileType: undefined }
+                                    : item,
+                                ),
+                              );
+                            }}
+                            data-upload-control
+                          >
+                            Clear
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div
+                    className={`absolute flex h-8 w-8 items-center justify-center transition-all duration-150 z-10 ${
+                      showHandles ? "opacity-100 scale-100" : "opacity-0 scale-75"
+                    }`}
+                    style={{
+                      top: handles.output.y - upload.y - 12,
+                      left: handles.output.x - upload.x - 12,
+                      width: 24,
+                      height: 24,
+                      pointerEvents: "auto",
+                    }}
+                    data-output
+                    data-connector
+                    onPointerDownCapture={startLinkingFromOutput({ type: "upload", id: upload.id, port: 0 })}
+                    onPointerDown={startLinkingFromOutput({ type: "upload", id: upload.id, port: 0 })}
+                    onPointerEnter={handleOutputEnter({ type: "upload", id: upload.id, port: 0 })}
+                    onPointerLeave={handleOutputLeave({ type: "upload", id: upload.id, port: 0 })}
+                    onPointerMove={moveLinking}
+                    onPointerUp={() => finalizeLinking()}
+                  >
+                    <HandleDot />
+                  </div>
+                </div>
+              );
+            })}
+            {outputs.map((output) => {
+              const isActive = selected?.type === "output" && selected.id === output.id;
+              const isDragging = draggingOutputId === output.id;
+              const handles = getOutputHandles(output);
+              const showHandles =
+                isActive ||
+                isDragging ||
+                hoveredOutputId === output.id ||
+                Boolean(linking);
+              return (
+                <div
+                  key={output.id}
+                  className="absolute"
+                  style={{ left: output.x, top: output.y }}
+                  onPointerEnter={() => setHoveredOutputId(output.id)}
+                  onPointerLeave={() =>
+                    setHoveredOutputId((prev) => (prev === output.id ? null : prev))
+                  }
+                >
+                  <div
+                    className={`relative rounded-xl border border-slate-200 bg-white/90 p-4 shadow-md backdrop-blur-sm transition-all duration-150 ${
+                      isActive ? "ring-2 ring-amber-300" : ""
+                    } ${isDragging ? "scale-[1.01]" : "scale-[0.98]"} cursor-grab active:cursor-grabbing select-none flex flex-col gap-3`}
+                    data-output
+                    style={{ width: handles.width, height: handles.height }}
+                    onPointerDown={handleOutputPointerDown(output.id)}
+                    onPointerMove={handleOutputPointerMove(output.id)}
+                    onPointerUp={handleOutputPointerUp(output.id)}
+                  >
+                    <button
+                      className={`absolute -right-3 -top-3 flex h-7 w-7 items-center justify-center rounded-full bg-slate-900 text-white text-xs shadow-md transition-all duration-150 ${
+                        isActive ? "scale-100 opacity-100" : "scale-75 opacity-0 pointer-events-none"
+                      }`}
+                      onPointerDown={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                      }}
+                      onClick={() => handleRemoveOutput(output.id)}
+                      aria-label="Remove output block"
+                    >
+                      ×
+                    </button>
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900">{output.name}</p>
+                        <p className="text-xs text-slate-600">Describe the final response shape</p>
+                      </div>
+                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-amber-700 ring-1 ring-amber-100">
+                        Sink
+                      </span>
+                    </div>
+
+                    <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-3 flex flex-col gap-2">
+                      <p className="text-[11px] font-semibold text-slate-800 mb-2">Output format</p>
+                      <textarea
+                        className="w-full rounded-md border border-slate-200 bg-white/90 px-2 py-2 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none min-h-[88px]"
+                        rows={3}
+                        value={output.format}
+                        onChange={handleOutputFormatChange(output.id)}
+                        spellCheck={false}
+                        data-output-control
+                        onBlur={handleOutputFormatBlur(output.id)}
+                      />
+                    </div>
+                  </div>
+                  <div
+                    className={`absolute flex h-8 w-8 items-center justify-center transition-all duration-150 z-10 ${
+                      showHandles ? "opacity-100 scale-100" : "opacity-0 scale-75"
+                    }`}
+                    style={{
+                      top: handles.input.y - output.y - 12,
+                      left: handles.input.x - output.x - 12,
+                      width: 24,
+                      height: 24,
+                      pointerEvents: "auto",
+                    }}
+                    data-input
+                    data-connector
+                    onPointerDownCapture={startLinkingFromInput({ type: "output", id: output.id, inputIndex: 0 })}
+                    onPointerEnter={handleInputEnter({ type: "output", id: output.id, inputIndex: 0 })}
+                    onPointerLeave={handleInputLeave({ type: "output", id: output.id, inputIndex: 0 })}
+                    onPointerDown={startLinkingFromInput({ type: "output", id: output.id, inputIndex: 0 })}
+                    onPointerUp={() =>
+                      finalizeLinking({
+                        type: "output",
+                        id: output.id,
+                        inputIndex: 0,
+                      })
+                    }
+                  >
+                    <HandleDot />
+                  </div>
                 </div>
               );
             })}
@@ -1718,7 +2689,9 @@ export default function App() {
                     onPointerMove={handleToolPointerMove(tool.id)}
                     onPointerUp={handleToolPointerUp(tool.id)}
                   >
-                    <div className="absolute inset-0 rounded-lg bg-white/90 border border-slate-200 shadow-sm transition-all duration-150 pointer-events-none" />
+                    <div
+                      className={`absolute inset-0 rounded-lg bg-gradient-to-br ${tool.gradient} ring-1 ring-inset ${tool.ring} shadow-sm transition-all duration-150 pointer-events-none`}
+                    />
                     <div className="relative h-full w-full flex items-center justify-center px-4 text-center">
                       <button
                         className={`absolute -right-3 -top-3 flex h-6 w-6 items-center justify-center rounded-full bg-slate-900 text-white text-xs shadow-md transition-all duration-150 ${
@@ -1736,37 +2709,19 @@ export default function App() {
                       <p className="text-base font-semibold text-slate-900">{tool.name}</p>
                     </div>
                     <div
-                    className={`absolute left-1/2 -top-4 -translate-x-1/2 flex h-8 w-8 items-center justify-center transition-all duration-150 z-10 ${
+                      className={`absolute left-1/2 -top-4 -translate-x-1/2 flex h-8 w-8 items-center justify-center transition-all duration-150 z-10 ${
                         showHandles ? "opacity-100 scale-100" : "opacity-0 scale-75"
                       }`}
-                    style={{ top: handles.output.y - tool.y - 16, pointerEvents: "auto" }}
-                    data-output
-                    data-connector
-                    onPointerDown={startLinkingFromOutput({ type: "tool", id: tool.id, port: 0 })}
-                    onPointerDownCapture={startLinkingFromOutput({ type: "tool", id: tool.id, port: 0 })}
-                    onPointerEnter={handleOutputEnter({ type: "tool", id: tool.id, port: 0 })}
-                    onPointerLeave={handleOutputLeave({ type: "tool", id: tool.id, port: 0 })}
-                    onPointerMove={moveLinking}
-                    onPointerUp={() => finalizeLinking()}
-                  >
-                    <HandleDot />
-                  </div>
-                    <div
-                      className={`absolute flex h-8 w-8 items-center justify-center transition-all duration-150 z-10 ${
-                        showHandles ? "opacity-100 scale-100" : "opacity-0 scale-75"
-                      }`}
-                      style={{ top: handles.input.y - tool.y - 6, left: -6, pointerEvents: "auto" }}
+                      style={{ top: handles.output.y - tool.y - 16, pointerEvents: "auto" }}
+                      data-output
                       data-input
                       data-connector
-                      onPointerEnter={handleInputEnter({ type: "tool", id: tool.id })}
-                      onPointerLeave={handleInputLeave({ type: "tool", id: tool.id })}
-                      onPointerDown={startLinkingFromInput({ type: "tool", id: tool.id })}
-                      onPointerUp={() =>
-                        finalizeLinking({
-                          type: "tool",
-                          id: tool.id,
-                        })
-                      }
+                      onPointerDown={startLinkingFromOutput({ type: "tool", id: tool.id, port: 0 })}
+                      onPointerDownCapture={startLinkingFromOutput({ type: "tool", id: tool.id, port: 0 })}
+                      onPointerEnter={handleOutputEnter({ type: "tool", id: tool.id, port: 0 })}
+                      onPointerLeave={handleOutputLeave({ type: "tool", id: tool.id, port: 0 })}
+                      onPointerMove={moveLinking}
+                      onPointerUp={() => finalizeLinking({ type: "tool", id: tool.id })}
                     >
                       <HandleDot />
                     </div>
@@ -1816,14 +2771,83 @@ export default function App() {
               </div>
             ))}
             <div style={{ padding: 40 }}>
-              <div className="p-6 bg-white/80 border rounded shadow-sm">
-                <h2 className="text-lg font-semibold">Canvas Area</h2>
-                <p className="test-sm text-slate-600">build your flow here.</p>
-              </div>
+              {/* canvas placeholder card removed per request */}
             </div>
           </div>
         </div>
       </main>
+      {(showStart || startExiting) && (
+        <div
+          className={`absolute inset-0 z-40 transition-opacity duration-500 ease-out ${
+            showStart && !startExiting ? "opacity-100" : "opacity-0 pointer-events-none"
+          }`}
+          style={{
+            background:
+              theme === "dark"
+                ? "radial-gradient(120% 140% at 25% 18%, rgba(15,23,42,0.2), rgba(15,23,42,0)), radial-gradient(120% 140% at 80% 75%, rgba(255,255,255,0.04), rgba(255,255,255,0)), linear-gradient(135deg, #0f172a 0%, #0b1224 52%, #0f172a 100%)"
+                : "radial-gradient(120% 140% at 25% 18%, rgba(0,0,0,0.05), rgba(0,0,0,0)), radial-gradient(120% 140% at 80% 75%, rgba(15,23,42,0.08), rgba(15,23,42,0)), linear-gradient(135deg, #f8f5ed 0%, #f2ede4 52%, #ebe6de 100%)",
+          }}
+        >
+          <div className="relative w-full h-full">
+            <div className="absolute -top-10 -right-10 h-24 w-24 rounded-full bg-emerald-100 blur-3xl opacity-60 pointer-events-none" />
+            <div
+              className={`absolute -bottom-12 -left-12 h-28 w-28 rounded-full blur-3xl opacity-40 pointer-events-none ${
+                theme === "dark" ? "bg-slate-800" : "bg-slate-200"
+              }`}
+            />
+            <div className="absolute top-1/2 left-[48%] -translate-y-1/2">
+              <div className="flex flex-col items-start gap-4">
+                {[
+                  { letter: "F", word: "Forge" },
+                  { letter: "L", word: "Link" },
+                  { letter: "O", word: "Orchestrate" },
+                  { letter: "W", word: "Workflows" },
+                ].map((item, idx) => (
+                  <div
+                    key={item.letter}
+                    className="flex items-center gap-4 letter-cycle"
+                    style={{
+                      animationDelay: `${0.6 + idx * 1.5}s`,
+                      animationDuration: "8s",
+                      fontFamily: "'Playfair Display', 'Times New Roman', serif",
+                    }}
+                  >
+                    <span
+                      className={`text-6xl font-black leading-none tracking-tight ${
+                        theme === "dark" ? "text-slate-100" : "text-slate-800"
+                      }`}
+                    >
+                      {item.letter}
+                    </span>
+                    <span
+                      className={`text-lg font-semibold tracking-wide uppercase ${
+                        theme === "dark" ? "text-slate-200" : "text-slate-600"
+                      }`}
+                    >
+                      {item.word}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="absolute left-1/2 -translate-x-1/2 bottom-16">
+              <button
+                className={`rounded-full px-5 py-2.5 text-sm font-semibold shadow-lg shadow-slate-300/60 ${
+                  theme === "dark"
+                    ? "bg-white text-slate-900 hover:bg-slate-100"
+                    : "bg-slate-900 text-white hover:bg-slate-800"
+                }`}
+                onClick={handleEnterWorkspace}
+              >
+                Enter workspace
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      <div className="absolute bottom-3 right-4 z-20 text-xs font-semibold text-slate-400">
+        © 2025 All rights reserved
+      </div>
     </div>
   );
 }
