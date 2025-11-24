@@ -140,31 +140,7 @@ export default function App() {
     ],
     [],
   );
-  const [agentJsonInput, setAgentJsonInput] = useState<string>(`{
-  "metadata": {
-    "version": "1.0.0",
-    "registry_type": "agent_registry",
-    "compatible_protocols": ["a2a", "mcp"],
-    "description": "PolicyReasoner agent specification describing how detector signals map to mitigation actions."
-  },
-  "global_protocols": ["a2a", "mcp"],
-  "agents": [
-    {
-      "id": "policy_reasoner",
-      "name": "PolicyReasoner",
-      "description": "Scores detector outputs using configured weights and thresholds to choose actions such as PASS, PARAPHRASE, REDACT, REFUSE, or ESCALATE.",
-      "capabilities": ["policy_weighting", "risk_scoring", "mitigation_decision"],
-      "input_data_streams": {
-        "mandatory": ["detection"],
-        "optional": ["policy_override"]
-      },
-      "output_data_streams": {
-        "mandatory": ["action", "score"],
-        "optional": ["rationale"]
-      }
-    }
-  ]
-}`);
+  const [agentJsonInput, setAgentJsonInput] = useState<string>("input json here");
   const [agentParseError, setAgentParseError] = useState<string | null>(null);
   const [connections, setConnections] = useState<Connection[]>([]);
   const [linking, setLinking] = useState<{
@@ -1661,7 +1637,7 @@ export default function App() {
             </div>
 
             {activePanel === "blocks" && (
-              <div className="mt-4 space-y-4">
+              <div className="mt-4 space-y-4 flex-1 overflow-y-auto pr-1">
                 <p className="text-xs uppercase tracking-wide text-slate-500">Agent Blocks</p>
                 <div
                   className="cursor-grab rounded-xl border border-slate-200 bg-gradient-to-br from-white via-white to-slate-50 p-4 shadow-sm active:cursor-grabbing"
@@ -1710,7 +1686,7 @@ export default function App() {
                   </div>
                   <textarea
                     className="mt-3 w-full rounded-lg border border-slate-200 bg-white/80 px-3 py-2 text-xs font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-400"
-                    rows={10}
+                    rows={6}
                     value={agentJsonInput}
                     onChange={(e) => setAgentJsonInput(e.target.value)}
                     spellCheck={false}
