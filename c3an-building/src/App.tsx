@@ -27,6 +27,10 @@ type AgentBlock = {
   description: string;
   inputCount: number;
   outputCount: number;
+  inputRequired: boolean[];
+  outputRequired: boolean[];
+  inputNames?: string[];
+  outputNames?: string[];
   presetId?: string;
 };
 
@@ -166,6 +170,8 @@ export default function App() {
   const [draggingUploadId, setDraggingUploadId] = useState<string | null>(null);
   const [draggingOutputId, setDraggingOutputId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Selection>(null);
+  const [modalBlockId, setModalBlockId] = useState<string | null>(null);
+  const [modalToolChoice, setModalToolChoice] = useState<string>("");
   const [hoveredBlockId, setHoveredBlockId] = useState<string | null>(null);
   const [hoveredToolId, setHoveredToolId] = useState<string | null>(null);
   const [hoveredUploadId, setHoveredUploadId] = useState<string | null>(null);
@@ -350,6 +356,8 @@ export default function App() {
       if (payloadType === "agent-block") {
         const id = nextBlockIdRef.current++;
         const preset = agentPresets[0];
+        const inCount = preset?.inputCount ?? 1;
+        const outCount = preset?.outputCount ?? 1;
         setBlocks((prev) => [
           ...prev,
           {
@@ -358,8 +366,12 @@ export default function App() {
             y: worldY,
             name: preset?.name ?? "Agent Block",
             description: preset?.description ?? "1 input, 2 outputs",
-            inputCount: preset?.inputCount ?? 1,
-            outputCount: preset?.outputCount ?? 2,
+            inputCount: inCount,
+            outputCount: outCount,
+            inputRequired: Array(inCount).fill(false),
+            outputRequired: Array(outCount).fill(false),
+            inputNames: [],
+            outputNames: [],
             presetId: preset?.id,
           },
         ]);
@@ -436,12 +448,12 @@ export default function App() {
     const toolSpacingY = 150;
 
     agents.forEach((agent, idx) => {
-      const inputCount =
-        (Array.isArray(agent?.input_data_streams?.mandatory) ? agent.input_data_streams.mandatory.length : 0) +
-        (Array.isArray(agent?.input_data_streams?.optional) ? agent.input_data_streams.optional.length : 0);
-      const outputCount =
-        (Array.isArray(agent?.output_data_streams?.mandatory) ? agent.output_data_streams.mandatory.length : 0) +
-        (Array.isArray(agent?.output_data_streams?.optional) ? agent.output_data_streams.optional.length : 0);
+      const mandatoryInputs = Array.isArray(agent?.input_data_streams?.mandatory) ? agent.input_data_streams.mandatory : [];
+      const optionalInputs = Array.isArray(agent?.input_data_streams?.optional) ? agent.input_data_streams.optional : [];
+      const mandatoryOutputs = Array.isArray(agent?.output_data_streams?.mandatory) ? agent.output_data_streams.mandatory : [];
+      const optionalOutputs = Array.isArray(agent?.output_data_streams?.optional) ? agent.output_data_streams.optional : [];
+      const inputCount = mandatoryInputs.length + optionalInputs.length;
+      const outputCount = mandatoryOutputs.length + optionalOutputs.length;
       const blockId = `block-${nextBlockIdRef.current++}`;
       const blockX = baseX + idx * blockSpacing;
       const blockY = baseY;
@@ -454,6 +466,16 @@ export default function App() {
         description: agent?.description ?? "Generated from JSON",
         inputCount: Math.max(1, inputCount || 1),
         outputCount: Math.max(1, outputCount || 1),
+        inputRequired: [
+          ...Array(mandatoryInputs.length).fill(true),
+          ...Array(Math.max(0, inputCount - mandatoryInputs.length)).fill(false),
+        ].slice(0, Math.max(1, inputCount || 1)),
+        outputRequired: [
+          ...Array(mandatoryOutputs.length).fill(true),
+          ...Array(Math.max(0, outputCount - mandatoryOutputs.length)).fill(false),
+        ].slice(0, Math.max(1, outputCount || 1)),
+        inputNames: [...mandatoryInputs, ...optionalInputs].slice(0, Math.max(1, inputCount || 1)),
+        outputNames: [...mandatoryOutputs, ...optionalOutputs].slice(0, Math.max(1, outputCount || 1)),
       });
 
       const capabilities: string[] = Array.isArray(agent?.capabilities) ? agent.capabilities : [];
@@ -474,7 +496,7 @@ export default function App() {
         newConnections.push({
           id: connId,
           from: { type: "tool", id: toolId, port: 0 },
-          to: { type: "block", id: blockId, inputIndex: Math.max(1, inputCount || 1) },
+          to: { type: "block", id: blockId, inputIndex: TOOL_PORT_OFFSET },
         });
       });
     });
@@ -488,6 +510,12 @@ export default function App() {
   const MIN_IO = 1;
   const MAX_IO = 5;
   const TOOL_PORT_OFFSET = 1000;
+  const resizeRequired = useCallback((arr: boolean[], count: number) => {
+    const next = arr.slice(0, count);
+    while (next.length < count) next.push(false);
+    return next;
+  }, []);
+  const clampNames = useCallback((arr: string[] | undefined, count: number) => (arr ?? []).slice(0, count), []);
 
   const getBlockMode = useCallback(
     (block: AgentBlock) => {
@@ -521,10 +549,49 @@ export default function App() {
         const desiredInputs = clamp((maxInputs[b.id] ?? -1) + 1, MIN_IO, MAX_IO);
         const desiredOutputs = clamp((maxOutputs[b.id] ?? -1) + 1, MIN_IO, MAX_IO);
         if (b.inputCount === desiredInputs && b.outputCount === desiredOutputs) return b;
-        return { ...b, inputCount: desiredInputs, outputCount: desiredOutputs, presetId: "custom" };
+        return {
+          ...b,
+          inputCount: desiredInputs,
+          outputCount: desiredOutputs,
+          inputRequired: resizeRequired(b.inputRequired, desiredInputs),
+          outputRequired: resizeRequired(b.outputRequired, desiredOutputs),
+          inputNames: clampNames(b.inputNames, desiredInputs),
+          outputNames: clampNames(b.outputNames, desiredOutputs),
+          presetId: "custom",
+        };
       });
     },
-    [MAX_IO, MIN_IO, TOOL_PORT_OFFSET, clamp],
+    [MAX_IO, MIN_IO, TOOL_PORT_OFFSET, clamp, clampNames, resizeRequired],
+  );
+
+  const toggleInputRequired = useCallback(
+    (blockId: string, index: number) => {
+      setBlocks((prev) =>
+        prev.map((b) => {
+          if (b.id !== blockId) return b;
+          if (index < 0 || index >= b.inputCount) return b;
+          const next = [...b.inputRequired];
+          next[index] = !next[index];
+          return { ...b, inputRequired: next };
+        }),
+      );
+    },
+    [],
+  );
+
+  const toggleOutputRequired = useCallback(
+    (blockId: string, index: number) => {
+      setBlocks((prev) =>
+        prev.map((b) => {
+          if (b.id !== blockId) return b;
+          if (index < 0 || index >= b.outputCount) return b;
+          const next = [...b.outputRequired];
+          next[index] = !next[index];
+          return { ...b, outputRequired: next };
+        }),
+      );
+    },
+    [],
   );
 
   const getBlockHandles = useCallback(
@@ -621,6 +688,32 @@ export default function App() {
     [MAX_IO, TOOL_PORT_OFFSET, connections, draggingBlockId, hoveredBlockId, hoveredInput, linking],
   );
 
+  const addToolToBlock = useCallback(
+    (blockId: string, toolName: string) => {
+      const block = blocks.find((b) => b.id === blockId);
+      if (!block) return;
+      const palette = toolPalette.find((t) => t.name === toolName) ?? toolPalette[0];
+      if (!palette) return;
+      const handles = getBlockHandles(block);
+      const toolWidth = 180;
+      const toolId = `tool-${nextToolIdRef.current++}`;
+      const toolX = block.x + handles.width / 2 - toolWidth / 2;
+      const toolY = block.y + handles.height + 60;
+      const newTool: ToolNode = { ...palette, id: toolId, x: toolX, y: toolY };
+      setTools((prev) => [...prev, newTool]);
+      const connId = `conn-${nextConnectionIdRef.current++}`;
+      setConnections((prev) => {
+        const next: Connection[] = [
+          ...prev,
+          { id: connId, from: { type: "tool", id: toolId, port: 0 }, to: { type: "block", id: blockId, inputIndex: TOOL_PORT_OFFSET } },
+        ];
+        setBlocks((blocksState) => recalcBlockPorts(next, blocksState));
+        return next;
+      });
+    },
+    [blocks, getBlockHandles, recalcBlockPorts, toolPalette],
+  );
+
   const getToolHandles = useCallback((tool: ToolNode) => {
     const width = 180;
     const height = 110;
@@ -659,6 +752,10 @@ export default function App() {
                 ...b,
                 inputCount: newInputs,
                 outputCount: newOutputs,
+                inputRequired: resizeRequired(b.inputRequired, newInputs),
+                outputRequired: resizeRequired(b.outputRequired, newOutputs),
+                inputNames: clampNames(b.inputNames, newInputs),
+                outputNames: clampNames(b.outputNames, newOutputs),
                 ...extra,
               }
             : b,
@@ -749,6 +846,7 @@ export default function App() {
     nextUploadIdRef.current = 1;
     nextOutputIdRef.current = 1;
     nextConnectionIdRef.current = 1;
+    localStorage.removeItem("c3an-workspace");
   }, [reset]);
 
   const handleRun = useCallback(() => {
@@ -1593,6 +1691,57 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (modalBlockId) {
+      setModalToolChoice(toolPalette[0]?.name ?? "");
+    }
+  }, [modalBlockId, toolPalette]);
+
+  // persistence
+  useEffect(() => {
+    const saved = localStorage.getItem("c3an-workspace");
+    if (!saved) return;
+    try {
+      const parsed = JSON.parse(saved);
+      setNotes(parsed.notes ?? []);
+      setBlocks(parsed.blocks ?? []);
+      setTools(parsed.tools ?? []);
+      setUploads(parsed.uploads ?? []);
+      setOutputs(parsed.outputs ?? []);
+      setConnections(parsed.connections ?? []);
+      setTheme(parsed.theme ?? "light");
+      setBackgroundPreset(parsed.backgroundPreset ?? "grid");
+      nextBlockIdRef.current = parsed.nextBlockId ?? nextBlockIdRef.current;
+      nextToolIdRef.current = parsed.nextToolId ?? nextToolIdRef.current;
+      nextUploadIdRef.current = parsed.nextUploadId ?? nextUploadIdRef.current;
+      nextOutputIdRef.current = parsed.nextOutputId ?? nextOutputIdRef.current;
+      nextConnectionIdRef.current = parsed.nextConnectionId ?? nextConnectionIdRef.current;
+      nextIdRef.current = parsed.nextNoteId ?? nextIdRef.current;
+    } catch {
+      // ignore bad saves
+    }
+  }, []);
+
+  useEffect(() => {
+    const snapshot = {
+      notes,
+      blocks,
+      tools,
+      uploads,
+      outputs,
+      connections,
+      theme,
+      backgroundPreset,
+      nextBlockId: nextBlockIdRef.current,
+      nextToolId: nextToolIdRef.current,
+      nextUploadId: nextUploadIdRef.current,
+      nextOutputId: nextOutputIdRef.current,
+      nextConnectionId: nextConnectionIdRef.current,
+      nextNoteId: nextIdRef.current,
+    };
+    localStorage.setItem("c3an-workspace", JSON.stringify(snapshot));
+  }, [notes, blocks, tools, uploads, outputs, connections, theme, backgroundPreset]);
+
   const appThemeClass =
     theme === "dark"
       ? "bg-slate-950 text-slate-100"
@@ -1666,10 +1815,10 @@ export default function App() {
                     onDragStart={handleBlockDragStart}
                   >
                   <div className="flex items-start justify-between">
-                    <div className="flex flex-col gap-0.5">
-                      <p className="text-sm font-semibold text-slate-900">Agent: Solo</p>
-                      <p className="text-xs text-slate-600 leading-snug">Starter block that adapts as you connect.</p>
-                    </div>
+                      <div className="flex flex-col gap-0.5">
+                        <p className="text-sm font-semibold text-slate-900">Agent: Solo</p>
+                        <p className="text-xs text-slate-600 leading-snug">Starter block that adapts as you connect.</p>
+                      </div>
                       <span className="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
                         Drag
                       </span>
@@ -1968,25 +2117,43 @@ export default function App() {
               xmlns="http://www.w3.org/2000/svg"
               overflow="visible"
             >
-              {connections.map((conn) => {
-                const start = getOutputAnchor(conn.from);
-                const end = getInputAnchor(conn.to);
-                if (!start || !end) return null;
-                const d = buildConnectionPath(start, end);
-                const stroke =
-                  conn.from.type === "upload"
-                    ? "rgba(234, 179, 8, 0.75)"
-                    : conn.from.type === "tool"
-                      ? "rgba(99, 102, 241, 0.75)"
-                      : "rgba(56, 189, 248, 0.7)";
-                const isSelected = selected?.type === "connection" && selected.id === conn.id;
+                  {connections.map((conn) => {
+                    const start = getOutputAnchor(conn.from);
+                    const end = getInputAnchor(conn.to);
+                    if (!start || !end) return null;
+                    const d = buildConnectionPath(start, end);
+                    const isRequiredInput =
+                      conn.to.type === "block" &&
+                      (() => {
+                        const blk = blocks.find((b) => b.id === conn.to.id);
+                        if (!blk) return false;
+                        const idx = conn.to.inputIndex ?? 0;
+                        return idx < blk.inputRequired.length && blk.inputRequired[idx];
+                      })();
+                    const isRequiredOutput =
+                      conn.from.type === "block" &&
+                      (() => {
+                        const blk = blocks.find((b) => b.id === conn.from.id);
+                        if (!blk) return false;
+                        const idx = conn.from.port;
+                        return idx < blk.outputRequired.length && blk.outputRequired[idx];
+                      })();
+                    const stroke =
+                      isRequiredInput || isRequiredOutput
+                        ? "rgba(244, 63, 94, 0.8)"
+                        : conn.from.type === "upload"
+                          ? "rgba(234, 179, 8, 0.75)"
+                          : conn.from.type === "tool"
+                            ? "rgba(99, 102, 241, 0.75)"
+                            : "rgba(56, 189, 248, 0.7)";
+                    const isSelected = selected?.type === "connection" && selected.id === conn.id;
                 return (
                   <path
                     key={conn.id}
                     d={d}
                     fill="none"
                     stroke={stroke}
-                    strokeWidth={isSelected ? 3.5 : 2}
+                    strokeWidth={isSelected ? 4 : 3}
                     strokeLinecap="round"
                     className={isSelected ? "drop-shadow-[0_0_6px_rgba(59,130,246,0.5)]" : ""}
                     style={{ pointerEvents: "visibleStroke", cursor: "pointer" }}
@@ -2040,7 +2207,7 @@ export default function App() {
                   }
                 >
                   <div
-                    className={`relative rounded-lg border border-slate-200 bg-white/90 shadow-md backdrop-blur-sm transition-all duration-150 w-[220px] p-3 scale-[0.97] min-h-[120px] ${
+                    className={`relative rounded-lg border border-slate-200 bg-white/90 shadow-md backdrop-blur-sm transition-all duration-150 w-[220px] px-3 pt-2 pb-3 scale-[0.97] min-h-[120px] ${
                       showConnections ? "ring-2 ring-emerald-300" : ""
                     } cursor-grab active:cursor-grabbing select-none`}
                     data-block
@@ -2090,6 +2257,19 @@ export default function App() {
                         <span className="h-2.5 w-2.5 rounded-full bg-indigo-500" />
                         {toolCount} tools
                       </span>
+                      <button
+                        className="inline-flex items-center gap-1 rounded-full bg-slate-900 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-white shadow-sm"
+                        onPointerDown={(e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                        }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setModalBlockId(block.id);
+                        }}
+                      >
+                        Details
+                      </button>
                     </div>
                   </div>
 
@@ -2624,6 +2804,135 @@ export default function App() {
           </div>
         </div>
       )}
+      {modalBlockId && (() => {
+        const block = blocks.find((b) => b.id === modalBlockId);
+        if (!block) return null;
+        const inbound = connections.filter((c) => c.to.type === "block" && c.to.id === block.id);
+        const outbound = connections.filter((c) => c.from.type === "block" && c.from.id === block.id);
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setModalBlockId(null)}>
+            <div
+              className="relative w-[520px] max-h-[80vh] overflow-visible rounded-xl bg-white shadow-2xl border border-slate-200 p-5"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="absolute -right-5 -top-5 z-[9999]">
+                <button
+                  className="h-9 w-9 rounded-full bg-slate-900 text-white text-sm font-semibold shadow-lg"
+                  onClick={() => setModalBlockId(null)}
+                >
+                  ×
+                </button>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-lg font-semibold text-slate-900">{block.name}</p>
+                  <p className="text-sm text-slate-600">Mode: {getBlockMode(block)}</p>
+                </div>
+                <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-700">
+                  Agent
+                </span>
+              </div>
+                  <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                    <div className="rounded-lg border border-slate-200 p-3">
+                      <p className="text-xs font-semibold uppercase text-slate-500">Inputs</p>
+                      <div className="mt-2 space-y-1">
+                        {Array.from({ length: block.inputCount }, (_, idx) => (
+                      <div key={idx} className="flex items-center justify-between gap-2 text-sm text-black">
+                        <div className="flex items-center gap-2 text-black flex-1">
+                          <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
+                          <span className="text-black truncate">{block.inputNames?.[idx] ?? `Input ${idx + 1}`}</span>
+                        </div>
+                        <button
+                          className={`rounded-full px-2 py-1 text-[11px] font-semibold ${
+                            block.inputRequired[idx]
+                              ? "bg-rose-100 text-rose-700 ring-1 ring-rose-200"
+                              : "bg-slate-100 text-slate-700 ring-1 ring-slate-200"
+                          }`}
+                          onClick={() => toggleInputRequired(block.id, idx)}
+                        >
+                          {block.inputRequired[idx] ? "Mandatory" : "Optional"}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="rounded-lg border border-slate-200 p-3">
+                  <p className="text-xs font-semibold uppercase text-slate-500">Outputs</p>
+                  <div className="mt-2 space-y-1">
+                    {Array.from({ length: block.outputCount }, (_, idx) => (
+                      <div key={idx} className="flex items-center justify-between gap-2 text-sm text-black">
+                        <div className="flex items-center gap-2 text-black flex-1">
+                          <span className="h-2.5 w-2.5 rounded-full bg-sky-500" />
+                          <span className="text-black truncate">{block.outputNames?.[idx] ?? `Output ${idx + 1}`}</span>
+                        </div>
+                        <button
+                          className={`rounded-full px-2 py-1 text-[11px] font-semibold ${
+                            block.outputRequired[idx]
+                              ? "bg-rose-100 text-rose-700 ring-1 ring-rose-200"
+                              : "bg-slate-100 text-slate-700 ring-1 ring-slate-200"
+                          }`}
+                          onClick={() => toggleOutputRequired(block.id, idx)}
+                        >
+                          {block.outputRequired[idx] ? "Mandatory" : "Optional"}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <div className="mt-4 grid grid-cols-2 gap-3">
+                <div className="rounded-lg border border-slate-200 p-3">
+                  <p className="text-xs font-semibold uppercase text-slate-500 mb-2">Inbound</p>
+                  <div className="space-y-1 text-sm text-slate-700">
+                    {inbound.length === 0 && <p className="text-xs text-slate-500">No incoming links.</p>}
+                    {inbound.map((c) => (
+                      <p key={c.id}>
+                        {c.from.type} → input {c.to.inputIndex ?? 0}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              <div className="rounded-lg border border-slate-200 p-3">
+                <p className="text-xs font-semibold uppercase text-slate-500 mb-2">Outbound</p>
+                <div className="space-y-1 text-sm text-slate-700">
+                      {outbound.length === 0 && <p className="text-xs text-slate-500">No outgoing links.</p>}
+                  {outbound.map((c) => (
+                    <p key={c.id}>
+                      port {c.from.port} → {c.to.type}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            </div>
+              <div className="mt-4 rounded-lg border border-slate-200 p-3">
+                <p className="text-xs font-semibold uppercase text-slate-500 mb-2">Attach tool</p>
+                <div className="flex items-center gap-2">
+                  <select
+                    className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800"
+                    value={modalToolChoice}
+                    onChange={(e) => setModalToolChoice(e.target.value)}
+                  >
+                    {toolPalette.map((tool) => (
+                      <option key={tool.name} value={tool.name}>
+                        {tool.name}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    className="rounded-md bg-slate-900 px-3 py-2 text-sm font-semibold text-white shadow-sm"
+                    onClick={() => {
+                      if (modalToolChoice) addToolToBlock(block.id, modalToolChoice);
+                    }}
+                  >
+                    Add tool
+                  </button>
+                </div>
+                <p className="mt-2 text-xs text-slate-600">Tool will be placed below this agent and linked to its bottom port.</p>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
       <div className="absolute bottom-3 right-4 z-20 text-xs font-semibold text-slate-400">
         © 2025 All rights reserved
       </div>
