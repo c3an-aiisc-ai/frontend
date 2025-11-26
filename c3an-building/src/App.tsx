@@ -64,7 +64,6 @@ type OutputNode = {
 
 type ClipboardItem =
   | { type: "block"; data: AgentBlock }
-  | { type: "operation"; data: Operation }
   | { type: "tool"; data: ToolNode }
   | { type: "upload"; data: UploadNode }
   | { type: "output"; data: OutputNode }
@@ -74,35 +73,25 @@ type Connection = {
   id: string;
   from:
     | { type: "block"; id: string; port: number }
-    | { type: "operation"; id: string; port: number }
     | { type: "tool"; id: string; port: number }
     | { type: "upload"; id: string; port: number };
-  to: { type: "block" | "operation" | "tool" | "output"; id: string; inputIndex?: number };
+  to: { type: "block" | "tool" | "output"; id: string; inputIndex?: number };
 };
 
 type LinkSource = Connection["from"];
 type LinkTarget = Connection["to"];
 type AnchorPoint = { x: number; y: number; dir?: "left" | "right" | "up" | "down" };
 
-type OperationKind = "branch" | "sequential" | "aggregate";
-
-type Operation = {
-  id: string;
-  x: number;
-  y: number;
-  kind: OperationKind;
-};
-
 type Selection =
   | { type: "note"; id: string }
   | { type: "block"; id: string }
-  | { type: "operation"; id: string }
   | { type: "tool"; id: string }
   | { type: "upload"; id: string }
   | { type: "output"; id: string }
+  | { type: "connection"; id: string }
   | null;
 
-type PanelKey = "blocks" | "operations" | "tools" | "io" | "settings";
+type PanelKey = "blocks" | "tools" | "settings";
 
 export default function App() {
   const linkingRef = useRef(false);
@@ -111,13 +100,12 @@ export default function App() {
     shouldAllowPan: (event) => {
       if (linkingRef.current) return false;
       const target = event.target as HTMLElement | null;
-      return !target?.closest("[data-note],[data-block],[data-operation],[data-tool],[data-upload],[data-output]");
+      return !target?.closest("[data-note],[data-block],[data-tool],[data-upload],[data-output]");
     },
     isPanDisabled: () => linkingRef.current,
   });
   const [activePanel, setActivePanel] = useState<PanelKey | null>("blocks");
   const [notes, setNotes] = useState<Note[]>([]);
-  const [operations, setOperations] = useState<Operation[]>([]);
   const [blocks, setBlocks] = useState<AgentBlock[]>([]);
   const [tools, setTools] = useState<ToolNode[]>([]);
   const [uploads, setUploads] = useState<UploadNode[]>([]);
@@ -131,7 +119,7 @@ export default function App() {
   const startTimeoutRef = useRef<number | null>(null);
   const agentPresets = useMemo(
     () => [
-      { id: "router", name: "Router", description: "Split to two paths", inputCount: 1, outputCount: 2 },
+      { id: "solo", name: "Solo", description: "Single in / out", inputCount: 1, outputCount: 1 },
       { id: "fanout", name: "Fan-out", description: "Broadcast to three", inputCount: 1, outputCount: 3 },
       { id: "collector", name: "Collector", description: "Merge two inputs", inputCount: 2, outputCount: 1 },
       { id: "triage", name: "Triage", description: "Route with fallback", inputCount: 1, outputCount: 4 },
@@ -156,79 +144,41 @@ export default function App() {
     linkingRef.current = Boolean(linking);
   }, [linking]);
   const [hoveredInput, setHoveredInput] = useState<{
-    type: "block" | "operation" | "tool" | "output";
+    type: "block" | "tool" | "output";
     id: string;
     inputIndex?: number;
   } | null>(null);
   const [hoveredOutput, setHoveredOutput] = useState<LinkSource | null>(null);
   const nextIdRef = useRef(1);
-  const nextOperationIdRef = useRef(1);
   const nextBlockIdRef = useRef(1);
   const nextToolIdRef = useRef(1);
   const nextUploadIdRef = useRef(1);
   const nextOutputIdRef = useRef(1);
   const nextConnectionIdRef = useRef(1);
   const dragOffsetRef = useRef({ x: 0, y: 0 });
-  const operationDragOffsetRef = useRef({ x: 0, y: 0 });
   const blockDragOffsetRef = useRef({ x: 0, y: 0 });
   const toolDragOffsetRef = useRef({ x: 0, y: 0 });
   const outputDragOffsetRef = useRef({ x: 0, y: 0 });
   const uploadDragOffsetRef = useRef({ x: 0, y: 0 });
   const [draggingNoteId, setDraggingNoteId] = useState<string | null>(null);
-  const [draggingOperationId, setDraggingOperationId] = useState<string | null>(null);
   const [draggingBlockId, setDraggingBlockId] = useState<string | null>(null);
   const [draggingToolId, setDraggingToolId] = useState<string | null>(null);
   const [draggingUploadId, setDraggingUploadId] = useState<string | null>(null);
   const [draggingOutputId, setDraggingOutputId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Selection>(null);
-  const [hoveredOperationId, setHoveredOperationId] = useState<string | null>(null);
   const [hoveredBlockId, setHoveredBlockId] = useState<string | null>(null);
   const [hoveredToolId, setHoveredToolId] = useState<string | null>(null);
   const [hoveredUploadId, setHoveredUploadId] = useState<string | null>(null);
   const [hoveredOutputId, setHoveredOutputId] = useState<string | null>(null);
 
-  const operationMeta: Record<
-    OperationKind,
-    { label: string; description: string; gradient: string; ring: string; text: string; accent: string }
-  > = {
-    branch: {
-      label: "Branch",
-      description: "Split to up to 5 paths",
-      gradient: "from-emerald-50 via-white to-emerald-100",
-      ring: "ring-emerald-200",
-      text: "text-emerald-900",
-      accent: "bg-emerald-500",
-    },
-    sequential: {
-      label: "Sequential",
-      description: "Run steps in order",
-      gradient: "from-sky-50 via-white to-indigo-100",
-      ring: "ring-indigo-200",
-      text: "text-slate-900",
-      accent: "bg-indigo-500",
-    },
-    aggregate: {
-      label: "Aggregate",
-      description: "Collect up to 5 inputs and combine",
-      gradient: "from-amber-50 via-white to-orange-100",
-      ring: "ring-amber-200",
-      text: "text-amber-900",
-      accent: "bg-amber-500",
-    },
-  };
-  const operationKinds: OperationKind[] = ["branch", "sequential", "aggregate"];
   const panelTitles: Record<PanelKey, string> = {
     blocks: "Blocks",
-    operations: "Operations",
     tools: "Tools",
-    io: "Inputs / Outputs",
     settings: "Settings",
   };
   const panelTabs: { id: PanelKey; label: string; symbol: string }[] = [
     { id: "blocks", label: "Blocks", symbol: "[]" },
-    { id: "operations", label: "Operations", symbol: "Ops" },
     { id: "tools", label: "Tools", symbol: "TL" },
-    { id: "io", label: "I/O", symbol: "IO" },
     { id: "settings", label: "Settings", symbol: ":" },
   ];
   const handleCircle = useCallback(
@@ -314,19 +264,6 @@ export default function App() {
     event.dataTransfer.setData("text/plain", "agent-block");
   }, []);
 
-  const handleOperationDragStart =
-    useCallback(
-      (kind: OperationKind) => (event: DragEvent<HTMLDivElement>) => {
-        event.dataTransfer.effectAllowed = "copy";
-        event.dataTransfer.setData(
-          "application/json",
-          JSON.stringify({ type: "operation", kind }),
-        );
-        event.dataTransfer.setData("text/plain", `operation-${kind}`);
-      },
-      [],
-    );
-
   const handleToolDragStart =
     useCallback(
       (toolName: string) => (event: DragEvent<HTMLDivElement>) => {
@@ -372,12 +309,10 @@ export default function App() {
         event.dataTransfer.getData("text/plain");
 
       let payloadType: string | null = null;
-      let payloadKind: OperationKind | null = null;
       let payloadToolName: string | null = null;
       try {
         const parsed = payloadRaw ? JSON.parse(payloadRaw) : null;
         payloadType = parsed?.type ?? null;
-        payloadKind = parsed?.kind ?? null;
         payloadToolName = parsed?.name ?? null;
       } catch {
         // ignore JSON parse errors, fall back to plain text matching
@@ -387,13 +322,7 @@ export default function App() {
       if (!payloadType && payloadRaw?.includes("agent-block")) payloadType = "agent-block";
       if (!payloadType && payloadRaw?.includes("upload-block")) payloadType = "upload-block";
       if (!payloadType && payloadRaw?.includes("output-block")) payloadType = "output-block";
-      if (!payloadType && payloadRaw?.includes("operation")) payloadType = "operation";
       if (!payloadType && payloadRaw?.includes("tool")) payloadType = "tool";
-      if (payloadType === "operation" && !payloadKind) {
-        if (payloadRaw?.includes("branch")) payloadKind = "branch";
-        else if (payloadRaw?.includes("sequential")) payloadKind = "sequential";
-        else if (payloadRaw?.includes("aggregate")) payloadKind = "aggregate";
-      }
       if (payloadType === "tool" && !payloadToolName && payloadRaw) {
         payloadToolName = payloadRaw.replace(/^tool-/, "");
       }
@@ -414,20 +343,6 @@ export default function App() {
             x: worldX,
             y: worldY,
             text: "Sticky note",
-          },
-        ]);
-      }
-
-      if (payloadType === "operation") {
-        if (!payloadKind) return;
-        const id = nextOperationIdRef.current++;
-        setOperations((prev) => [
-          ...prev,
-          {
-            id: `op-${id}`,
-            x: worldX,
-            y: worldY,
-            kind: payloadKind,
           },
         ]);
       }
@@ -569,12 +484,101 @@ export default function App() {
     setConnections((prev) => [...prev, ...newConnections]);
   }, [agentJsonInput, blocks.length, toolPalette]);
 
+  const clamp = useCallback((value: number, min: number, max: number) => Math.min(max, Math.max(min, value)), []);
+  const MIN_IO = 1;
+  const MAX_IO = 5;
+  const TOOL_PORT_OFFSET = 1000;
+
+  const getBlockMode = useCallback(
+    (block: AgentBlock) => {
+      const inbound = connections.filter(
+        (conn) => conn.to.type === "block" && conn.to.id === block.id && (conn.to.inputIndex ?? 0) < TOOL_PORT_OFFSET,
+      ).length;
+      const outbound = connections.filter((conn) => conn.from.type === "block" && conn.from.id === block.id).length;
+      if (block.inputCount > 1 || inbound > 1) return "aggregate";
+      if (block.outputCount > 1 || outbound > 1) return "branch";
+      return "sequential";
+    },
+    [TOOL_PORT_OFFSET, connections],
+  );
+
+  const recalcBlockPorts = useCallback(
+    (conns: Connection[], blocksState: AgentBlock[]) => {
+      const maxInputs: Record<string, number> = {};
+      const maxOutputs: Record<string, number> = {};
+      conns.forEach((conn) => {
+        if (conn.to.type === "block") {
+          const idx = conn.to.inputIndex ?? 0;
+          if (idx < TOOL_PORT_OFFSET) {
+            maxInputs[conn.to.id] = Math.max(maxInputs[conn.to.id] ?? -1, idx);
+          }
+        }
+        if (conn.from.type === "block") {
+          maxOutputs[conn.from.id] = Math.max(maxOutputs[conn.from.id] ?? -1, conn.from.port);
+        }
+      });
+      return blocksState.map((b) => {
+        const desiredInputs = clamp((maxInputs[b.id] ?? -1) + 1, MIN_IO, MAX_IO);
+        const desiredOutputs = clamp((maxOutputs[b.id] ?? -1) + 1, MIN_IO, MAX_IO);
+        if (b.inputCount === desiredInputs && b.outputCount === desiredOutputs) return b;
+        return { ...b, inputCount: desiredInputs, outputCount: desiredOutputs, presetId: "custom" };
+      });
+    },
+    [MAX_IO, MIN_IO, TOOL_PORT_OFFSET, clamp],
+  );
+
   const getBlockHandles = useCallback(
     (block: AgentBlock) => {
       const width = 220;
       const baseHeight = 120;
-      const inputSlots = Math.max(1, block.inputCount);
-      const outputSlots = Math.max(1, block.outputCount);
+      const baseInputs = Math.max(1, block.inputCount);
+      const baseOutputs = Math.max(1, block.outputCount);
+
+      const maxConnectedInput = connections
+        .filter(
+          (conn) =>
+            conn.to.type === "block" &&
+            conn.to.id === block.id &&
+            (conn.to.inputIndex ?? -1) < TOOL_PORT_OFFSET,
+        )
+        .reduce((max, conn) => Math.max(max, conn.to.inputIndex ?? 0), -1);
+
+      const hasToolConnection = connections.some(
+        (conn) => conn.to.type === "block" && conn.to.id === block.id && (conn.to.inputIndex ?? -1) >= TOOL_PORT_OFFSET,
+      );
+
+      const maxConnectedOutput = connections
+        .filter((conn) => conn.from.type === "block" && conn.from.id === block.id)
+        .reduce((max, conn) => Math.max(max, conn.from.port), -1);
+
+      const hasInputConnections = maxConnectedInput >= 0;
+      const hoverIsOnLeft =
+        linking?.origin === "output" &&
+        linking.from.type !== "tool" &&
+        ((hoveredInput?.type === "block" && hoveredInput.id === block.id) || hoveredBlockId === block.id);
+      const showInputPreview = hasInputConnections && hoverIsOnLeft;
+      const desiredInputs = Math.max(baseInputs, maxConnectedInput + 1);
+      const previewInputs =
+        showInputPreview && desiredInputs < MAX_IO ? desiredInputs + 1 : desiredInputs;
+      const inputSlots = Math.min(MAX_IO, previewInputs);
+
+      const hasOutputConnections = maxConnectedOutput >= 0;
+      const hoverIsOnRight =
+        linking?.origin === "output" &&
+        linking.from.type === "block" &&
+        linking.from.id === block.id;
+      const showOutputPreview = hasOutputConnections && hoverIsOnRight;
+      const desiredOutputs = Math.max(baseOutputs, maxConnectedOutput + 1);
+      const effectiveOutputs = Math.max(1, desiredOutputs);
+      const outputSlots = Math.min(MAX_IO, showOutputPreview ? effectiveOutputs + 1 : effectiveOutputs);
+
+      const hoverIsOnBottom =
+        linking?.origin === "output" &&
+        linking.from.type === "tool" &&
+        hoveredBlockId === block.id;
+      const showToolPreview = !hasToolConnection && hoverIsOnBottom;
+      const toolSlots = 1 + (showToolPreview ? 1 : 0);
+
       const maxSlots = Math.max(inputSlots, outputSlots);
       const topPadding = 18;
       const slotGap = 28;
@@ -601,52 +605,20 @@ export default function App() {
         }));
       };
 
-      const inputAnchors = buildAnchors(inputSlots, "left");
-      const outputAnchors = buildAnchors(outputSlots, "right");
-      const toolPortIndex = inputSlots;
-      const toolInput: AnchorPoint = { x: block.x + width / 2, y: block.y + height + 4, dir: "down" };
-      return { width, height, inputAnchors, outputAnchors, toolInput, toolPortIndex };
-    },
-    [],
-  );
-
-  const getOperationHandles = useCallback(
-    (operation: Operation) => {
-      const width = 260;
-      const baseHeight = 60;
-      const inputSlots = 1;
-      const outputSlots = 1;
-      const topPadding = 12;
-      const maxSlots = Math.max(inputSlots, outputSlots);
-      const slotGap = 24;
-      const height =
-        maxSlots > 1
-          ? Math.max(baseHeight, topPadding * 2 + slotGap * (maxSlots - 1))
-          : baseHeight;
-
-      const buildAnchors = (count: number, side: "left" | "right"): AnchorPoint[] => {
-        if (count <= 1) {
-          return [
-            {
-              x: side === "left" ? operation.x : operation.x + width,
-              y: operation.y + height / 2,
-              dir: side,
-            },
-          ];
-        }
-        const gap = (height - topPadding * 2) / (count - 1);
-        return Array.from({ length: count }, (_, idx) => ({
-          x: side === "left" ? operation.x : operation.x + width,
-          y: operation.y + topPadding + idx * gap,
-          dir: side,
+      const buildBottomAnchors = (count: number): { anchor: AnchorPoint; slot: number }[] => {
+        const slots = Math.max(1, count);
+        return Array.from({ length: slots }, (_, idx) => ({
+          anchor: { x: block.x + width / 2 + 4, y: block.y + height, dir: "down" },
+          slot: TOOL_PORT_OFFSET + idx,
         }));
       };
 
       const inputAnchors = buildAnchors(inputSlots, "left");
       const outputAnchors = buildAnchors(outputSlots, "right");
-      return { width, height, inputAnchors, outputAnchors };
+      const toolAnchors = buildBottomAnchors(toolSlots);
+      return { width, height, inputAnchors, outputAnchors, toolAnchors };
     },
-    [],
+    [MAX_IO, TOOL_PORT_OFFSET, connections, draggingBlockId, hoveredBlockId, hoveredInput, linking],
   );
 
   const getToolHandles = useCallback((tool: ToolNode) => {
@@ -668,9 +640,6 @@ export default function App() {
     const input: AnchorPoint = { x: output.x, y: output.y + height / 2, dir: "left" };
     return { width, height, input };
   }, []);
-  const clamp = useCallback((value: number, min: number, max: number) => Math.min(max, Math.max(min, value)), []);
-  const MIN_IO = 1;
-  const MAX_IO = 6;
   const applyBlockIO = useCallback(
     (
       blockId: string,
@@ -680,11 +649,8 @@ export default function App() {
     ) => {
       const targetBlock = blocks.find((b) => b.id === blockId);
       if (!targetBlock) return;
-      const oldInputCount = targetBlock.inputCount;
       const newInputs = clamp(nextInputCount, MIN_IO, MAX_IO);
       const newOutputs = clamp(nextOutputCount, MIN_IO, MAX_IO);
-      const oldToolPortIndex = oldInputCount;
-      const newToolPortIndex = newInputs;
 
       setBlocks((prev) =>
         prev.map((b) =>
@@ -705,30 +671,20 @@ export default function App() {
           (conn) => !(conn.from.type === "block" && conn.from.id === blockId && conn.from.port >= newOutputs),
         );
 
-        // remap tool-port connections, drop inputs that are out of range
-        next = next
-          .map((conn) => {
-            if (conn.to.type === "block" && conn.to.id === blockId) {
-              const idx = conn.to.inputIndex ?? 0;
-              if (idx === oldToolPortIndex) {
-                return { ...conn, to: { ...conn.to, inputIndex: newToolPortIndex } };
-              }
-            }
-            return conn;
-          })
-          .filter((conn) => {
-            if (conn.to.type === "block" && conn.to.id === blockId) {
-              const idx = conn.to.inputIndex ?? 0;
-              if (idx === newToolPortIndex) return true;
-              return idx < newInputs;
-            }
-            return true;
-          });
+        // drop input connections past new input count (ignore tool ports)
+        next = next.filter((conn) => {
+          if (conn.to.type === "block" && conn.to.id === blockId) {
+            const idx = conn.to.inputIndex ?? 0;
+            if (idx >= TOOL_PORT_OFFSET) return true;
+            return idx < newInputs;
+          }
+          return true;
+        });
 
         return next;
       });
     },
-    [MAX_IO, MIN_IO, blocks, clamp],
+    [MAX_IO, MIN_IO, TOOL_PORT_OFFSET, blocks, clamp],
   );
   const changeBlockInputs = useCallback(
     (blockId: string, delta: number) => {
@@ -748,24 +704,7 @@ export default function App() {
     },
     [MAX_IO, MIN_IO, applyBlockIO, blocks, clamp],
   );
-  const applyPresetToBlock = useCallback(
-    (blockId: string, presetId: string) => {
-      const preset = agentPresets.find((p) => p.id === presetId);
-      if (!preset) return;
-      applyBlockIO(
-        blockId,
-        preset.inputCount,
-        preset.outputCount,
-        { name: preset.name, description: preset.description, presetId: preset.id },
-      );
-    },
-    [agentPresets, applyBlockIO],
-  );
-  const markBlockCustom = useCallback((blockId: string) => {
-    setBlocks((prev) =>
-      prev.map((b) => (b.id === blockId ? { ...b, presetId: "custom" } : b)),
-    );
-  }, []);
+
   const handleEnterWorkspace = useCallback(() => {
     if (startExiting) return;
     setStartExiting(true);
@@ -776,6 +715,48 @@ export default function App() {
       startTimeoutRef.current = null;
     }, 450);
   }, [startExiting]);
+
+  const handleResetWorkspace = useCallback(() => {
+    reset();
+    setNotes([]);
+    setBlocks([]);
+    setTools([]);
+    setUploads([]);
+    setOutputs([]);
+    setConnections([]);
+    setLinking(null);
+    setHoveredInput(null);
+    setHoveredOutput(null);
+    setSelected(null);
+    setDraggingNoteId(null);
+    setDraggingBlockId(null);
+    setDraggingToolId(null);
+    setDraggingUploadId(null);
+    setDraggingOutputId(null);
+    setHoveredBlockId(null);
+    setHoveredToolId(null);
+    setHoveredUploadId(null);
+    setHoveredOutputId(null);
+    dragOffsetRef.current = { x: 0, y: 0 };
+    blockDragOffsetRef.current = { x: 0, y: 0 };
+    toolDragOffsetRef.current = { x: 0, y: 0 };
+    uploadDragOffsetRef.current = { x: 0, y: 0 };
+    outputDragOffsetRef.current = { x: 0, y: 0 };
+    linkingRef.current = false;
+    nextIdRef.current = 1;
+    nextBlockIdRef.current = 1;
+    nextToolIdRef.current = 1;
+    nextUploadIdRef.current = 1;
+    nextOutputIdRef.current = 1;
+    nextConnectionIdRef.current = 1;
+  }, [reset]);
+
+  const handleRun = useCallback(() => {
+    setActivePanel(null);
+    setSelected(null);
+    setShowStart(false);
+    setStartExiting(false);
+  }, []);
 
   const getOutputAnchor = useCallback(
     (endpoint: LinkSource) => {
@@ -801,16 +782,8 @@ export default function App() {
         const handles = getUploadHandles(upload);
         return handles.output;
       }
-      const operation = operations.find((op) => op.id === endpoint.id);
-      if (!operation) return null;
-      const handles = getOperationHandles(operation);
-      const index = Math.min(
-        handles.outputAnchors.length - 1,
-        Math.max(0, endpoint.port),
-      );
-      return handles.outputAnchors[index];
     },
-    [blocks, getBlockHandles, getOperationHandles, getToolHandles, getUploadHandles, operations, tools, uploads],
+    [blocks, getBlockHandles, getToolHandles, getUploadHandles, tools, uploads],
   );
 
   const getInputAnchor = useCallback(
@@ -820,7 +793,8 @@ export default function App() {
         if (!block) return null;
         const handles = getBlockHandles(block);
         const inputIndex = target.inputIndex ?? 0;
-        if (inputIndex === handles.toolPortIndex) return handles.toolInput;
+        const toolAnchor = handles.toolAnchors.find((item) => item.slot === inputIndex);
+        if (toolAnchor) return toolAnchor.anchor;
         const boundedIndex = Math.min(
           handles.inputAnchors.length - 1,
           Math.max(0, inputIndex),
@@ -839,16 +813,8 @@ export default function App() {
         const handles = getOutputHandles(output);
         return handles.input;
       }
-      const operation = operations.find((op) => op.id === target.id);
-      if (!operation) return null;
-      const handles = getOperationHandles(operation);
-      const index = Math.min(
-        handles.inputAnchors.length - 1,
-        Math.max(0, target.inputIndex ?? 0),
-      );
-      return handles.inputAnchors[index];
     },
-    [blocks, getBlockHandles, getOperationHandles, getOutputHandles, getToolHandles, operations, outputs, tools],
+    [blocks, getBlockHandles, getOutputHandles, getToolHandles, outputs, tools],
   );
 
   const buildConnectionPath = useCallback(
@@ -911,73 +877,6 @@ export default function App() {
       if (selected?.type === "note" && selected.id === noteId) setSelected(null);
     },
     [draggingNoteId, selected],
-  );
-
-  const handleOperationPointerDown = useCallback(
-    (operationId: string) => (event: ReactPointerEvent<HTMLDivElement>) => {
-      const target = event.target as HTMLElement | null;
-      if (linkingRef.current || target?.closest("[data-connector]")) return;
-      event.stopPropagation();
-      event.preventDefault();
-      setSelected((prev) =>
-        prev?.type === "operation" && prev.id === operationId
-          ? null
-          : { type: "operation", id: operationId },
-      );
-      const op = operations.find((o) => o.id === operationId);
-      const world = toWorldPoint(event.clientX, event.clientY);
-      if (!op || !world) return;
-      operationDragOffsetRef.current = { x: world.x - op.x, y: world.y - op.y };
-      setDraggingOperationId(operationId);
-      setSelected({ type: "operation", id: operationId });
-      event.currentTarget.setPointerCapture?.(event.pointerId);
-    },
-    [operations, toWorldPoint],
-  );
-
-  const handleOperationPointerMove = useCallback(
-    (operationId: string) => (event: ReactPointerEvent<HTMLDivElement>) => {
-      if (draggingOperationId !== operationId) return;
-      const world = toWorldPoint(event.clientX, event.clientY);
-      if (!world) return;
-      const newX = world.x - operationDragOffsetRef.current.x;
-      const newY = world.y - operationDragOffsetRef.current.y;
-      setOperations((prev) =>
-        prev.map((op) => (op.id === operationId ? { ...op, x: newX, y: newY } : op)),
-      );
-    },
-    [draggingOperationId, toWorldPoint],
-  );
-
-  const handleOperationPointerUp = useCallback(
-    (operationId: string) => (event: ReactPointerEvent<HTMLDivElement>) => {
-      if (draggingOperationId !== operationId) return;
-      setDraggingOperationId(null);
-      operationDragOffsetRef.current = { x: 0, y: 0 };
-      event.currentTarget.releasePointerCapture?.(event.pointerId);
-    },
-    [draggingOperationId],
-  );
-
-  const handleRemoveOperation = useCallback(
-    (operationId: string) => {
-      setOperations((prev) => prev.filter((op) => op.id !== operationId));
-      if (draggingOperationId === operationId) {
-        setDraggingOperationId(null);
-        operationDragOffsetRef.current = { x: 0, y: 0 };
-      }
-      if (selected?.type === "operation" && selected.id === operationId) setSelected(null);
-      setConnections((prev) =>
-        prev.filter(
-          (conn) =>
-            !(
-              (conn.from.type === "operation" && conn.from.id === operationId) ||
-              (conn.to.type === "operation" && conn.to.id === operationId)
-            ),
-        ),
-      );
-    },
-    [draggingOperationId, selected],
   );
 
   const handleBlockPointerDown = useCallback(
@@ -1274,15 +1173,27 @@ export default function App() {
     }, 0);
   }, []);
 
+  const handleRemoveConnection = useCallback((connectionId: string) => {
+    setConnections((prev) => {
+      const next = prev.filter((conn) => conn.id !== connectionId);
+      setBlocks((blocksState) => recalcBlockPorts(next, blocksState));
+      return next;
+    });
+    setSelected((prev) => (prev?.type === "connection" && prev.id === connectionId ? null : prev));
+  }, [recalcBlockPorts]);
+
   const handleInputEnter = useCallback(
-    (target: { type: "block" | "operation" | "tool" | "output"; id: string; inputIndex?: number }) => () => {
+    (target: { type: "block" | "tool" | "output"; id: string; inputIndex?: number }) => () => {
+      if (linking?.origin === "output" && linking.from.type === "tool" && (target.inputIndex ?? 0) < TOOL_PORT_OFFSET) {
+        return;
+      }
       if (linking) setHoveredInput(target);
     },
-    [linking],
+    [TOOL_PORT_OFFSET, linking],
   );
 
   const handleInputLeave = useCallback(
-    (target: { type: "block" | "operation" | "tool" | "output"; id: string; inputIndex?: number }) => () => {
+    (target: { type: "block" | "tool" | "output"; id: string; inputIndex?: number }) => () => {
       if (
         hoveredInput &&
         hoveredInput.type === target.type &&
@@ -1316,6 +1227,37 @@ export default function App() {
     [hoveredOutput],
   );
 
+  const handleConnectionPointerDown = useCallback(
+    (conn: Connection) => (event: ReactPointerEvent<SVGPathElement>) => {
+      event.stopPropagation();
+      event.preventDefault();
+      const removeAndMaybeLink = (shouldLink: boolean) => {
+        setConnections((prev) => {
+          const next = prev.filter((c) => c.id !== conn.id);
+          setBlocks((blocksState) => recalcBlockPorts(next, blocksState));
+          return next;
+        });
+        if (!shouldLink) return;
+        const startAnchor = getOutputAnchor(conn.from);
+        const world = toWorldPoint(event.clientX, event.clientY);
+        const currentPoint = world ?? startAnchor ?? { x: 0, y: 0 };
+        linkingRef.current = true;
+        setLinking({ origin: "output", from: conn.from, current: currentPoint });
+        setHoveredInput(null);
+        setHoveredOutput(null);
+      };
+
+      if (event.detail >= 2) {
+        removeAndMaybeLink(true);
+        return;
+      }
+
+      // Single click: just disconnect
+      removeAndMaybeLink(false);
+    },
+    [getOutputAnchor, toWorldPoint],
+  );
+
   const startLinkingFromInput = useCallback(
     (target: LinkTarget) =>
       (event: ReactPointerEvent<HTMLDivElement | HTMLButtonElement>) => {
@@ -1336,12 +1278,61 @@ export default function App() {
         event.stopPropagation();
         event.preventDefault();
         if (event.detail >= 2) return;
-        const anchor = getOutputAnchor(from);
+        setHoveredInput(null);
+        setHoveredOutput(null);
+        let effectiveFrom = from;
+        if (from.type === "block") {
+          const ports = connections
+            .filter((conn) => conn.from.type === "block" && conn.from.id === from.id)
+            .map((conn) => conn.from.port);
+          const hasPort = ports.includes(from.port);
+          const maxPort = ports.reduce((max, p) => Math.max(max, p), -1);
+          const nextPort = Math.min(MAX_IO - 1, Math.max(maxPort + 1, from.port));
+          if (hasPort) {
+            effectiveFrom = { ...from, port: nextPort };
+          }
+        }
+        const computeOutputAnchorWithPreview = (block: AgentBlock, port: number): AnchorPoint => {
+          const width = 220;
+          const baseHeight = 120;
+          const baseInputs = Math.max(1, block.inputCount);
+          const baseOutputs = Math.max(1, block.outputCount);
+          const maxConnectedInput = connections
+            .filter((conn) => conn.to.type === "block" && conn.to.id === block.id && (conn.to.inputIndex ?? -1) < TOOL_PORT_OFFSET)
+            .reduce((max, conn) => Math.max(max, conn.to.inputIndex ?? 0), -1);
+          const inputSlots = Math.min(MAX_IO, Math.max(baseInputs, maxConnectedInput + 1));
+          const maxConnectedOutput = connections
+            .filter((conn) => conn.from.type === "block" && conn.from.id === block.id)
+            .reduce((max, conn) => Math.max(max, conn.from.port), -1);
+          const hasOutputConnections = maxConnectedOutput >= 0;
+          const desiredOutputs = Math.max(baseOutputs, maxConnectedOutput + 1);
+          const effectiveOutputs = Math.max(1, desiredOutputs);
+          const outputSlots = Math.min(MAX_IO, hasOutputConnections ? effectiveOutputs + 1 : effectiveOutputs);
+          const maxSlots = Math.max(inputSlots, outputSlots);
+          const topPadding = 18;
+          const slotGap = 28;
+          const height =
+            maxSlots > 1 ? Math.max(baseHeight, topPadding * 2 + slotGap * (maxSlots - 1)) : baseHeight;
+          const count = outputSlots;
+          if (count <= 1) {
+            return { x: block.x + width, y: block.y + height / 2, dir: "right" };
+          }
+          const gap = (height - topPadding * 2) / (count - 1);
+          const idx = Math.min(count - 1, Math.max(0, port));
+          return { x: block.x + width, y: block.y + topPadding + idx * gap, dir: "right" };
+        };
+        let anchor = getOutputAnchor(effectiveFrom);
+        if (!anchor && effectiveFrom.type === "block") {
+          const block = blocks.find((b) => b.id === effectiveFrom.id);
+          if (block) {
+            anchor = computeOutputAnchorWithPreview(block, effectiveFrom.port);
+          }
+        }
         if (!anchor) return;
         linkingRef.current = true;
-        setLinking({ origin: "output", from, current: anchor });
+        setLinking({ origin: "output", from: effectiveFrom, current: anchor });
       },
-    [getOutputAnchor],
+    [MAX_IO, TOOL_PORT_OFFSET, blocks, connections, getOutputAnchor],
   );
 
   const moveLinking = useCallback(
@@ -1356,9 +1347,19 @@ export default function App() {
 
   const finalizeLinking = useCallback((overrideTarget?: LinkTarget) => {
     if (!linking) return;
+    const autoToolTarget =
+      linking.origin === "output" &&
+      linking.from.type === "tool" &&
+      hoveredBlockId
+        ? { type: "block" as const, id: hoveredBlockId, inputIndex: TOOL_PORT_OFFSET }
+        : null;
     const target =
       overrideTarget ??
-      (linking.origin === "output" ? hoveredInput : linking.target);
+      (linking.origin === "output"
+        ? linking.from.type === "tool"
+          ? autoToolTarget || hoveredInput
+          : hoveredInput
+        : linking.target);
     const from = linking.origin === "output" ? linking.from : hoveredOutput;
 
     if (
@@ -1366,48 +1367,75 @@ export default function App() {
       from &&
       !(target.type === from.type && target.id === from.id)
     ) {
+      const isToolPortTarget = target.type === "block" && (target.inputIndex ?? 0) >= TOOL_PORT_OFFSET;
+      if (isToolPortTarget && from.type !== "tool") {
+        setLinking(null);
+        linkingRef.current = false;
+        setHoveredInput(null);
+        setHoveredOutput(null);
+        return;
+      }
+      if (
+        from.type === "tool" &&
+        target.type === "block" &&
+        (target.inputIndex ?? 0) < TOOL_PORT_OFFSET
+      ) {
+        setLinking(null);
+        linkingRef.current = false;
+        setHoveredInput(null);
+        setHoveredOutput(null);
+        return;
+      }
       const id = nextConnectionIdRef.current++;
       const targetBlock =
         target.type === "block" ? blocks.find((b) => b.id === target.id) : null;
       const targetHandles = targetBlock ? getBlockHandles(targetBlock) : null;
       const isBlockToolTarget =
         target.type === "block" &&
-        targetHandles &&
-        (target.inputIndex ?? -1) === targetHandles.toolPortIndex;
-      const targetOperation =
-        target.type === "operation" ? operations.find((op) => op.id === target.id) : null;
-      const allowMultipleForTarget =
-        target.type === "operation" && targetOperation?.kind === "aggregate";
+        (target.inputIndex ?? -1) >= TOOL_PORT_OFFSET;
+      const sourceBlock = from && from.type === "block" ? blocks.find((b) => b.id === from.id) : null;
+      if (
+        sourceBlock &&
+        from &&
+        from.type === "block" &&
+        from.port >= sourceBlock.outputCount &&
+        sourceBlock.outputCount < MAX_IO
+      ) {
+        applyBlockIO(sourceBlock.id, sourceBlock.inputCount, sourceBlock.outputCount + 1, { presetId: "custom" });
+      }
+      if (
+        target.type === "block" &&
+        targetBlock &&
+        !isBlockToolTarget &&
+        (target.inputIndex ?? 0) >= targetBlock.inputCount &&
+        targetBlock.inputCount < MAX_IO
+      ) {
+        applyBlockIO(targetBlock.id, targetBlock.inputCount + 1, targetBlock.outputCount, { presetId: "custom" });
+      }
       setConnections((prev) => {
         if (isBlockToolTarget) {
-          const withoutDuplicate = prev.filter(
+          const desiredSlot =
+            targetHandles?.toolAnchors.find((item) => item.slot === target.inputIndex)?.slot ??
+            TOOL_PORT_OFFSET + Math.max(0, (target.inputIndex ?? TOOL_PORT_OFFSET) - TOOL_PORT_OFFSET);
+          const slot = Math.min(TOOL_PORT_OFFSET + MAX_IO - 1, desiredSlot);
+          const withoutTool = prev.filter(
+            (conn) => !(conn.from.type === "tool" && conn.from.id === from.id),
+          );
+          const withoutDuplicate = withoutTool.filter(
             (conn) =>
               !(
                 conn.from.type === from.type &&
                 conn.from.id === from.id &&
                 conn.to.type === target.type &&
                 conn.to.id === target.id &&
-                (conn.to.inputIndex ?? 0) === 1
+                (conn.to.inputIndex ?? 0) === slot
               ),
           );
-          return [...withoutDuplicate, { id: `conn-${id}`, from, to: target }];
+          return [...withoutDuplicate, { id: `conn-${id}`, from, to: { ...target, inputIndex: slot } }];
         }
         const targetSlot = target.inputIndex ?? 0;
-        if (allowMultipleForTarget) {
-          const withoutExactDuplicate = prev.filter(
-            (conn) =>
-              !(
-                conn.from.type === from.type &&
-                conn.from.id === from.id &&
-                conn.to.type === target.type &&
-                conn.to.id === target.id &&
-                (conn.to.inputIndex ?? 0) === targetSlot
-              ),
-          );
-          return [...withoutExactDuplicate, { id: `conn-${id}`, from, to: target }];
-        }
-        // enforce single connection per target slot (block/operation/tool inputs)
-        return [
+        // enforce single connection per target slot (block/tool/output inputs)
+        const next = [
           ...prev.filter(
             (conn) =>
               !(
@@ -1418,18 +1446,20 @@ export default function App() {
           ),
           { id: `conn-${id}`, from, to: target },
         ];
+        setBlocks((blocksState) => recalcBlockPorts(next, blocksState));
+        return next;
       });
     }
     setLinking(null);
     linkingRef.current = false;
     setHoveredInput(null);
     setHoveredOutput(null);
-  }, [blocks, getBlockHandles, hoveredInput, hoveredOutput, linking, operations]);
+  }, [MAX_IO, applyBlockIO, blocks, getBlockHandles, hoveredInput, hoveredOutput, linking]);
 
   const handleCanvasPointerDown = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
       const target = event.target as HTMLElement | null;
-      if (target?.closest("[data-note],[data-block],[data-operation],[data-tool],[data-upload],[data-output]")) return;
+      if (target?.closest("[data-note],[data-block],[data-tool],[data-upload],[data-output]")) return;
       setSelected(null);
       setHoveredInput(null);
       setHoveredOutput(null);
@@ -1458,9 +1488,6 @@ export default function App() {
         if (selected.type === "block") {
           const block = blocks.find((b) => b.id === selected.id);
           if (block) setClipboard({ type: "block", data: block });
-        } else if (selected.type === "operation") {
-          const op = operations.find((o) => o.id === selected.id);
-          if (op) setClipboard({ type: "operation", data: op });
         } else if (selected.type === "tool") {
           const tool = tools.find((t) => t.id === selected.id);
           if (tool) setClipboard({ type: "tool", data: tool });
@@ -1493,12 +1520,6 @@ export default function App() {
           };
           setBlocks((prev) => [...prev, newBlock]);
           setSelected({ type: "block", id: newBlock.id });
-        } else if (clipboard.type === "operation") {
-          const base = clipboard.data;
-          const id = nextOperationIdRef.current++;
-          const newOp: Operation = { ...base, id: `op-${id}`, x: base.x + OFFSET, y: base.y + OFFSET };
-          setOperations((prev) => [...prev, newOp]);
-          setSelected({ type: "operation", id: newOp.id });
         } else if (clipboard.type === "tool") {
           const base = clipboard.data;
           const id = nextToolIdRef.current++;
@@ -1534,14 +1555,14 @@ export default function App() {
         handleRemoveNote(selected.id);
       } else if (selected.type === "block") {
         handleRemoveBlock(selected.id);
-      } else if (selected.type === "operation") {
-        handleRemoveOperation(selected.id);
       } else if (selected.type === "tool") {
         handleRemoveTool(selected.id);
       } else if (selected.type === "upload") {
         handleRemoveUpload(selected.id);
       } else if (selected.type === "output") {
         handleRemoveOutput(selected.id);
+      } else if (selected.type === "connection") {
+        handleRemoveConnection(selected.id);
       }
     }
 
@@ -1555,12 +1576,11 @@ export default function App() {
     clamp,
     handleRemoveBlock,
     handleRemoveNote,
-    handleRemoveOperation,
     handleRemoveOutput,
     handleRemoveTool,
     handleRemoveUpload,
+    handleRemoveConnection,
     notes,
-    operations,
     outputs,
     selected,
     tools,
@@ -1638,124 +1658,136 @@ export default function App() {
 
             {activePanel === "blocks" && (
               <div className="mt-4 space-y-4 flex-1 overflow-y-auto pr-1">
-                <p className="text-xs uppercase tracking-wide text-slate-500">Agent Blocks</p>
-                <div
-                  className="cursor-grab rounded-xl border border-slate-200 bg-gradient-to-br from-white via-white to-slate-50 p-4 shadow-sm active:cursor-grabbing"
-                  draggable
-                  onDragStart={handleBlockDragStart}
-                >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-semibold text-slate-900">Agent: Splitter</p>
-                      <p className="text-xs text-slate-600">1 input → 2 outputs</p>
+                <p className="text-xs uppercase tracking-wide text-slate-500">Agent & IO Blocks</p>
+                <div className="space-y-4">
+                  <div
+                    className="cursor-grab rounded-xl border border-slate-200 bg-gradient-to-br from-white via-white to-slate-50 p-4 shadow-sm active:cursor-grabbing"
+                    draggable
+                    onDragStart={handleBlockDragStart}
+                  >
+                  <div className="flex items-start justify-between">
+                    <div className="flex flex-col gap-0.5">
+                      <p className="text-sm font-semibold text-slate-900">Agent: Solo</p>
+                      <p className="text-xs text-slate-600 leading-snug">Starter block that adapts as you connect.</p>
                     </div>
-                    <span className="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
-                      Drag
-                    </span>
-                  </div>
-                  <div className="mt-3 grid grid-cols-[auto,1fr,auto] gap-3 items-center">
-                    <div className="flex items-center gap-2">
-                      <div className="h-2.5 w-2.5 rounded-full bg-emerald-500 shadow-sm shadow-emerald-200" />
-                      <span className="text-[11px] font-medium text-emerald-900">Input</span>
+                      <span className="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
+                        Drag
+                      </span>
                     </div>
-                    <div className="h-px bg-gradient-to-r from-emerald-200 via-emerald-100 to-transparent" />
-                    <div className="flex flex-col gap-2">
-                      <div className="flex items-center gap-2 justify-end">
-                        <span className="text-[11px] font-medium text-slate-700">Output A</span>
-                        <div className="h-2.5 w-2.5 rounded-full bg-sky-500 shadow-sm shadow-sky-200" />
-                      </div>
-                      <div className="flex items-center gap-2 justify-end">
-                        <span className="text-[11px] font-medium text-slate-700">Output B</span>
-                        <div className="h-2.5 w-2.5 rounded-full bg-sky-500 shadow-sm shadow-sky-200" />
-                      </div>
+                    <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] font-semibold text-slate-700">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 ring-1 ring-emerald-100">
+                        <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
+                        1 input
+                      </span>
+                      <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2 py-1 ring-1 ring-sky-100">
+                        <span className="h-2.5 w-2.5 rounded-full bg-sky-500" />
+                        1 output
+                      </span>
+                      <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-1 ring-1 ring-indigo-100">
+                        <span className="h-2.5 w-2.5 rounded-full bg-indigo-500" />
+                        0 tools
+                      </span>
                     </div>
-                  </div>
-                  <p className="mt-3 text-xs text-slate-600">
-                    Drag this to the canvas to place your agent with one input and two outputs.
-                  </p>
-                </div>
-                <div className="rounded-xl border border-slate-200 bg-white/90 p-4 shadow-sm">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-semibold text-slate-900">Generate from JSON</p>
-                      <p className="text-xs text-slate-600">Build agents, inputs, outputs, and capability tools.</p>
-                    </div>
-                    <span className="rounded-full bg-slate-900/90 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-white shadow-sm">
-                      Beta
-                    </span>
-                  </div>
-                  <textarea
-                    className="mt-3 w-full rounded-lg border border-slate-200 bg-white/80 px-3 py-2 text-xs font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-400"
-                    rows={6}
-                    value={agentJsonInput}
-                    onChange={(e) => setAgentJsonInput(e.target.value)}
-                    spellCheck={false}
-                  />
-                  {agentParseError && (
-                    <p className="mt-2 text-xs font-semibold text-rose-600">{agentParseError}</p>
-                  )}
-                  <div className="mt-3 flex items-center justify-between">
-                    <p className="text-[11px] text-slate-600">
-                      Agents become blocks with matching input/output counts; capabilities become tools linked underneath.
+                    <p className="mt-3 text-xs text-slate-600">
+                      Drag to canvas and add links; inputs/outputs grow as you connect more wires.
                     </p>
-                    <button
-                      className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-emerald-500"
-                      onClick={handleGenerateAgentsFromJson}
-                    >
-                      Generate agents
-                    </button>
                   </div>
-                </div>
-              </div>
-            )}
 
-            {activePanel === "operations" && (
-              <div className="mt-4 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-xs uppercase tracking-wide text-slate-500">Operations</p>
-                    <p className="text-sm text-slate-600">Drop pills to orchestrate flow</p>
-                  </div>
-                  <span className="rounded-full bg-slate-900/90 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-white">
-                    New
-                  </span>
-                </div>
-                <div className="space-y-3">
-                  {operationKinds.map((kind) => {
-                    const meta = operationMeta[kind];
-                    return (
-                      <div
-                        key={kind}
-                        className={`cursor-grab rounded-full border border-slate-200 bg-gradient-to-r ${meta.gradient} px-4 py-3 shadow-sm ring-1 ring-inset ${meta.ring} transition active:cursor-grabbing`}
-                        draggable
-                        onDragStart={handleOperationDragStart(kind)}
-                      >
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="flex items-center gap-3">
-                            <span
-                              className={`inline-flex h-8 w-8 items-center justify-center rounded-full ${meta.accent} text-xs font-semibold uppercase tracking-wide text-white shadow-sm shadow-slate-300/40`}
-                            >
-                              {meta.label.charAt(0)}
-                            </span>
-                            <div className="text-left">
-                              <p className={`text-sm font-semibold ${meta.text}`}>{meta.label}</p>
-                              <p className="text-[11px] text-slate-600">{meta.description}</p>
-                            </div>
-                          </div>
-                          <span className="rounded-full bg-white/80 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-700 ring-1 ring-slate-200">
-                            Drag
-                          </span>
+                  <div className="grid gap-3">
+                    <div
+                      className="cursor-grab rounded-xl border border-slate-200 bg-gradient-to-br from-indigo-50 via-white to-sky-100 p-4 shadow-sm ring-1 ring-inset ring-indigo-100 active:cursor-grabbing"
+                      draggable
+                      onDragStart={handleUploadDragStart}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-900">Upload block</p>
+                          <p className="text-xs text-slate-600">PDF, CSV, Excel, JSON, TXT and more</p>
+                        </div>
+                        <span className="rounded-full bg-white/80 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-700 ring-1 ring-slate-200">
+                          Drag
+                        </span>
+                      </div>
+                      <div className="mt-3 grid grid-cols-[auto,1fr,auto] gap-3 items-center text-[11px] text-slate-700">
+                        <div className="flex items-center gap-2">
+                          <div className="h-2.5 w-2.5 rounded-full bg-emerald-500 shadow-sm shadow-emerald-200" />
+                          <span className="text-[11px] font-medium text-emerald-900">Input</span>
+                        </div>
+                        <div className="h-px bg-gradient-to-r from-emerald-200 via-emerald-100 to-transparent" />
+                        <div className="flex items-center gap-2 justify-end">
+                          <span className="text-[11px] font-medium text-slate-700">Output</span>
+                          <div className="h-2.5 w-2.5 rounded-full bg-sky-500 shadow-sm shadow-sky-200" />
                         </div>
                       </div>
-                    );
-                  })}
+                      <p className="mt-3 text-[11px] text-slate-600">
+                        Use this as a data source before branching into agents or tools.
+                      </p>
+                    </div>
+
+                    <div
+                      className="cursor-grab rounded-xl border border-slate-200 bg-gradient-to-br from-emerald-50 via-white to-amber-100 p-4 shadow-sm ring-1 ring-inset ring-emerald-100 active:cursor-grabbing"
+                      draggable
+                      onDragStart={handleOutputDragStart}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-900">Output block</p>
+                          <p className="text-xs text-slate-600">Define response/formatting requirements</p>
+                        </div>
+                        <span className="rounded-full bg-white/80 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-700 ring-1 ring-slate-200">
+                          Drag
+                        </span>
+                      </div>
+                      <div className="mt-3 grid grid-cols-[auto,1fr,auto] gap-3 items-center text-[11px] text-slate-700">
+                        <div className="flex items-center gap-2">
+                          <div className="h-2.5 w-2.5 rounded-full bg-emerald-500 shadow-sm shadow-emerald-200" />
+                          <span className="text-[11px] font-medium text-emerald-900">Input</span>
+                        </div>
+                        <div className="h-px bg-gradient-to-r from-emerald-200 via-emerald-100 to-transparent" />
+                        <div className="flex items-center gap-2 justify-end">
+                          <span className="text-[11px] font-medium text-slate-700">Output</span>
+                          <div className="h-2.5 w-2.5 rounded-full bg-sky-500 shadow-sm shadow-sky-200" />
+                        </div>
+                      </div>
+                      <p className="mt-3 text-[11px] text-slate-600">
+                        Collect results and specify final format.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-slate-200 bg-white/90 p-4 shadow-sm">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900">Generate from JSON</p>
+                        <p className="text-xs text-slate-600">Build agents, inputs, outputs, and capability tools.</p>
+                      </div>
+                      <span className="rounded-full bg-slate-900/90 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-white shadow-sm">
+                        Beta
+                      </span>
+                    </div>
+                    <textarea
+                      className="mt-3 w-full rounded-lg border border-slate-200 bg-white/80 px-3 py-2 text-xs font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                      rows={6}
+                      value={agentJsonInput}
+                      onChange={(e) => setAgentJsonInput(e.target.value)}
+                      spellCheck={false}
+                    />
+                    {agentParseError && (
+                      <p className="mt-2 text-xs font-semibold text-rose-600">{agentParseError}</p>
+                    )}
+                    <div className="mt-3 flex items-center justify-between">
+                      <p className="text-[11px] text-slate-600">
+                        Agents become blocks with matching input/output counts; capabilities become tools linked underneath.
+                      </p>
+                      <button
+                        className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-emerald-500"
+                        onClick={handleGenerateAgentsFromJson}
+                      >
+                        Generate agents
+                      </button>
+                    </div>
+                  </div>
                 </div>
-                <button
-                  className="inline-flex items-center gap-2 rounded border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
-                  onClick={reset}
-                >
-                  Reset view
-                </button>
               </div>
             )}
 
@@ -1787,78 +1819,6 @@ export default function App() {
                         </div>
                       </div>
                     ))}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {activePanel === "io" && (
-              <div className="mt-4 space-y-5">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-xs uppercase tracking-wide text-slate-500">Inputs / Outputs</p>
-                    <p className="text-sm text-slate-600">Place data ingress and egress blocks</p>
-                  </div>
-                  <span className="rounded-full bg-slate-900/90 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-white shadow-sm">
-                    IO
-                  </span>
-                </div>
-
-                <div className="space-y-4">
-                  <div
-                    className="cursor-grab rounded-xl border border-slate-200 bg-gradient-to-br from-indigo-50 via-white to-sky-100 p-4 shadow-sm ring-1 ring-inset ring-indigo-100 active:cursor-grabbing"
-                    draggable
-                    onDragStart={handleUploadDragStart}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-semibold text-slate-900">Upload block</p>
-                        <p className="text-xs text-slate-600">PDF, CSV, Excel, JSON, TXT and more</p>
-                      </div>
-                      <span className="rounded-full bg-white/80 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-700 ring-1 ring-slate-200">
-                        Drag
-                      </span>
-                    </div>
-                    <div className="mt-3 grid grid-cols-[auto,1fr] gap-3 items-center text-[11px] text-slate-700">
-                      <div className="h-10 w-10 rounded-lg bg-white/80 ring-1 ring-slate-200 shadow-sm flex items-center justify-center font-semibold text-indigo-600">
-                        ⬆
-                      </div>
-                      <div className="space-y-1">
-                        <p className="font-semibold text-slate-800">Drop onto canvas</p>
-                        <p className="text-slate-600">Click “Choose file” on the block to attach your data.</p>
-                      </div>
-                    </div>
-                    <p className="mt-3 text-[11px] text-slate-600">
-                      Use this as a data source before branching into agents or tools.
-                    </p>
-                  </div>
-
-                  <div
-                    className="cursor-grab rounded-xl border border-slate-200 bg-gradient-to-br from-emerald-50 via-white to-amber-100 p-4 shadow-sm ring-1 ring-inset ring-emerald-100 active:cursor-grabbing"
-                    draggable
-                    onDragStart={handleOutputDragStart}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-semibold text-slate-900">Output block</p>
-                        <p className="text-xs text-slate-600">Define response/formatting requirements</p>
-                      </div>
-                      <span className="rounded-full bg-white/80 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-700 ring-1 ring-slate-200">
-                        Drag
-                      </span>
-                    </div>
-                    <div className="mt-3 grid grid-cols-[auto,1fr] gap-3 items-center text-[11px] text-slate-700">
-                      <div className="h-10 w-10 rounded-lg bg-white/80 ring-1 ring-emerald-100 shadow-sm flex items-center justify-center font-semibold text-emerald-600">
-                        ⬇
-                      </div>
-                      <div className="space-y-1">
-                        <p className="font-semibold text-slate-800">Connect to outputs</p>
-                        <p className="text-slate-600">Collect results and specify final format.</p>
-                      </div>
-                    </div>
-                    <p className="mt-3 text-[11px] text-slate-600">
-                      Ideal for summarizing, shaping JSON payloads, or preparing reports.
-                    </p>
                   </div>
                 </div>
               </div>
@@ -1954,7 +1914,7 @@ export default function App() {
               setShowStart(true);
             }}
           >
-            Flow
+            C3AN
           </button>
           <button
             className={actionButtonClass}
@@ -1964,10 +1924,13 @@ export default function App() {
           </button>
           <button
             className={actionButtonClass}
-            onClick={() => {
-              reset();
-              setSelected(null);
-            }}
+            onClick={handleRun}
+          >
+            Run
+          </button>
+          <button
+            className={actionButtonClass}
+            onClick={handleResetWorkspace}
           >
             Reset
           </button>
@@ -2011,17 +1974,23 @@ export default function App() {
                 if (!start || !end) return null;
                 const d = buildConnectionPath(start, end);
                 const stroke =
-                  conn.from.type === "operation"
-                    ? "rgba(99, 102, 241, 0.7)"
-                    : "rgba(56, 189, 248, 0.7)";
+                  conn.from.type === "upload"
+                    ? "rgba(234, 179, 8, 0.75)"
+                    : conn.from.type === "tool"
+                      ? "rgba(99, 102, 241, 0.75)"
+                      : "rgba(56, 189, 248, 0.7)";
+                const isSelected = selected?.type === "connection" && selected.id === conn.id;
                 return (
                   <path
                     key={conn.id}
                     d={d}
                     fill="none"
                     stroke={stroke}
-                    strokeWidth={2}
+                    strokeWidth={isSelected ? 3.5 : 2}
                     strokeLinecap="round"
+                    className={isSelected ? "drop-shadow-[0_0_6px_rgba(59,130,246,0.5)]" : ""}
+                    style={{ pointerEvents: "visibleStroke", cursor: "pointer" }}
+                    onPointerDown={handleConnectionPointerDown(conn)}
                   />
                 );
               })}
@@ -2051,17 +2020,17 @@ export default function App() {
               const isActive = selected?.type === "block" && selected.id === block.id;
               const linkingActive = Boolean(linking);
               const showConnections =
-                isActive ||
-                draggingBlockId === block.id ||
-                linkingActive ||
-                hoveredBlockId === block.id;
-              const blockPresetValue =
-                block.presetId && agentPresets.some((p) => p.id === block.presetId)
-                  ? block.presetId
-                  : "custom";
-              const handles = getBlockHandles(block);
-              return (
-                <div
+            isActive ||
+            draggingBlockId === block.id ||
+            linkingActive ||
+            hoveredBlockId === block.id;
+          const toolIds = connections
+            .filter((conn) => conn.from.type === "tool" && conn.to.type === "block" && conn.to.id === block.id)
+            .map((conn) => conn.from.id);
+          const toolCount = new Set(toolIds).size;
+          const handles = getBlockHandles(block);
+          return (
+            <div
                   key={block.id}
                   className="absolute"
                   style={{ left: block.x, top: block.y }}
@@ -2075,6 +2044,7 @@ export default function App() {
                       showConnections ? "ring-2 ring-emerald-300" : ""
                     } cursor-grab active:cursor-grabbing select-none`}
                     data-block
+                    style={{ width: 220, height: handles.height }}
                     onPointerDown={handleBlockPointerDown(block.id)}
                     onPointerMove={handleBlockPointerMove(block.id)}
                     onPointerUp={handleBlockPointerUp(block.id)}
@@ -2098,28 +2068,9 @@ export default function App() {
                       ×
                     </button>
                     <div className="flex items-start justify-between">
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-col gap-0.5">
                         <p className="text-sm font-semibold text-slate-900">{block.name}</p>
-                        <select
-                          className="rounded border border-slate-200 bg-white/80 text-xs font-semibold text-slate-700 px-2 py-1"
-                          value={blockPresetValue}
-                          onChange={(e) => {
-                            if (e.target.value === "custom") {
-                              markBlockCustom(block.id);
-                            } else {
-                              applyPresetToBlock(block.id, e.target.value);
-                            }
-                          }}
-                          onPointerDown={(e) => e.stopPropagation()}
-                          onDoubleClick={(e) => e.stopPropagation()}
-                        >
-                          <option value="custom">Custom</option>
-                          {agentPresets.map((preset) => (
-                            <option key={preset.id} value={preset.id}>
-                              {preset.name}
-                            </option>
-                          ))}
-                        </select>
+                        <p className="text-[11px] text-slate-600 leading-snug">Mode: {getBlockMode(block)}</p>
                       </div>
                       <span className="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
                         Agent
@@ -2129,54 +2080,67 @@ export default function App() {
                     <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] font-semibold text-slate-700">
                       <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 ring-1 ring-emerald-100">
                         <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
-                        {block.inputCount} inputs
+                        {handles.inputAnchors.length} inputs
                       </span>
                       <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2 py-1 ring-1 ring-sky-100">
                         <span className="h-2.5 w-2.5 rounded-full bg-sky-500" />
-                        {block.outputCount} outputs
+                        {handles.outputAnchors.length} outputs
+                      </span>
+                      <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-1 ring-1 ring-indigo-100">
+                        <span className="h-2.5 w-2.5 rounded-full bg-indigo-500" />
+                        {toolCount} tools
                       </span>
                     </div>
                   </div>
 
                   {/* connection handles for visual targeting */}
-                  <div
-                      className={`absolute left-1/2 -bottom-4 -translate-x-1/2 flex h-8 w-8 items-center justify-center transition-all duration-150 z-10 ${
-                      showConnections ? "opacity-100 scale-100" : "opacity-0 scale-75"
-                    }`}
-                    style={{ width: 24, height: 24, pointerEvents: "auto" }}
-                    data-input
-                    data-connector
-                    onPointerEnter={handleInputEnter({
-                      type: "block",
-                      id: block.id,
-                      inputIndex: handles.toolPortIndex,
-                    })}
-                    onPointerLeave={handleInputLeave({
-                      type: "block",
-                      id: block.id,
-                      inputIndex: handles.toolPortIndex,
-                    })}
-                    onPointerDownCapture={startLinkingFromInput({
-                      type: "block",
-                      id: block.id,
-                      inputIndex: handles.toolPortIndex,
-                    })}
-                    onPointerDown={startLinkingFromInput({
-                      type: "block",
-                      id: block.id,
-                      inputIndex: handles.toolPortIndex,
-                    })}
-                    onPointerUp={() =>
-                      finalizeLinking({
+                  {handles.toolAnchors.map((toolAnchor, idx) => (
+                    <div
+                      key={toolAnchor.slot}
+                      className={`absolute -translate-x-1/2 flex h-8 w-8 items-center justify-center transition-all duration-150 z-10 ${
+                        showConnections ? "opacity-100 scale-100" : "opacity-0 scale-75"
+                      }`}
+                      style={{
+                        top: toolAnchor.anchor.y - block.y - 12,
+                        left: toolAnchor.anchor.x - block.x - 12,
+                        width: 24,
+                        height: 24,
+                        pointerEvents: "auto",
+                      }}
+                      data-input
+                      data-connector
+                      onPointerEnter={handleInputEnter({
                         type: "block",
                         id: block.id,
-                        inputIndex: handles.toolPortIndex,
-                      })
-                    }
-                    aria-label="Attach tool"
-                  >
-                    <HandleDot />
-                  </div>
+                        inputIndex: toolAnchor.slot,
+                      })}
+                      onPointerLeave={handleInputLeave({
+                        type: "block",
+                        id: block.id,
+                        inputIndex: toolAnchor.slot,
+                      })}
+                      onPointerDownCapture={startLinkingFromInput({
+                        type: "block",
+                        id: block.id,
+                        inputIndex: toolAnchor.slot,
+                      })}
+                      onPointerDown={startLinkingFromInput({
+                        type: "block",
+                        id: block.id,
+                        inputIndex: toolAnchor.slot,
+                      })}
+                      onPointerUp={() =>
+                        finalizeLinking({
+                          type: "block",
+                          id: block.id,
+                          inputIndex: toolAnchor.slot,
+                        })
+                      }
+                      aria-label={`Attach tool ${idx + 1}`}
+                    >
+                      <HandleDot />
+                    </div>
+                  ))}
                   {handles.inputAnchors.map((anchor, idx) => (
                     <div
                       key={idx}
@@ -2469,167 +2433,6 @@ export default function App() {
                 </div>
               );
             })}
-            {operations.map((operation) => {
-              const meta = operationMeta[operation.kind];
-              const isActive =
-                selected?.type === "operation" && selected.id === operation.id;
-              const handles = getOperationHandles(operation);
-              const isSourceLinking =
-                linking?.origin === "output" &&
-                linking.from.type === "operation" &&
-                linking.from.id === operation.id;
-              const isTargetLinking =
-                linking?.origin === "input" &&
-                linking.target.type === "operation" &&
-                linking.target.id === operation.id;
-              const showHandles =
-                hoveredOperationId === operation.id ||
-                draggingOperationId === operation.id ||
-                isSourceLinking ||
-                isTargetLinking ||
-                Boolean(linking);
-              const pillHeight = 60;
-              return (
-                <div
-                  key={operation.id}
-                  className="absolute"
-                  style={{ left: operation.x, top: operation.y }}
-                  onPointerEnter={() => setHoveredOperationId(operation.id)}
-                  onPointerLeave={() =>
-                    setHoveredOperationId((prev) => (prev === operation.id ? null : prev))
-                  }
-                >
-                  <div
-                    className={`relative rounded-full border border-slate-200 bg-gradient-to-r ${meta.gradient} px-4 py-3 shadow-md ring-1 ring-inset ${meta.ring} transition-all duration-150 overflow-visible ${
-                      isActive ? "ring-2 ring-offset-2 ring-offset-white shadow-lg" : ""
-                    } cursor-grab active:cursor-grabbing select-none`}
-                    data-operation
-                    style={{ width: handles.width, height: pillHeight }}
-                    onPointerDown={handleOperationPointerDown(operation.id)}
-                    onPointerMove={handleOperationPointerMove(operation.id)}
-                    onPointerUp={handleOperationPointerUp(operation.id)}
-                  >
-                    <button
-                      className={`absolute -right-3 -top-3 flex h-6 w-6 items-center justify-center rounded-full bg-slate-900 text-white text-xs shadow-md transition-all duration-150 ${
-                        isActive ? "scale-100 opacity-100" : "scale-75 opacity-0 pointer-events-none"
-                      }`}
-                      onPointerDown={(e) => {
-                        e.stopPropagation();
-                        e.preventDefault();
-                      }}
-                      onClick={() => handleRemoveOperation(operation.id)}
-                      aria-label="Remove operation"
-                    >
-                      ×
-                    </button>
-                    <div className="flex items-center gap-3">
-                      <span
-                        className={`inline-flex h-9 w-9 items-center justify-center rounded-full ${meta.accent} text-sm font-semibold uppercase tracking-wide text-white shadow-sm shadow-slate-300/50`}
-                      >
-                        {meta.label.slice(0, 2).toUpperCase()}
-                      </span>
-                      <div className="flex flex-col">
-                        <span className={`text-sm font-semibold ${meta.text}`}>{meta.label}</span>
-                        <span className="text-[11px] text-slate-600">Operation</span>
-                      </div>
-                      <div className="ml-auto flex h-6 items-center gap-1 rounded-full bg-white/80 px-3 text-[11px] font-semibold text-slate-700 ring-1 ring-slate-200">
-                        <div className={`h-2 w-2 rounded-full ${meta.accent}`} />
-                        <span>Drop</span>
-                      </div>
-                    </div>
-
-                    {/* connection handles */}
-                    {handles.inputAnchors.map((anchor, idx) => (
-                    <div
-                      key={idx}
-                      className={`absolute flex items-center justify-center transition-all duration-150 z-10 ${
-                          showHandles ? "opacity-100 scale-100" : "opacity-0 scale-75 pointer-events-none"
-                        }`}
-                        style={{
-                          top: anchor.y - operation.y - 12,
-                          left: anchor.x - operation.x - 12,
-                          width: 24,
-                          height: 24,
-                          pointerEvents: "auto",
-                        }}
-                        data-input
-                      data-connector
-                      onPointerEnter={handleInputEnter({
-                        type: "operation",
-                        id: operation.id,
-                        inputIndex: idx,
-                      })}
-                      onPointerLeave={handleInputLeave({
-                        type: "operation",
-                        id: operation.id,
-                        inputIndex: idx,
-                      })}
-                      onPointerDownCapture={startLinkingFromInput({
-                        type: "operation",
-                        id: operation.id,
-                        inputIndex: idx,
-                      })}
-                      onPointerDown={startLinkingFromInput({
-                        type: "operation",
-                        id: operation.id,
-                        inputIndex: idx,
-                      })}
-                      onPointerUp={() =>
-                        finalizeLinking({
-                          type: "operation",
-                          id: operation.id,
-                          inputIndex: idx,
-                          })
-                        }
-                      >
-                        <HandleDot />
-                      </div>
-                    ))}
-                    {handles.outputAnchors.map((anchor, idx) => (
-                    <div
-                      key={idx}
-                        className={`absolute flex items-center justify-center transition-all duration-150 z-10 ${
-                          showHandles ? "opacity-100 scale-100" : "opacity-0 scale-75 pointer-events-none"
-                        }`}
-                        style={{
-                          top: anchor.y - operation.y - 12,
-                          left: anchor.x - operation.x - 12,
-                          width: 24,
-                          height: 24,
-                          pointerEvents: "auto",
-                        }}
-                        data-output
-                        data-connector
-                        onPointerDown={startLinkingFromOutput({
-                          type: "operation",
-                          id: operation.id,
-                          port: idx,
-                        })}
-                        onPointerDownCapture={startLinkingFromOutput({
-                          type: "operation",
-                          id: operation.id,
-                          port: idx,
-                        })}
-                        onPointerEnter={handleOutputEnter({
-                          type: "operation",
-                          id: operation.id,
-                          port: idx,
-                        })}
-                        onPointerLeave={handleOutputLeave({
-                          type: "operation",
-                          id: operation.id,
-                          port: idx,
-                        })}
-                        onPointerMove={moveLinking}
-                        onPointerUp={() => finalizeLinking()}
-                      >
-                        <HandleDot />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
             {tools.map((tool) => {
               const isActive = selected?.type === "tool" && selected.id === tool.id;
               const isDragging = draggingToolId === tool.id;
@@ -2770,14 +2573,14 @@ export default function App() {
               className={`absolute -bottom-12 -left-12 h-28 w-28 rounded-full blur-3xl opacity-40 pointer-events-none ${
                 theme === "dark" ? "bg-slate-800" : "bg-slate-200"
               }`}
-            />
-            <div className="absolute top-1/2 left-[48%] -translate-y-1/2">
+            />  {/* title */}
+            <div className="absolute top-1/2 left-[48.5%] -translate-y-1/2">
               <div className="flex flex-col items-start gap-4">
                 {[
-                  { letter: "F", word: "Forge" },
-                  { letter: "L", word: "Link" },
-                  { letter: "O", word: "Orchestrate" },
-                  { letter: "W", word: "Workflows" },
+                  { letter: "C", word: "" },
+                  { letter: "3", word: "" },
+                  { letter: "A", word: "" },
+                  { letter: "N", word: "" },
                 ].map((item, idx) => (
                   <div
                     key={item.letter}
