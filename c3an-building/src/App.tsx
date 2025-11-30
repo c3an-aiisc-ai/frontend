@@ -2174,65 +2174,118 @@ export default function App() {
               overflow="visible"
             >
               <defs>
-                {/* Arrow marker for required connections */}
+                {/* Gradients for data stream styling - Databricks inspired */}
+                <linearGradient id="gradient-required" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%" stopColor="rgba(244, 63, 94, 0.9)" />
+                  <stop offset="50%" stopColor="rgba(251, 113, 133, 0.9)" />
+                  <stop offset="100%" stopColor="rgba(244, 63, 94, 0.9)" />
+                </linearGradient>
+                <linearGradient id="gradient-upload" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%" stopColor="rgba(234, 179, 8, 0.85)" />
+                  <stop offset="50%" stopColor="rgba(250, 204, 21, 0.85)" />
+                  <stop offset="100%" stopColor="rgba(234, 179, 8, 0.85)" />
+                </linearGradient>
+                <linearGradient id="gradient-tool" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%" stopColor="rgba(99, 102, 241, 0.85)" />
+                  <stop offset="50%" stopColor="rgba(129, 140, 248, 0.85)" />
+                  <stop offset="100%" stopColor="rgba(99, 102, 241, 0.85)" />
+                </linearGradient>
+                <linearGradient id="gradient-default" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%" stopColor="rgba(56, 189, 248, 0.8)" />
+                  <stop offset="50%" stopColor="rgba(14, 165, 233, 0.8)" />
+                  <stop offset="100%" stopColor="rgba(56, 189, 248, 0.8)" />
+                </linearGradient>
+                <linearGradient id="gradient-preview" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%" stopColor="rgba(59, 130, 246, 0.7)" />
+                  <stop offset="50%" stopColor="rgba(96, 165, 250, 0.7)" />
+                  <stop offset="100%" stopColor="rgba(59, 130, 246, 0.7)" />
+                </linearGradient>
+
+                {/* Glow filters for data streams */}
+                <filter id="glow-required" x="-50%" y="-50%" width="200%" height="200%">
+                  <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+                  <feMerge>
+                    <feMergeNode in="coloredBlur"/>
+                    <feMergeNode in="SourceGraphic"/>
+                  </feMerge>
+                </filter>
+                <filter id="glow-upload" x="-50%" y="-50%" width="200%" height="200%">
+                  <feGaussianBlur stdDeviation="2.5" result="coloredBlur"/>
+                  <feMerge>
+                    <feMergeNode in="coloredBlur"/>
+                    <feMergeNode in="SourceGraphic"/>
+                  </feMerge>
+                </filter>
+                <filter id="glow-tool" x="-50%" y="-50%" width="200%" height="200%">
+                  <feGaussianBlur stdDeviation="2.5" result="coloredBlur"/>
+                  <feMerge>
+                    <feMergeNode in="coloredBlur"/>
+                    <feMergeNode in="SourceGraphic"/>
+                  </feMerge>
+                </filter>
+                <filter id="glow-default" x="-50%" y="-50%" width="200%" height="200%">
+                  <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+                  <feMerge>
+                    <feMergeNode in="coloredBlur"/>
+                    <feMergeNode in="SourceGraphic"/>
+                  </feMerge>
+                </filter>
+
+                {/* Arrow markers with gradients */}
                 <marker
                   id="arrowhead-required"
-                  markerWidth="10"
-                  markerHeight="10"
-                  refX="9"
-                  refY="3"
+                  markerWidth="12"
+                  markerHeight="12"
+                  refX="10"
+                  refY="3.5"
                   orient="auto"
                   markerUnits="strokeWidth"
                 >
-                  <path d="M0,0 L0,6 L9,3 z" fill="rgba(244, 63, 94, 0.8)" />
+                  <path d="M0,0 L0,7 L10,3.5 z" fill="url(#gradient-required)" />
                 </marker>
-                {/* Arrow marker for upload connections */}
                 <marker
                   id="arrowhead-upload"
-                  markerWidth="10"
-                  markerHeight="10"
-                  refX="9"
-                  refY="3"
+                  markerWidth="12"
+                  markerHeight="12"
+                  refX="10"
+                  refY="3.5"
                   orient="auto"
                   markerUnits="strokeWidth"
                 >
-                  <path d="M0,0 L0,6 L9,3 z" fill="rgba(234, 179, 8, 0.75)" />
+                  <path d="M0,0 L0,7 L10,3.5 z" fill="url(#gradient-upload)" />
                 </marker>
-                {/* Arrow marker for tool connections */}
                 <marker
                   id="arrowhead-tool"
-                  markerWidth="10"
-                  markerHeight="10"
-                  refX="9"
-                  refY="3"
+                  markerWidth="12"
+                  markerHeight="12"
+                  refX="10"
+                  refY="3.5"
                   orient="auto"
                   markerUnits="strokeWidth"
                 >
-                  <path d="M0,0 L0,6 L9,3 z" fill="rgba(99, 102, 241, 0.75)" />
+                  <path d="M0,0 L0,7 L10,3.5 z" fill="url(#gradient-tool)" />
                 </marker>
-                {/* Arrow marker for default connections */}
                 <marker
                   id="arrowhead-default"
-                  markerWidth="10"
-                  markerHeight="10"
-                  refX="9"
-                  refY="3"
+                  markerWidth="12"
+                  markerHeight="12"
+                  refX="10"
+                  refY="3.5"
                   orient="auto"
                   markerUnits="strokeWidth"
                 >
-                  <path d="M0,0 L0,6 L9,3 z" fill="rgba(56, 189, 248, 0.7)" />
+                  <path d="M0,0 L0,7 L10,3.5 z" fill="url(#gradient-default)" />
                 </marker>
-                {/* Arrow marker for linking preview */}
                 <marker
                   id="arrowhead-preview"
-                  markerWidth="10"
-                  markerHeight="10"
-                  refX="9"
-                  refY="3"
+                  markerWidth="12"
+                  markerHeight="12"
+                  refX="10"
+                  refY="3.5"
                   orient="auto"
                   markerUnits="strokeWidth"
                 >
-                  <path d="M0,0 L0,6 L9,3 z" fill="rgba(59, 130, 246, 0.6)" />
+                  <path d="M0,0 L0,7 L10,3.5 z" fill="url(#gradient-preview)" />
                 </marker>
               </defs>
                   {connections.map((conn) => {
@@ -2256,36 +2309,89 @@ export default function App() {
                         const idx = conn.from.port;
                         return idx < blk.outputRequired.length && blk.outputRequired[idx];
                       })();
-                    const stroke =
-                      isRequiredInput || isRequiredOutput
-                        ? "rgba(244, 63, 94, 0.8)"
-                        : conn.from.type === "upload"
-                          ? "rgba(234, 179, 8, 0.75)"
-                          : conn.from.type === "tool"
-                            ? "rgba(99, 102, 241, 0.75)"
-                            : "rgba(56, 189, 248, 0.7)";
-                    const markerEnd =
-                      isRequiredInput || isRequiredOutput
-                        ? "url(#arrowhead-required)"
-                        : conn.from.type === "upload"
-                          ? "url(#arrowhead-upload)"
-                          : conn.from.type === "tool"
-                            ? "url(#arrowhead-tool)"
-                            : "url(#arrowhead-default)";
+                    
+                    const connectionType = isRequiredInput || isRequiredOutput
+                      ? "required"
+                      : conn.from.type === "upload"
+                        ? "upload"
+                        : conn.from.type === "tool"
+                          ? "tool"
+                          : "default";
+                    
+                    const stroke = connectionType === "required"
+                      ? "url(#gradient-required)"
+                      : connectionType === "upload"
+                        ? "url(#gradient-upload)"
+                        : connectionType === "tool"
+                          ? "url(#gradient-tool)"
+                          : "url(#gradient-default)";
+                    
+                    const filter = connectionType === "required"
+                      ? "url(#glow-required)"
+                      : connectionType === "upload"
+                        ? "url(#glow-upload)"
+                        : connectionType === "tool"
+                          ? "url(#glow-tool)"
+                          : "url(#glow-default)";
+                    
+                    const markerEnd = connectionType === "required"
+                      ? "url(#arrowhead-required)"
+                      : connectionType === "upload"
+                        ? "url(#arrowhead-upload)"
+                        : connectionType === "tool"
+                          ? "url(#arrowhead-tool)"
+                          : "url(#arrowhead-default)";
+                    
                     const isSelected = selected?.type === "connection" && selected.id === conn.id;
                 return (
-                  <path
-                    key={conn.id}
-                    d={d}
-                    fill="none"
-                    stroke={stroke}
-                    strokeWidth={isSelected ? 4 : 3}
-                    strokeLinecap="round"
-                    markerEnd={markerEnd}
-                    className={isSelected ? "drop-shadow-[0_0_6px_rgba(59,130,246,0.5)]" : ""}
-                    style={{ pointerEvents: "visibleStroke", cursor: "pointer" }}
-                    onPointerDown={handleConnectionPointerDown(conn)}
-                  />
+                  <g key={conn.id}>
+                    {/* Background glow layer */}
+                    <path
+                      d={d}
+                      fill="none"
+                      stroke={stroke}
+                      strokeWidth={isSelected ? 8 : 6}
+                      strokeLinecap="round"
+                      opacity={0.3}
+                      style={{ pointerEvents: "none" }}
+                    />
+                    {/* Main connection path */}
+                    <path
+                      d={d}
+                      fill="none"
+                      stroke={stroke}
+                      strokeWidth={isSelected ? 4 : 3}
+                      strokeLinecap="round"
+                      markerEnd={markerEnd}
+                      filter={filter}
+                      className={`transition-all duration-200 ${isSelected ? "drop-shadow-[0_0_12px_rgba(59,130,246,0.6)]" : ""}`}
+                      style={{ 
+                        pointerEvents: "visibleStroke", 
+                        cursor: "pointer",
+                      }}
+                      onPointerDown={handleConnectionPointerDown(conn)}
+                    />
+                    {/* Animated flow particles for active connections */}
+                    {!isSelected && (
+                      <path
+                        d={d}
+                        fill="none"
+                        stroke="rgba(255, 255, 255, 0.8)"
+                        strokeWidth={1.5}
+                        strokeLinecap="round"
+                        strokeDasharray="4 20"
+                        style={{ pointerEvents: "none" }}
+                      >
+                        <animate
+                          attributeName="stroke-dashoffset"
+                          from="0"
+                          to="24"
+                          dur="1.5s"
+                          repeatCount="indefinite"
+                        />
+                      </path>
+                    )}
+                  </g>
                 );
               })}
 
@@ -2298,15 +2404,36 @@ export default function App() {
                 const end = linking.current;
                 const d = buildConnectionPath(start, end);
                 return (
-                  <path
-                    d={d}
-                    fill="none"
-                    stroke="rgba(59, 130, 246, 0.6)"
-                    strokeDasharray="6 6"
-                    strokeWidth={2}
-                    strokeLinecap="round"
-                    markerEnd="url(#arrowhead-preview)"
-                  />
+                  <g>
+                    {/* Background glow for preview */}
+                    <path
+                      d={d}
+                      fill="none"
+                      stroke="url(#gradient-preview)"
+                      strokeWidth={6}
+                      strokeLinecap="round"
+                      opacity={0.3}
+                    />
+                    {/* Main preview path */}
+                    <path
+                      d={d}
+                      fill="none"
+                      stroke="url(#gradient-preview)"
+                      strokeDasharray="8 8"
+                      strokeWidth={3}
+                      strokeLinecap="round"
+                      markerEnd="url(#arrowhead-preview)"
+                      filter="url(#glow-default)"
+                    >
+                      <animate
+                        attributeName="stroke-dashoffset"
+                        from="0"
+                        to="16"
+                        dur="0.8s"
+                        repeatCount="indefinite"
+                      />
+                    </path>
+                  </g>
                 );
               })()}
             </svg>
