@@ -1484,6 +1484,22 @@ export default function App() {
         setHoveredOutput(null);
         return;
       }
+
+      // Check for duplicate connections
+      const isDuplicate = connections.some((conn) => {
+        const sameSource = conn.from.type === from.type && conn.from.id === from.id && conn.from.port === from.port;
+        const sameTarget = conn.to.type === target.type && conn.to.id === target.id && (conn.to.inputIndex ?? 0) === (target.inputIndex ?? 0);
+        return sameSource && sameTarget;
+      });
+
+      if (isDuplicate) {
+        setLinking(null);
+        linkingRef.current = false;
+        setHoveredInput(null);
+        setHoveredOutput(null);
+        return;
+      }
+
       const id = nextConnectionIdRef.current++;
       const targetBlock =
         target.type === "block" ? blocks.find((b) => b.id === target.id) : null;
@@ -1516,6 +1532,21 @@ export default function App() {
             targetHandles?.toolAnchors.find((item) => item.slot === target.inputIndex)?.slot ??
             TOOL_PORT_OFFSET + Math.max(0, (target.inputIndex ?? TOOL_PORT_OFFSET) - TOOL_PORT_OFFSET);
           const slot = Math.min(TOOL_PORT_OFFSET + MAX_IO - 1, desiredSlot);
+
+          // Check for duplicate before adding
+          const wouldBeDuplicate = prev.some((conn) =>
+            conn.from.type === from.type &&
+            conn.from.id === from.id &&
+            conn.from.port === from.port &&
+            conn.to.type === target.type &&
+            conn.to.id === target.id &&
+            (conn.to.inputIndex ?? 0) === slot
+          );
+          
+          if (wouldBeDuplicate) {
+            return prev;
+          }
+
           const withoutTool = prev.filter(
             (conn) => !(conn.from.type === "tool" && conn.from.id === from.id),
           );
@@ -1532,6 +1563,21 @@ export default function App() {
           return [...withoutDuplicate, { id: `conn-${id}`, from, to: { ...target, inputIndex: slot } }];
         }
         const targetSlot = target.inputIndex ?? 0;
+
+        // Check for duplicate connection before adding
+        const wouldBeDuplicate = prev.some((conn) =>
+          conn.from.type === from.type &&
+          conn.from.id === from.id &&
+          conn.from.port === from.port &&
+          conn.to.type === target.type &&
+          conn.to.id === target.id &&
+          (conn.to.inputIndex ?? 0) === targetSlot
+        );
+
+        if (wouldBeDuplicate) {
+          return prev;
+        }
+
         // enforce single connection per target slot (block/tool/output inputs)
         const next = [
           ...prev.filter(
