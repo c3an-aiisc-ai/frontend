@@ -134,6 +134,22 @@ export default function App() {
     ],
     [],
   );
+  const evalOptions = useMemo(
+    () => [
+      { id: "accuracy", name: "Accuracy", description: "Measure prediction correctness", category: "Performance" },
+      { id: "latency", name: "Latency", description: "Response time metrics", category: "Performance" },
+      { id: "throughput", name: "Throughput", description: "Requests per second", category: "Performance" },
+      { id: "coherence", name: "Coherence", description: "Logical consistency of outputs", category: "Quality" },
+      { id: "relevance", name: "Relevance", description: "Output relevance to input", category: "Quality" },
+      { id: "fluency", name: "Fluency", description: "Natural language quality", category: "Quality" },
+      { id: "toxicity", name: "Toxicity", description: "Harmful content detection", category: "Safety" },
+      { id: "bias", name: "Bias", description: "Fairness and bias detection", category: "Safety" },
+      { id: "hallucination", name: "Hallucination", description: "Factual accuracy check", category: "Safety" },
+      { id: "cost", name: "Cost", description: "Token usage and cost tracking", category: "Efficiency" },
+      { id: "reliability", name: "Reliability", description: "Success rate and uptime", category: "Efficiency" },
+    ],
+    [],
+  );
   const [agentJsonInput, setAgentJsonInput] = useState<string>("input json here");
   const [agentParseError, setAgentParseError] = useState<string | null>(null);
   const [connections, setConnections] = useState<Connection[]>([]);
@@ -174,6 +190,8 @@ export default function App() {
   const [selected, setSelected] = useState<Selection>(null);
   const [modalBlockId, setModalBlockId] = useState<string | null>(null);
   const [modalToolChoice, setModalToolChoice] = useState<string>("");
+  const [showEvalsModal, setShowEvalsModal] = useState(false);
+  const [selectedEvals, setSelectedEvals] = useState<string[]>([]);
   const [hoveredBlockId, setHoveredBlockId] = useState<string | null>(null);
   const [hoveredToolId, setHoveredToolId] = useState<string | null>(null);
   const [hoveredUploadId, setHoveredUploadId] = useState<string | null>(null);
@@ -603,6 +621,14 @@ export default function App() {
     },
     [],
   );
+
+  const toggleEval = useCallback((evalId: string) => {
+    setSelectedEvals((prev) => 
+      prev.includes(evalId) 
+        ? prev.filter((id) => id !== evalId)
+        : [...prev, evalId]
+    );
+  }, []);
 
   const getBlockHandles = useCallback(
     (block: AgentBlock) => {
@@ -2129,6 +2155,12 @@ export default function App() {
           </button>
           <button
             className={actionButtonClass}
+            onClick={() => setShowEvalsModal(true)}
+          >
+            Evals
+          </button>
+          <button
+            className={actionButtonClass}
             onClick={handleRun}
           >
             Run
@@ -3218,6 +3250,131 @@ export default function App() {
           </div>
         );
       })()}
+
+      {/* Evals Modal */}
+      {showEvalsModal && (() => {
+        const categories = Array.from(new Set(evalOptions.map((opt) => opt.category)));
+        return (
+          <div 
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" 
+            onClick={() => setShowEvalsModal(false)}
+          >
+            <div
+              className="relative w-[680px] max-h-[85vh] overflow-y-auto rounded-xl bg-white shadow-2xl border border-slate-200 p-6"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="absolute -right-5 -top-5 z-[9999]">
+                <button
+                  className="h-9 w-9 rounded-full bg-slate-900 text-white text-sm font-semibold shadow-lg"
+                  onClick={() => setShowEvalsModal(false)}
+                >
+                  ×
+                </button>
+              </div>
+              
+              <div className="mb-5">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-xl font-semibold text-slate-900">Evaluation Metrics</h2>
+                    <p className="text-sm text-slate-600 mt-1">
+                      Select metrics to monitor agent performance and quality
+                    </p>
+                  </div>
+                  <span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-indigo-700">
+                    {selectedEvals.length} Selected
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-5">
+                {categories.map((category) => {
+                  const categoryOptions = evalOptions.filter((opt) => opt.category === category);
+                  const categoryColor = 
+                    category === "Performance" ? "emerald" :
+                    category === "Quality" ? "sky" :
+                    category === "Safety" ? "rose" :
+                    "amber";
+                  
+                  return (
+                    <div key={category} className="rounded-lg border border-slate-200 p-4">
+                      <div className="flex items-center gap-2 mb-3">
+                        <span className={`h-2.5 w-2.5 rounded-full bg-${categoryColor}-500`} />
+                        <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
+                          {category}
+                        </h3>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        {categoryOptions.map((option) => {
+                          const isSelected = selectedEvals.includes(option.id);
+                          return (
+                            <label
+                              key={option.id}
+                              className={`flex items-start gap-3 p-3 rounded-lg cursor-pointer transition-all ${
+                                isSelected
+                                  ? `bg-${categoryColor}-50 border border-${categoryColor}-200`
+                                  : "bg-slate-50 border border-transparent hover:border-slate-200"
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => toggleEval(option.id)}
+                                className="mt-0.5 h-4 w-4 rounded border-2 border-slate-300 cursor-pointer"
+                              />
+                              <div className="flex-1">
+                                <div className="flex items-center justify-between">
+                                  <span className={`text-sm font-semibold ${
+                                    isSelected ? `text-${categoryColor}-900` : "text-slate-800"
+                                  }`}>
+                                    {option.name}
+                                  </span>
+                                  {isSelected && (
+                                    <span className={`text-[10px] font-semibold uppercase tracking-wide text-${categoryColor}-600`}>
+                                      Active
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-xs text-slate-600 mt-0.5">
+                                  {option.description}
+                                </p>
+                              </div>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="mt-6 flex items-center justify-between gap-3 pt-4 border-t border-slate-200">
+                <button
+                  className="rounded-md border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                  onClick={() => setSelectedEvals([])}
+                >
+                  Clear All
+                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    className="rounded-md border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                    onClick={() => setShowEvalsModal(false)}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800"
+                    onClick={() => setShowEvalsModal(false)}
+                  >
+                    Apply Metrics
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       <div className="absolute bottom-3 right-4 z-20 text-xs font-semibold text-slate-400">
         © 2025 All rights reserved
       </div>
