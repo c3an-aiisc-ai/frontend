@@ -45,6 +45,14 @@ type ToolNode = {
   gradient: string;
   ring: string;
   accent: string;
+  inputCount: number;
+  outputCount: number;
+  inputRequired: boolean[];
+  outputRequired: boolean[];
+  inputNames?: string[];
+  outputNames?: string[];
+  mandatoryInputCount?: number;
+  mandatoryOutputCount?: number;
 };
 
 type ToolPreset = Omit<ToolNode, "id" | "x" | "y">;
@@ -189,6 +197,7 @@ export default function App() {
   const [draggingOutputId, setDraggingOutputId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Selection>(null);
   const [modalBlockId, setModalBlockId] = useState<string | null>(null);
+  const [modalToolId, setModalToolId] = useState<string | null>(null);
   const [modalToolChoice, setModalToolChoice] = useState<string>("");
   const [showEvalsModal, setShowEvalsModal] = useState(false);
   const [selectedEvals, setSelectedEvals] = useState<string[]>([]);
@@ -238,17 +247,17 @@ export default function App() {
   );
   const toolPalette = useMemo<ToolPreset[]>(
     () => [
-      { name: "Lumen Trace", tagline: "Quick spotlight", gradient: "from-sky-50 via-white to-indigo-100", ring: "ring-sky-200", accent: "bg-sky-600" },
-      { name: "Drift Beacon", tagline: "Signal check", gradient: "from-emerald-50 via-white to-teal-100", ring: "ring-emerald-200", accent: "bg-emerald-600" },
-      { name: "Quartz Forge", tagline: "Shape drafts", gradient: "from-amber-50 via-white to-orange-100", ring: "ring-amber-200", accent: "bg-amber-600" },
-      { name: "Echo Loom", tagline: "Thread replies", gradient: "from-slate-50 via-white to-cyan-100", ring: "ring-cyan-200", accent: "bg-cyan-600" },
-      { name: "Prism Warden", tagline: "Guard rails", gradient: "from-fuchsia-50 via-white to-purple-100", ring: "ring-fuchsia-200", accent: "bg-fuchsia-600" },
-      { name: "Static Tuner", tagline: "Noise filter", gradient: "from-gray-50 via-white to-slate-100", ring: "ring-slate-200", accent: "bg-slate-700" },
-      { name: "Nova Draft", tagline: "Fresh canvas", gradient: "from-rose-50 via-white to-amber-100", ring: "ring-rose-200", accent: "bg-rose-600" },
-      { name: "Polar Kite", tagline: "Flow navigator", gradient: "from-blue-50 via-white to-sky-100", ring: "ring-blue-200", accent: "bg-blue-600" },
-      { name: "Ember Chisel", tagline: "Quick trim", gradient: "from-orange-50 via-white to-amber-100", ring: "ring-orange-200", accent: "bg-orange-600" },
-      { name: "Cipher Lens", tagline: "Inspect payloads", gradient: "from-violet-50 via-white to-indigo-100", ring: "ring-violet-200", accent: "bg-indigo-600" },
-      { name: "Vapor Prism", tagline: "Soft preview", gradient: "from-lime-50 via-white to-emerald-100", ring: "ring-lime-200", accent: "bg-lime-600" },
+      { name: "Lumen Trace", tagline: "Quick spotlight", gradient: "from-sky-50 via-white to-indigo-100", ring: "ring-sky-200", accent: "bg-sky-600", inputCount: 1, outputCount: 1, inputRequired: [false], outputRequired: [false] },
+      { name: "Drift Beacon", tagline: "Signal check", gradient: "from-emerald-50 via-white to-teal-100", ring: "ring-emerald-200", accent: "bg-emerald-600", inputCount: 1, outputCount: 1, inputRequired: [false], outputRequired: [false] },
+      { name: "Quartz Forge", tagline: "Shape drafts", gradient: "from-amber-50 via-white to-orange-100", ring: "ring-amber-200", accent: "bg-amber-600", inputCount: 1, outputCount: 2, inputRequired: [false], outputRequired: [false, false] },
+      { name: "Echo Loom", tagline: "Thread replies", gradient: "from-slate-50 via-white to-cyan-100", ring: "ring-cyan-200", accent: "bg-cyan-600", inputCount: 2, outputCount: 1, inputRequired: [true, false], outputRequired: [false] },
+      { name: "Prism Warden", tagline: "Guard rails", gradient: "from-fuchsia-50 via-white to-purple-100", ring: "ring-fuchsia-200", accent: "bg-fuchsia-600", inputCount: 1, outputCount: 2, inputRequired: [true], outputRequired: [true, false] },
+      { name: "Static Tuner", tagline: "Noise filter", gradient: "from-gray-50 via-white to-slate-100", ring: "ring-slate-200", accent: "bg-slate-700", inputCount: 1, outputCount: 1, inputRequired: [false], outputRequired: [false] },
+      { name: "Nova Draft", tagline: "Fresh canvas", gradient: "from-rose-50 via-white to-amber-100", ring: "ring-rose-200", accent: "bg-rose-600", inputCount: 1, outputCount: 1, inputRequired: [false], outputRequired: [false] },
+      { name: "Polar Kite", tagline: "Flow navigator", gradient: "from-blue-50 via-white to-sky-100", ring: "ring-blue-200", accent: "bg-blue-600", inputCount: 2, outputCount: 2, inputRequired: [true, false], outputRequired: [false, false] },
+      { name: "Ember Chisel", tagline: "Quick trim", gradient: "from-orange-50 via-white to-amber-100", ring: "ring-orange-200", accent: "bg-orange-600", inputCount: 1, outputCount: 1, inputRequired: [false], outputRequired: [false] },
+      { name: "Cipher Lens", tagline: "Inspect payloads", gradient: "from-violet-50 via-white to-indigo-100", ring: "ring-violet-200", accent: "bg-indigo-600", inputCount: 1, outputCount: 3, inputRequired: [true], outputRequired: [true, false, false] },
+      { name: "Vapor Prism", tagline: "Soft preview", gradient: "from-lime-50 via-white to-emerald-100", ring: "ring-lime-200", accent: "bg-lime-600", inputCount: 1, outputCount: 1, inputRequired: [false], outputRequired: [false] },
     ],
     [],
   );
@@ -629,6 +638,40 @@ export default function App() {
         : [...prev, evalId]
     );
   }, []);
+
+  const toggleToolInputRequired = useCallback(
+    (toolId: string, index: number) => {
+      setTools((prev) =>
+        prev.map((t) => {
+          if (t.id !== toolId) return t;
+          if (index < 0 || index >= t.inputCount) return t;
+          const mandatoryCount = t.mandatoryInputCount ?? 0;
+          if (index < mandatoryCount) return t;
+          const next = [...t.inputRequired];
+          next[index] = !next[index];
+          return { ...t, inputRequired: next };
+        }),
+      );
+    },
+    [],
+  );
+
+  const toggleToolOutputRequired = useCallback(
+    (toolId: string, index: number) => {
+      setTools((prev) =>
+        prev.map((t) => {
+          if (t.id !== toolId) return t;
+          if (index < 0 || index >= t.outputCount) return t;
+          const mandatoryCount = t.mandatoryOutputCount ?? 0;
+          if (index < mandatoryCount) return t;
+          const next = [...t.outputRequired];
+          next[index] = !next[index];
+          return { ...t, outputRequired: next };
+        }),
+      );
+    },
+    [],
+  );
 
   const getBlockHandles = useCallback(
     (block: AgentBlock) => {
@@ -2938,7 +2981,7 @@ export default function App() {
                     <div
                       className={`absolute inset-0 rounded-lg bg-gradient-to-br ${tool.gradient} ring-1 ring-inset ${tool.ring} shadow-sm transition-all duration-150 pointer-events-none`}
                     />
-                    <div className="relative h-full w-full flex items-center justify-center px-4 text-center">
+                    <div className="relative h-full w-full flex flex-col items-center justify-center px-4 text-center gap-2">
                       <button
                         className={`absolute -right-3 -top-3 flex h-6 w-6 items-center justify-center rounded-full bg-slate-900 text-white text-xs shadow-md transition-all duration-150 ${
                           isActive ? "scale-100 opacity-100" : "scale-75 opacity-0 pointer-events-none"
@@ -2953,6 +2996,21 @@ export default function App() {
                         ×
                       </button>
                       <p className="text-base font-semibold text-slate-900">{tool.name}</p>
+                      <div className="flex items-center gap-2">
+                        <button
+                          className="inline-flex items-center gap-1 rounded-full bg-slate-900 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-white shadow-sm"
+                          onPointerDown={(e) => {
+                            e.stopPropagation();
+                            e.preventDefault();
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setModalToolId(tool.id);
+                          }}
+                        >
+                          Details
+                        </button>
+                      </div>
                     </div>
                     <div
                       className={`absolute left-1/2 -top-4 -translate-x-1/2 flex h-8 w-8 items-center justify-center transition-all duration-150 z-10 ${
@@ -3245,6 +3303,142 @@ export default function App() {
                   </button>
                 </div>
                 <p className="mt-2 text-xs text-slate-600">Tool will be placed below this agent and linked to its bottom port.</p>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Tool Details Modal */}
+      {modalToolId && (() => {
+        const tool = tools.find((t) => t.id === modalToolId);
+        if (!tool) return null;
+        const inbound = connections.filter((c) => c.to.type === "tool" && c.to.id === tool.id);
+        const outbound = connections.filter((c) => c.from.type === "tool" && c.from.id === tool.id);
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setModalToolId(null)}>
+            <div
+              className="relative w-[520px] max-h-[80vh] overflow-visible rounded-xl bg-white shadow-2xl border border-slate-200 p-5"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="absolute -right-5 -top-5 z-[9999]">
+                <button
+                  className="h-9 w-9 rounded-full bg-slate-900 text-white text-sm font-semibold shadow-lg"
+                  onClick={() => setModalToolId(null)}
+                >
+                  ×
+                </button>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-lg font-semibold text-slate-900">{tool.name}</p>
+                  <p className="text-sm text-slate-600">{tool.tagline}</p>
+                </div>
+                <span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-indigo-700">
+                  Tool
+                </span>
+              </div>
+              <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                <div className="rounded-lg border border-slate-200 p-3">
+                  <p className="text-xs font-semibold uppercase text-slate-500">Inputs</p>
+                  <div className="mt-2 space-y-1.5">
+                    {Array.from({ length: tool.inputCount }, (_, idx) => {
+                      const isMandatory = idx < (tool.mandatoryInputCount ?? 0);
+                      const isRequired = tool.inputRequired[idx];
+                      return (
+                        <div key={idx} className="flex items-center justify-between gap-2 text-sm text-black">
+                          <div className="flex items-center gap-2 text-black flex-1">
+                            <span className="h-2.5 w-2.5 rounded-full bg-indigo-500" />
+                            <span className="text-black truncate">{tool.inputNames?.[idx] ?? `Input ${idx + 1}`}</span>
+                            {isMandatory && (
+                              <span className="text-[10px] font-semibold text-rose-600 uppercase tracking-wide">Required</span>
+                            )}
+                          </div>
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={isRequired}
+                              disabled={isMandatory}
+                              onChange={() => toggleToolInputRequired(tool.id, idx)}
+                              className={`h-4 w-4 rounded border-2 ${
+                                isMandatory
+                                  ? "border-rose-300 bg-rose-100 cursor-not-allowed opacity-60"
+                                  : "border-slate-300 cursor-pointer"
+                              }`}
+                            />
+                            <span className={`text-[11px] font-semibold ${
+                              isMandatory ? "text-rose-600" : "text-slate-600"
+                            }`}>
+                              {isMandatory ? "Mandatory" : "Optional"}
+                            </span>
+                          </label>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="rounded-lg border border-slate-200 p-3">
+                  <p className="text-xs font-semibold uppercase text-slate-500">Outputs</p>
+                  <div className="mt-2 space-y-1.5">
+                    {Array.from({ length: tool.outputCount }, (_, idx) => {
+                      const isMandatory = idx < (tool.mandatoryOutputCount ?? 0);
+                      const isRequired = tool.outputRequired[idx];
+                      return (
+                        <div key={idx} className="flex items-center justify-between gap-2 text-sm text-black">
+                          <div className="flex items-center gap-2 text-black flex-1">
+                            <span className="h-2.5 w-2.5 rounded-full bg-violet-500" />
+                            <span className="text-black truncate">{tool.outputNames?.[idx] ?? `Output ${idx + 1}`}</span>
+                            {isMandatory && (
+                              <span className="text-[10px] font-semibold text-rose-600 uppercase tracking-wide">Required</span>
+                            )}
+                          </div>
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={isRequired}
+                              disabled={isMandatory}
+                              onChange={() => toggleToolOutputRequired(tool.id, idx)}
+                              className={`h-4 w-4 rounded border-2 ${
+                                isMandatory
+                                  ? "border-rose-300 bg-rose-100 cursor-not-allowed opacity-60"
+                                  : "border-slate-300 cursor-pointer"
+                              }`}
+                            />
+                            <span className={`text-[11px] font-semibold ${
+                              isMandatory ? "text-rose-600" : "text-slate-600"
+                            }`}>
+                              {isMandatory ? "Mandatory" : "Optional"}
+                            </span>
+                          </label>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+              <div className="mt-4 grid grid-cols-2 gap-3">
+                <div className="rounded-lg border border-slate-200 p-3">
+                  <p className="text-xs font-semibold uppercase text-slate-500 mb-2">Inbound</p>
+                  <div className="space-y-1 text-sm text-slate-700">
+                    {inbound.length === 0 && <p className="text-xs text-slate-500">No incoming links.</p>}
+                    {inbound.map((c) => (
+                      <p key={c.id}>
+                        {c.from.type} → input {c.to.inputIndex ?? 0}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+                <div className="rounded-lg border border-slate-200 p-3">
+                  <p className="text-xs font-semibold uppercase text-slate-500 mb-2">Outbound</p>
+                  <div className="space-y-1 text-sm text-slate-700">
+                    {outbound.length === 0 && <p className="text-xs text-slate-500">No outgoing links.</p>}
+                    {outbound.map((c) => (
+                      <p key={c.id}>
+                        port {c.from.port} → {c.to.type}
+                      </p>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
           </div>
