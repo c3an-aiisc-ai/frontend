@@ -32,6 +32,8 @@ type AgentBlock = {
   inputNames?: string[];
   outputNames?: string[];
   presetId?: string;
+  mandatoryInputCount?: number;
+  mandatoryOutputCount?: number;
 };
 
 type ToolNode = {
@@ -476,6 +478,8 @@ export default function App() {
         ].slice(0, Math.max(1, outputCount || 1)),
         inputNames: [...mandatoryInputs, ...optionalInputs].slice(0, Math.max(1, inputCount || 1)),
         outputNames: [...mandatoryOutputs, ...optionalOutputs].slice(0, Math.max(1, outputCount || 1)),
+        mandatoryInputCount: mandatoryInputs.length,
+        mandatoryOutputCount: mandatoryOutputs.length,
       });
 
       const capabilities: string[] = Array.isArray(agent?.capabilities) ? agent.capabilities : [];
@@ -570,6 +574,9 @@ export default function App() {
         prev.map((b) => {
           if (b.id !== blockId) return b;
           if (index < 0 || index >= b.inputCount) return b;
+          // Prevent toggling mandatory inputs (those within mandatoryInputCount)
+          const mandatoryCount = b.mandatoryInputCount ?? 0;
+          if (index < mandatoryCount) return b;
           const next = [...b.inputRequired];
           next[index] = !next[index];
           return { ...b, inputRequired: next };
@@ -585,6 +592,9 @@ export default function App() {
         prev.map((b) => {
           if (b.id !== blockId) return b;
           if (index < 0 || index >= b.outputCount) return b;
+          // Prevent toggling mandatory outputs (those within mandatoryOutputCount)
+          const mandatoryCount = b.mandatoryOutputCount ?? 0;
+          if (index < mandatoryCount) return b;
           const next = [...b.outputRequired];
           next[index] = !next[index];
           return { ...b, outputRequired: next };
@@ -2953,48 +2963,78 @@ export default function App() {
                   <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
                     <div className="rounded-lg border border-slate-200 p-3">
                       <p className="text-xs font-semibold uppercase text-slate-500">Inputs</p>
-                      <div className="mt-2 space-y-1">
-                        {Array.from({ length: block.inputCount }, (_, idx) => (
+                      <div className="mt-2 space-y-1.5">
+                        {Array.from({ length: block.inputCount }, (_, idx) => {
+                          const isMandatory = idx < (block.mandatoryInputCount ?? 0);
+                          const isRequired = block.inputRequired[idx];
+                          return (
                       <div key={idx} className="flex items-center justify-between gap-2 text-sm text-black">
                         <div className="flex items-center gap-2 text-black flex-1">
                           <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
                           <span className="text-black truncate">{block.inputNames?.[idx] ?? `Input ${idx + 1}`}</span>
+                          {isMandatory && (
+                            <span className="text-[10px] font-semibold text-rose-600 uppercase tracking-wide">Required</span>
+                          )}
                         </div>
-                        <button
-                          className={`rounded-full px-2 py-1 text-[11px] font-semibold ${
-                            block.inputRequired[idx]
-                              ? "bg-rose-100 text-rose-700 ring-1 ring-rose-200"
-                              : "bg-slate-100 text-slate-700 ring-1 ring-slate-200"
-                          }`}
-                          onClick={() => toggleInputRequired(block.id, idx)}
-                        >
-                          {block.inputRequired[idx] ? "Mandatory" : "Optional"}
-                        </button>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={isRequired}
+                            disabled={isMandatory}
+                            onChange={() => toggleInputRequired(block.id, idx)}
+                            className={`h-4 w-4 rounded border-2 ${
+                              isMandatory
+                                ? "border-rose-300 bg-rose-100 cursor-not-allowed opacity-60"
+                                : "border-slate-300 cursor-pointer"
+                            }`}
+                          />
+                          <span className={`text-[11px] font-semibold ${
+                            isMandatory ? "text-rose-600" : "text-slate-600"
+                          }`}>
+                            {isMandatory ? "Mandatory" : "Optional"}
+                          </span>
+                        </label>
                       </div>
-                    ))}
+                          );
+                        })}
                   </div>
                 </div>
                 <div className="rounded-lg border border-slate-200 p-3">
                   <p className="text-xs font-semibold uppercase text-slate-500">Outputs</p>
-                  <div className="mt-2 space-y-1">
-                    {Array.from({ length: block.outputCount }, (_, idx) => (
+                  <div className="mt-2 space-y-1.5">
+                    {Array.from({ length: block.outputCount }, (_, idx) => {
+                      const isMandatory = idx < (block.mandatoryOutputCount ?? 0);
+                      const isRequired = block.outputRequired[idx];
+                      return (
                       <div key={idx} className="flex items-center justify-between gap-2 text-sm text-black">
                         <div className="flex items-center gap-2 text-black flex-1">
                           <span className="h-2.5 w-2.5 rounded-full bg-sky-500" />
                           <span className="text-black truncate">{block.outputNames?.[idx] ?? `Output ${idx + 1}`}</span>
+                          {isMandatory && (
+                            <span className="text-[10px] font-semibold text-rose-600 uppercase tracking-wide">Required</span>
+                          )}
                         </div>
-                        <button
-                          className={`rounded-full px-2 py-1 text-[11px] font-semibold ${
-                            block.outputRequired[idx]
-                              ? "bg-rose-100 text-rose-700 ring-1 ring-rose-200"
-                              : "bg-slate-100 text-slate-700 ring-1 ring-slate-200"
-                          }`}
-                          onClick={() => toggleOutputRequired(block.id, idx)}
-                        >
-                          {block.outputRequired[idx] ? "Mandatory" : "Optional"}
-                        </button>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={isRequired}
+                            disabled={isMandatory}
+                            onChange={() => toggleOutputRequired(block.id, idx)}
+                            className={`h-4 w-4 rounded border-2 ${
+                              isMandatory
+                                ? "border-rose-300 bg-rose-100 cursor-not-allowed opacity-60"
+                                : "border-slate-300 cursor-pointer"
+                            }`}
+                          />
+                          <span className={`text-[11px] font-semibold ${
+                            isMandatory ? "text-rose-600" : "text-slate-600"
+                          }`}>
+                            {isMandatory ? "Mandatory" : "Optional"}
+                          </span>
+                        </label>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               </div>
