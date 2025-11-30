@@ -2117,6 +2117,68 @@ export default function App() {
               xmlns="http://www.w3.org/2000/svg"
               overflow="visible"
             >
+              <defs>
+                {/* Arrow marker for required connections */}
+                <marker
+                  id="arrowhead-required"
+                  markerWidth="10"
+                  markerHeight="10"
+                  refX="9"
+                  refY="3"
+                  orient="auto"
+                  markerUnits="strokeWidth"
+                >
+                  <path d="M0,0 L0,6 L9,3 z" fill="rgba(244, 63, 94, 0.8)" />
+                </marker>
+                {/* Arrow marker for upload connections */}
+                <marker
+                  id="arrowhead-upload"
+                  markerWidth="10"
+                  markerHeight="10"
+                  refX="9"
+                  refY="3"
+                  orient="auto"
+                  markerUnits="strokeWidth"
+                >
+                  <path d="M0,0 L0,6 L9,3 z" fill="rgba(234, 179, 8, 0.75)" />
+                </marker>
+                {/* Arrow marker for tool connections */}
+                <marker
+                  id="arrowhead-tool"
+                  markerWidth="10"
+                  markerHeight="10"
+                  refX="9"
+                  refY="3"
+                  orient="auto"
+                  markerUnits="strokeWidth"
+                >
+                  <path d="M0,0 L0,6 L9,3 z" fill="rgba(99, 102, 241, 0.75)" />
+                </marker>
+                {/* Arrow marker for default connections */}
+                <marker
+                  id="arrowhead-default"
+                  markerWidth="10"
+                  markerHeight="10"
+                  refX="9"
+                  refY="3"
+                  orient="auto"
+                  markerUnits="strokeWidth"
+                >
+                  <path d="M0,0 L0,6 L9,3 z" fill="rgba(56, 189, 248, 0.7)" />
+                </marker>
+                {/* Arrow marker for linking preview */}
+                <marker
+                  id="arrowhead-preview"
+                  markerWidth="10"
+                  markerHeight="10"
+                  refX="9"
+                  refY="3"
+                  orient="auto"
+                  markerUnits="strokeWidth"
+                >
+                  <path d="M0,0 L0,6 L9,3 z" fill="rgba(59, 130, 246, 0.6)" />
+                </marker>
+              </defs>
                   {connections.map((conn) => {
                     const start = getOutputAnchor(conn.from);
                     const end = getInputAnchor(conn.to);
@@ -2146,6 +2208,14 @@ export default function App() {
                           : conn.from.type === "tool"
                             ? "rgba(99, 102, 241, 0.75)"
                             : "rgba(56, 189, 248, 0.7)";
+                    const markerEnd =
+                      isRequiredInput || isRequiredOutput
+                        ? "url(#arrowhead-required)"
+                        : conn.from.type === "upload"
+                          ? "url(#arrowhead-upload)"
+                          : conn.from.type === "tool"
+                            ? "url(#arrowhead-tool)"
+                            : "url(#arrowhead-default)";
                     const isSelected = selected?.type === "connection" && selected.id === conn.id;
                 return (
                   <path
@@ -2155,6 +2225,7 @@ export default function App() {
                     stroke={stroke}
                     strokeWidth={isSelected ? 4 : 3}
                     strokeLinecap="round"
+                    markerEnd={markerEnd}
                     className={isSelected ? "drop-shadow-[0_0_6px_rgba(59,130,246,0.5)]" : ""}
                     style={{ pointerEvents: "visibleStroke", cursor: "pointer" }}
                     onPointerDown={handleConnectionPointerDown(conn)}
@@ -2178,6 +2249,7 @@ export default function App() {
                     strokeDasharray="6 6"
                     strokeWidth={2}
                     strokeLinecap="round"
+                    markerEnd="url(#arrowhead-preview)"
                   />
                 );
               })()}
