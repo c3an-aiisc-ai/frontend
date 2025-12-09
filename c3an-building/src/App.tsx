@@ -2396,9 +2396,7 @@ export default function App() {
           <button
             className={actionButtonClass}
             onClick={() => {
-              if (startTimeoutRef.current) clearTimeout(startTimeoutRef.current);
-              setStartExiting(false);
-              setShowStart(true);
+              window.open('https://c3an.aiisc.ai/', '_blank');
             }}
           >
             C3AN
