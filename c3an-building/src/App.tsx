@@ -107,8 +107,22 @@ type Selection =
 
 type PanelKey = "blocks" | "tools" | "settings";
 
+// Kevin
+
+const WORKFLOW_VERSION = 1;
+function downloadWorkflow(snapshot: any, filename = 'c3an-workflow.json') {
+const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json' });
+const url = URL.createObjectURL(blob);
+const a = document.createElement('a');
+a.href = url; a.download = filename;
+document.body.appendChild(a); a.click();
+document.body.removeChild(a); URL.revokeObjectURL(url);
+}
+
 export default function App() {
   const linkingRef = useRef(false);
+  // Kevin 
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const { containerRef, transform, reset } = usePanZoom({
     initial: { x: 0, y: 0, zoom: 1 },
     shouldAllowPan: (event) => {
@@ -927,6 +941,85 @@ export default function App() {
     nextConnectionIdRef.current = 1;
     localStorage.removeItem("c3an-workspace");
   }, [reset]);
+
+  const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    try {
+      const src = JSON.parse(ev.target?.result as string);
+
+      // 1.  If it’s already our native format, just load it
+      if (Array.isArray(src.blocks) && Array.isArray(src.connections)) {
+        setNotes(src.notes ?? []);
+        setBlocks(src.blocks ?? []);
+        setTools(src.tools ?? []);
+        setUploads(src.uploads ?? []);
+        setOutputs(src.outputs ?? []);
+        setConnections(src.connections ?? []);
+        setSelectedEvals(src.evals ?? []);
+        return;
+      }
+
+      // 2.  Otherwise assume it’s a “plan” file and convert
+      if (!src.triples || !src.metadata) {
+        alert('Unrecognised JSON format');
+        return;
+      }
+
+      const newBlocks: AgentBlock[] = [];
+      const newConnections: Connection[] = [];
+      const newTools: ToolNode[] = [];
+
+      // create one agent block per unique agent mentioned
+      const agentIds = Array.from(
+        new Set(
+          src.triples.flatMap((t: any) => [t.from, t.to])
+        )
+      );
+      agentIds.forEach((id, idx) => {
+        newBlocks.push({
+          id: `block-${idx}`,
+          x: 200 + idx * 260,
+          y: 200,
+          name: id as string,
+          description: 'Imported from plan',
+          inputCount: 1,
+          outputCount: 1,
+          inputRequired: [false],
+          outputRequired: [false],
+          inputNames: [],
+          outputNames: [],
+        });
+      });
+
+      // create connections that mirror the triples
+      src.triples.forEach((t: any, idx: number) => {
+        const fromIdx = agentIds.indexOf(t.from);
+        const toIdx = agentIds.indexOf(t.to);
+        if (fromIdx === -1 || toIdx === -1) return;
+        newConnections.push({
+          id: `conn-${idx}`,
+          from: { type: 'block', id: `block-${fromIdx}`, port: 0 },
+          to: { type: 'block', id: `block-${toIdx}`, inputIndex: 0 },
+        });
+      });
+
+      setNotes([]);
+      setBlocks(newBlocks);
+      setTools(newTools);
+      setUploads([]);
+      setOutputs([]);
+      setConnections(newConnections);
+      setSelectedEvals([]);
+    } catch {
+      alert('Invalid workflow file');
+    }
+  };
+  reader.readAsText(file);
+  e.target.value = '';
+};
 
   const handleRun = useCallback(() => {
     setActivePanel(null);
@@ -2202,6 +2295,43 @@ export default function App() {
           >
             Evals
           </button>
+          <button
+            className={actionButtonClass}
+            onClick={() => {
+              const snapshot = {
+                version: WORKFLOW_VERSION,
+                plan_id: `plan-${Date.now().toString(36)}`,
+                query: '', intent: 'custom',
+                notes, blocks, tools, uploads, outputs, connections,
+                evals: selectedEvals,
+                metadata: {
+                  total_agents: blocks.length,
+                  total_triples: connections.length,
+                  operator_counts: { seq: 0, brn: 0, agg: 0 }, // quick stub
+                  max_parallelism: 0,
+                  estimated_latency_ms: 0,
+                  estimated_cost: 0,
+                },
+              };
+              downloadWorkflow(snapshot);
+            }}
+          >
+            Download JSON
+          </button>
+
+          <button
+            className={actionButtonClass}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            Upload JSON
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".json"
+            className="hidden"
+            onChange={handleUpload}
+          />
           <button
             className={actionButtonClass}
             onClick={handleRun}
