@@ -107,9 +107,6 @@ type Selection =
 
 type PanelKey = "blocks" | "tools" | "settings";
 
-// Kevin
-
-const WORKFLOW_VERSION = 1;
 function downloadWorkflow(snapshot: any, filename = 'c3an-workflow.json') {
 const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json' });
 const url = URL.createObjectURL(blob);
@@ -182,13 +179,9 @@ export default function App() {
   const [tools, setTools] = useState<ToolNode[]>([]);
   const [uploads, setUploads] = useState<UploadNode[]>([]);
   const [outputs, setOutputs] = useState<OutputNode[]>([]);
-  const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [theme, setTheme] = useState<"light" | "dark">("dark");
   const [userThemeLocked, setUserThemeLocked] = useState(false);
-  const [backgroundPreset, setBackgroundPreset] = useState<"grid" | "aurora" | "blueprint">("grid");
   const [clipboard, setClipboard] = useState<ClipboardItem | null>(null);
-  const [showStart, setShowStart] = useState(true);
-  const [startExiting, setStartExiting] = useState(false);
-  const startTimeoutRef = useRef<number | null>(null);
   const agentPresets = useMemo(
     () => [
       { id: "solo", name: "Solo", description: "Single in / out", inputCount: 1, outputCount: 1 },
@@ -948,17 +941,6 @@ export default function App() {
     [MAX_IO, MIN_IO, applyBlockIO, blocks, clamp],
   );
 
-  const handleEnterWorkspace = useCallback(() => {
-    if (startExiting) return;
-    setStartExiting(true);
-    if (startTimeoutRef.current) clearTimeout(startTimeoutRef.current);
-    startTimeoutRef.current = window.setTimeout(() => {
-      setShowStart(false);
-      setStartExiting(false);
-      startTimeoutRef.current = null;
-    }, 450);
-  }, [startExiting]);
-
   const handleResetWorkspace = useCallback(() => {
     reset();
     setNotes([]);
@@ -1144,8 +1126,6 @@ export default function App() {
   const handleRun = useCallback(() => {
     setActivePanel(null);
     setSelected(null);
-    setShowStart(false);
-    setStartExiting(false);
   }, []);
 
   const getOutputAnchor = useCallback(
@@ -2023,11 +2003,7 @@ export default function App() {
     uploads,
   ]);
 
-  useEffect(() => {
-    return () => {
-      if (startTimeoutRef.current) clearTimeout(startTimeoutRef.current);
-    };
-  }, []);
+
 
   useEffect(() => {
     if (modalBlockId) {
@@ -2047,8 +2023,7 @@ export default function App() {
       setUploads(parsed.uploads ?? []);
       setOutputs(parsed.outputs ?? []);
       setConnections(parsed.connections ?? []);
-      setTheme(parsed.theme ?? "light");
-      setBackgroundPreset(parsed.backgroundPreset ?? "grid");
+      setTheme(parsed.theme ?? "dark");
       nextBlockIdRef.current = parsed.nextBlockId ?? nextBlockIdRef.current;
       nextToolIdRef.current = parsed.nextToolId ?? nextToolIdRef.current;
       nextUploadIdRef.current = parsed.nextUploadId ?? nextUploadIdRef.current;
@@ -2069,7 +2044,6 @@ export default function App() {
       outputs,
       connections,
       theme,
-      backgroundPreset,
       nextBlockId: nextBlockIdRef.current,
       nextToolId: nextToolIdRef.current,
       nextUploadId: nextUploadIdRef.current,
@@ -2078,7 +2052,7 @@ export default function App() {
       nextNoteId: nextIdRef.current,
     };
     localStorage.setItem("c3an-workspace", JSON.stringify(snapshot));
-  }, [notes, blocks, tools, uploads, outputs, connections, theme, backgroundPreset]);
+  }, [notes, blocks, tools, uploads, outputs, connections, theme]);
 
   const appThemeClass =
     theme === "dark"
@@ -2341,37 +2315,6 @@ export default function App() {
                 </div>
 
                 <div className="space-y-3">
-                  <p className="text-xs uppercase tracking-wide text-slate-500">Canvas background</p>
-                  <div className="grid grid-cols-3 gap-2">
-                    {[
-                      { id: "grid", name: "Soft grid", accent: "from-slate-100 via-white to-slate-200" },
-                      { id: "aurora", name: "Aurora", accent: "from-emerald-100 via-teal-100 to-indigo-100" },
-                      { id: "blueprint", name: "Blueprint", accent: "from-sky-100 via-blue-100 to-indigo-200" },
-                    ].map((preset) => (
-                      <button
-                        key={preset.id}
-                        className={`relative h-24 rounded-xl border text-left p-3 shadow-sm transition ${
-                          backgroundPreset === preset.id
-                            ? "border-slate-900 ring-2 ring-slate-900"
-                            : "border-slate-200 hover:border-slate-300"
-                        } bg-gradient-to-br ${preset.accent}`}
-                        onClick={() => setBackgroundPreset(preset.id as typeof backgroundPreset)}
-                      >
-                        <span className="text-xs font-semibold text-slate-800">{preset.name}</span>
-                        {backgroundPreset === preset.id && (
-                          <span className="absolute right-2 top-2 rounded-full bg-slate-900 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
-                            Active
-                          </span>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                  <p className="text-[11px] text-slate-600">
-                    Backgrounds apply to the canvas; theme updates surrounding UI chrome.
-                  </p>
-                </div>
-
-                <div className="space-y-3">
                   <p className="text-xs uppercase tracking-wide text-slate-500">Links</p>
                   <div className="flex flex-wrap gap-2">
                     {["Docs", "Changelog", "Support"].map((label) => (
@@ -2479,7 +2422,7 @@ export default function App() {
           onDrop={handleCanvasDrop}
           onPointerDownCapture={handleCanvasPointerDown}
         >
-          <Background transform={transform} theme={theme} preset={backgroundPreset} />
+          <Background transform={transform} theme={theme} />
           <div
             style={{
               position: "absolute",
@@ -2505,118 +2448,28 @@ export default function App() {
               overflow="visible"
             >
               <defs>
-                {/* Gradients for data stream styling - Databricks inspired */}
-                <linearGradient id="gradient-required" x1="0%" y1="0%" x2="100%" y2="0%">
-                  <stop offset="0%" stopColor="rgba(244, 63, 94, 0.9)" />
-                  <stop offset="50%" stopColor="rgba(251, 113, 133, 0.9)" />
-                  <stop offset="100%" stopColor="rgba(244, 63, 94, 0.9)" />
-                </linearGradient>
-                <linearGradient id="gradient-upload" x1="0%" y1="0%" x2="100%" y2="0%">
-                  <stop offset="0%" stopColor="rgba(234, 179, 8, 0.85)" />
-                  <stop offset="50%" stopColor="rgba(250, 204, 21, 0.85)" />
-                  <stop offset="100%" stopColor="rgba(234, 179, 8, 0.85)" />
-                </linearGradient>
-                <linearGradient id="gradient-tool" x1="0%" y1="0%" x2="100%" y2="0%">
-                  <stop offset="0%" stopColor="rgba(99, 102, 241, 0.85)" />
-                  <stop offset="50%" stopColor="rgba(129, 140, 248, 0.85)" />
-                  <stop offset="100%" stopColor="rgba(99, 102, 241, 0.85)" />
-                </linearGradient>
-                <linearGradient id="gradient-default" x1="0%" y1="0%" x2="100%" y2="0%">
-                  <stop offset="0%" stopColor="rgba(56, 189, 248, 0.8)" />
-                  <stop offset="50%" stopColor="rgba(14, 165, 233, 0.8)" />
-                  <stop offset="100%" stopColor="rgba(56, 189, 248, 0.8)" />
-                </linearGradient>
-                <linearGradient id="gradient-preview" x1="0%" y1="0%" x2="100%" y2="0%">
-                  <stop offset="0%" stopColor="rgba(59, 130, 246, 0.7)" />
-                  <stop offset="50%" stopColor="rgba(96, 165, 250, 0.7)" />
-                  <stop offset="100%" stopColor="rgba(59, 130, 246, 0.7)" />
-                </linearGradient>
-
-                {/* Glow filters for data streams */}
-                <filter id="glow-required" x="-50%" y="-50%" width="200%" height="200%">
-                  <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
-                  <feMerge>
-                    <feMergeNode in="coloredBlur"/>
-                    <feMergeNode in="SourceGraphic"/>
-                  </feMerge>
-                </filter>
-                <filter id="glow-upload" x="-50%" y="-50%" width="200%" height="200%">
-                  <feGaussianBlur stdDeviation="2.5" result="coloredBlur"/>
-                  <feMerge>
-                    <feMergeNode in="coloredBlur"/>
-                    <feMergeNode in="SourceGraphic"/>
-                  </feMerge>
-                </filter>
-                <filter id="glow-tool" x="-50%" y="-50%" width="200%" height="200%">
-                  <feGaussianBlur stdDeviation="2.5" result="coloredBlur"/>
-                  <feMerge>
-                    <feMergeNode in="coloredBlur"/>
-                    <feMergeNode in="SourceGraphic"/>
-                  </feMerge>
-                </filter>
-                <filter id="glow-default" x="-50%" y="-50%" width="200%" height="200%">
-                  <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
-                  <feMerge>
-                    <feMergeNode in="coloredBlur"/>
-                    <feMergeNode in="SourceGraphic"/>
-                  </feMerge>
-                </filter>
-
-                {/* Arrow markers with gradients */}
-                <marker
-                  id="arrowhead-required"
-                  markerWidth="12"
-                  markerHeight="12"
-                  refX="10"
-                  refY="3.5"
-                  orient="auto"
-                  markerUnits="strokeWidth"
-                >
-                  <path d="M0,0 L0,7 L10,3.5 z" fill="url(#gradient-required)" />
-                </marker>
-                <marker
-                  id="arrowhead-upload"
-                  markerWidth="12"
-                  markerHeight="12"
-                  refX="10"
-                  refY="3.5"
-                  orient="auto"
-                  markerUnits="strokeWidth"
-                >
-                  <path d="M0,0 L0,7 L10,3.5 z" fill="url(#gradient-upload)" />
-                </marker>
-                <marker
-                  id="arrowhead-tool"
-                  markerWidth="12"
-                  markerHeight="12"
-                  refX="10"
-                  refY="3.5"
-                  orient="auto"
-                  markerUnits="strokeWidth"
-                >
-                  <path d="M0,0 L0,7 L10,3.5 z" fill="url(#gradient-tool)" />
-                </marker>
+                {/* Simple arrow markers */}
                 <marker
                   id="arrowhead-default"
-                  markerWidth="12"
-                  markerHeight="12"
-                  refX="10"
-                  refY="3.5"
+                  markerWidth="10"
+                  markerHeight="10"
+                  refX="9"
+                  refY="3"
                   orient="auto"
                   markerUnits="strokeWidth"
                 >
-                  <path d="M0,0 L0,7 L10,3.5 z" fill="url(#gradient-default)" />
+                  <path d="M0,0 L0,6 L9,3 z" fill="#38bdf8" />
                 </marker>
                 <marker
                   id="arrowhead-preview"
-                  markerWidth="12"
-                  markerHeight="12"
-                  refX="10"
-                  refY="3.5"
+                  markerWidth="10"
+                  markerHeight="10"
+                  refX="9"
+                  refY="3"
                   orient="auto"
                   markerUnits="strokeWidth"
                 >
-                  <path d="M0,0 L0,7 L10,3.5 z" fill="url(#gradient-preview)" />
+                  <path d="M0,0 L0,6 L9,3 z" fill="#3b82f6" />
                 </marker>
               </defs>
                   {connections.map((conn) => {
@@ -2624,104 +2477,23 @@ export default function App() {
                     const end = getInputAnchor(conn.to);
                     if (!start || !end) return null;
                     const d = buildConnectionPath(start, end);
-                    const isRequiredInput =
-                      conn.to.type === "block" &&
-                      (() => {
-                        const blk = blocks.find((b) => b.id === conn.to.id);
-                        if (!blk) return false;
-                        const idx = conn.to.inputIndex ?? 0;
-                        return idx < blk.inputRequired.length && blk.inputRequired[idx];
-                      })();
-                    const isRequiredOutput =
-                      conn.from.type === "block" &&
-                      (() => {
-                        const blk = blocks.find((b) => b.id === conn.from.id);
-                        if (!blk) return false;
-                        const idx = conn.from.port;
-                        return idx < blk.outputRequired.length && blk.outputRequired[idx];
-                      })();
-                    
-                    const connectionType = isRequiredInput || isRequiredOutput
-                      ? "required"
-                      : conn.from.type === "upload"
-                        ? "upload"
-                        : conn.from.type === "tool"
-                          ? "tool"
-                          : "default";
-                    
-                    const stroke = connectionType === "required"
-                      ? "url(#gradient-required)"
-                      : connectionType === "upload"
-                        ? "url(#gradient-upload)"
-                        : connectionType === "tool"
-                          ? "url(#gradient-tool)"
-                          : "url(#gradient-default)";
-                    
-                    const filter = connectionType === "required"
-                      ? "url(#glow-required)"
-                      : connectionType === "upload"
-                        ? "url(#glow-upload)"
-                        : connectionType === "tool"
-                          ? "url(#glow-tool)"
-                          : "url(#glow-default)";
-                    
-                    const markerEnd = connectionType === "required"
-                      ? "url(#arrowhead-required)"
-                      : connectionType === "upload"
-                        ? "url(#arrowhead-upload)"
-                        : connectionType === "tool"
-                          ? "url(#arrowhead-tool)"
-                          : "url(#arrowhead-default)";
-                    
                     const isSelected = selected?.type === "connection" && selected.id === conn.id;
                 return (
                   <g key={conn.id}>
-                    {/* Background glow layer */}
-                    <path
-                      d={d}
-                      fill="none"
-                      stroke={stroke}
-                      strokeWidth={isSelected ? 8 : 6}
-                      strokeLinecap="round"
-                      opacity={0.3}
-                      style={{ pointerEvents: "none" }}
-                    />
                     {/* Main connection path */}
                     <path
                       d={d}
                       fill="none"
-                      stroke={stroke}
-                      strokeWidth={isSelected ? 4 : 3}
+                      stroke="#38bdf8"
+                      strokeWidth={isSelected ? 3 : 2}
                       strokeLinecap="round"
-                      markerEnd={markerEnd}
-                      filter={filter}
-                      className={`transition-all duration-200 ${isSelected ? "drop-shadow-[0_0_12px_rgba(59,130,246,0.6)]" : ""}`}
+                      markerEnd="url(#arrowhead-default)"
                       style={{ 
                         pointerEvents: "visibleStroke", 
                         cursor: "pointer",
                       }}
                       onPointerDown={handleConnectionPointerDown(conn)}
                     />
-                    {/* Animated flow particles for active connections */}
-                    {!isSelected && (
-                      <path
-                        d={d}
-                        fill="none"
-                        stroke="rgba(255, 255, 255, 0.8)"
-                        strokeWidth={1.5}
-                        strokeLinecap="round"
-                        strokeDasharray="4 20"
-                        style={{ pointerEvents: "none" }}
-                      >
-                        <animate
-                          attributeName="stroke-dashoffset"
-                          from="0"
-                          to="24"
-                          dur="1.5s"
-                          repeatCount="indefinite"
-                        />
-                      </path>
-                    )}
                   </g>
                 );
               })}
@@ -2736,34 +2508,15 @@ export default function App() {
                 const d = buildConnectionPath(start, end);
                 return (
                   <g>
-                    {/* Background glow for preview */}
                     <path
                       d={d}
                       fill="none"
-                      stroke="url(#gradient-preview)"
-                      strokeWidth={6}
-                      strokeLinecap="round"
-                      opacity={0.3}
-                    />
-                    {/* Main preview path */}
-                    <path
-                      d={d}
-                      fill="none"
-                      stroke="url(#gradient-preview)"
-                      strokeDasharray="8 8"
-                      strokeWidth={3}
+                      stroke="#3b82f6"
+                      strokeDasharray="6 6"
+                      strokeWidth={2}
                       strokeLinecap="round"
                       markerEnd="url(#arrowhead-preview)"
-                      filter="url(#glow-default)"
-                    >
-                      <animate
-                        attributeName="stroke-dashoffset"
-                        from="0"
-                        to="16"
-                        dur="0.8s"
-                        repeatCount="indefinite"
-                      />
-                    </path>
+                    />
                   </g>
                 );
               })()}
@@ -3336,75 +3089,6 @@ export default function App() {
           </div>
         </div>
       </main>
-      {(showStart || startExiting) && (
-        <div
-          className={`absolute inset-0 z-40 transition-opacity duration-500 ease-out ${
-            showStart && !startExiting ? "opacity-100" : "opacity-0 pointer-events-none"
-          }`}
-          style={{
-            background:
-              theme === "dark"
-                ? "radial-gradient(120% 140% at 25% 18%, rgba(15,23,42,0.2), rgba(15,23,42,0)), radial-gradient(120% 140% at 80% 75%, rgba(255,255,255,0.04), rgba(255,255,255,0)), linear-gradient(135deg, #0f172a 0%, #0b1224 52%, #0f172a 100%)"
-                : "radial-gradient(120% 140% at 25% 18%, rgba(0,0,0,0.05), rgba(0,0,0,0)), radial-gradient(120% 140% at 80% 75%, rgba(15,23,42,0.08), rgba(15,23,42,0)), linear-gradient(135deg, #f8f5ed 0%, #f2ede4 52%, #ebe6de 100%)",
-          }}
-        >
-          <div className="relative w-full h-full">
-            <div className="absolute -top-10 -right-10 h-24 w-24 rounded-full bg-emerald-100 blur-3xl opacity-60 pointer-events-none" />
-            <div
-              className={`absolute -bottom-12 -left-12 h-28 w-28 rounded-full blur-3xl opacity-40 pointer-events-none ${
-                theme === "dark" ? "bg-slate-800" : "bg-slate-200"
-              }`}
-            />  {/* title */}
-            <div className="absolute top-1/2 left-[48.5%] -translate-y-1/2">
-              <div className="flex flex-col items-start gap-4">
-                {[
-                  { letter: "C", word: "" },
-                  { letter: "3", word: "" },
-                  { letter: "A", word: "" },
-                  { letter: "N", word: "" },
-                ].map((item, idx) => (
-                  <div
-                    key={item.letter}
-                    className="flex items-center gap-4 letter-cycle"
-                    style={{
-                      animationDelay: `${0.6 + idx * 1.5}s`,
-                      animationDuration: "8s",
-                      fontFamily: "'Playfair Display', 'Times New Roman', serif",
-                    }}
-                  >
-                    <span
-                      className={`text-6xl font-black leading-none tracking-tight ${
-                        theme === "dark" ? "text-slate-100" : "text-slate-800"
-                      }`}
-                    >
-                      {item.letter}
-                    </span>
-                    <span
-                      className={`text-lg font-semibold tracking-wide uppercase ${
-                        theme === "dark" ? "text-slate-200" : "text-slate-600"
-                      }`}
-                    >
-                      {item.word}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="absolute left-1/2 -translate-x-1/2 bottom-16">
-              <button
-                className={`rounded-full px-5 py-2.5 text-sm font-semibold shadow-lg shadow-slate-300/60 ${
-                  theme === "dark"
-                    ? "bg-white text-slate-900 hover:bg-slate-100"
-                    : "bg-slate-900 text-white hover:bg-slate-800"
-                }`}
-                onClick={handleEnterWorkspace}
-              >
-                Enter workspace
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
       {modalBlockId && (() => {
         const block = blocks.find((b) => b.id === modalBlockId);
         if (!block) return null;
