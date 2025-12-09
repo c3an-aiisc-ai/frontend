@@ -120,49 +120,22 @@ document.body.removeChild(a); URL.revokeObjectURL(url);
 }
 
 
-
 function countOperators(conns: Connection[]) {
   const counts = { seq: 0, brn: 0, agg: 0 };
-  
-  // Find unique nodes that branch (have >1 outgoing connections)
-  const outgoingCounts: Record<string, number> = {};
-  
   conns.forEach((c) => {
-    const fromKey = `${c.from.type}:${c.from.id}`;
-    outgoingCounts[fromKey] = (outgoingCounts[fromKey] || 0) + 1;
-  });
-  
-  Object.values(outgoingCounts).forEach((count) => {
-    if (count > 1) counts.brn++;
-  });
+    // “branch” = one source → many different targets
+    const outs = conns.filter((x) => x.from.id === c.from.id);
+    if (outs.length > 1) counts.brn++;
 
-  // Find unique nodes that aggregate (have >1 incoming connections)
-  const incomingCounts: Record<string, number> = {};
-  
-  conns.forEach((c) => {
-    const toKey = `${c.to.type}:${c.to.id}`;
-    incomingCounts[toKey] = (incomingCounts[toKey] || 0) + 1;
-  });
-  
-  Object.values(incomingCounts).forEach((count) => {
-    if (count > 1) counts.agg++;
-  });
+    // “aggregate” = many different sources → one target
+    const ins = conns.filter((x) => x.to.id === c.to.id);
+    if (ins.length > 1) counts.agg++;
 
-  // Sequential = connections that are neither branching nor aggregating
-  let sequentialCount = 0;
-  conns.forEach((c) => {
-    const fromKey = `${c.from.type}:${c.from.id}`;
-    const toKey = `${c.to.type}:${c.to.id}`;
-    // A connection is sequential if its source has only 1 output AND its target has only 1 input
-    if (outgoingCounts[fromKey] === 1 && incomingCounts[toKey] === 1) {
-      sequentialCount++;
-    }
+    // “sequential” = default 1:1 (we’ll just count every link once)
   });
-  
-  counts.seq = sequentialCount;
+  counts.seq = conns.length - counts.brn - counts.agg;
   return counts;
 }
-
 export default function App() {
   const linkingRef = useRef(false);
   // Kevin 
@@ -612,18 +585,9 @@ export default function App() {
         (conn) => conn.to.type === "block" && conn.to.id === block.id && (conn.to.inputIndex ?? 0) < TOOL_PORT_OFFSET,
       ).length;
       const outbound = connections.filter((conn) => conn.from.type === "block" && conn.from.id === block.id).length;
-      
-      // Determine mode based on actual outbound/inbound connections and block configuration
-      // A block is "aggregate" if it has multiple inputs
       if (block.inputCount > 1 || inbound > 1) return "aggregate";
-      // A block is "branch" if it has multiple outputs
       if (block.outputCount > 1 || outbound > 1) return "branch";
-      // A block is "sequential" only if it has both inbound AND outbound connections
-      if (inbound > 0 && outbound > 0) return "sequential";
-      // If it only has outbound (source), it's sequential
-      if (outbound > 0) return "sequential";
-      // If it only has inbound (sink/terminal), don't show a mode
-      return null;
+      return "sequential";
     },
     [TOOL_PORT_OFFSET, connections],
   );
@@ -2351,35 +2315,15 @@ export default function App() {
           <button
             className={actionButtonClass}
             onClick={() => {
-              // Convert connections to triples format (agent-to-agent sequential operations)
-              const triples = connections
-                .filter((conn) => conn.from.type === "block" && conn.to.type === "block")
-                .map((conn) => {
-                  const fromBlock = blocks.find((b) => b.id === conn.from.id);
-                  const toBlock = blocks.find((b) => b.id === conn.to.id);
-                  return {
-                    from: fromBlock?.name || conn.from.id,
-                    op: "seq",
-                    to: toBlock?.name || conn.to.id,
-                  };
-                });
-
               const snapshot = {
                 version: WORKFLOW_VERSION,
                 plan_id: `plan-${Date.now().toString(36)}`,
-                query: '',
-                intent: 'custom',
-                notes,
-                blocks,
-                tools,
-                uploads,
-                outputs,
-                connections,
+                query: '', intent: 'custom',
+                notes, blocks, tools, uploads, outputs, connections,
                 evals: selectedEvals,
-                triples,
                 metadata: {
                   total_agents: blocks.length,
-                  total_triples: triples.length,
+                  total_triples: connections.length,
                   operator_counts: countOperators(connections),
                   estimated_latency_ms: 0,
                   estimated_cost: 0,
@@ -2769,7 +2713,7 @@ export default function App() {
                     <div className="flex items-start justify-between">
                       <div className="flex flex-col gap-0.5">
                         <p className="text-sm font-semibold text-slate-900">{block.name}</p>
-                        {getBlockMode(block) && <p className="text-[11px] text-slate-600 leading-snug">Mode: {getBlockMode(block)}</p>}
+                        <p className="text-[11px] text-slate-600 leading-snug">Mode: {getBlockMode(block)}</p>
                       </div>
                       <span className="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
                         Agent
@@ -3373,7 +3317,7 @@ export default function App() {
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="text-lg font-semibold text-slate-900">{block.name}</p>
-                  {getBlockMode(block) && <p className="text-sm text-slate-600">Mode: {getBlockMode(block)}</p>}
+                  <p className="text-sm text-slate-600">Mode: {getBlockMode(block)}</p>
                 </div>
                 <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-700">
                   Agent
