@@ -1010,8 +1010,13 @@ export default function App() {
         setTools(src.tools ?? []);
         setUploads(src.uploads ?? []);
         setOutputs(src.outputs ?? []);
-        setConnections(src.connections ?? []);
         setSelectedEvals(src.evals ?? []);
+        
+        // Set connections after a short delay to ensure blocks are rendered first
+        const loadedConnections = src.connections ?? [];
+        setTimeout(() => {
+          setConnections(loadedConnections);
+        }, 50);
         return;
       }
 
@@ -1030,13 +1035,71 @@ export default function App() {
         new Set(
           src.triples.flatMap((t: any) => [t.from, t.to])
         )
-      );
+      ) as string[];
+
+      // Build adjacency lists for layout calculation
+      const outgoing: Record<string, string[]> = {};
+      const incoming: Record<string, string[]> = {};
+      agentIds.forEach((id) => {
+        outgoing[id] = [];
+        incoming[id] = [];
+      });
+      src.triples.forEach((t: any) => {
+        if (outgoing[t.from] && incoming[t.to]) {
+          outgoing[t.from].push(t.to);
+          incoming[t.to].push(t.from);
+        }
+      });
+
+      // Calculate levels using longest path from sources (topological layering)
+      const levels: Record<string, number> = {};
+      const visited = new Set<string>();
+      
+      const calcLevel = (nodeId: string): number => {
+        if (levels[nodeId] !== undefined) return levels[nodeId];
+        if (visited.has(nodeId)) return 0; // cycle protection
+        visited.add(nodeId);
+        
+        const parents = incoming[nodeId] || [];
+        if (parents.length === 0) {
+          levels[nodeId] = 0;
+        } else {
+          levels[nodeId] = Math.max(...parents.map(calcLevel)) + 1;
+        }
+        return levels[nodeId];
+      };
+      
+      agentIds.forEach(calcLevel);
+
+      // Group nodes by level
+      const nodesByLevel: Record<number, string[]> = {};
+      agentIds.forEach((id) => {
+        const level = levels[id] ?? 0;
+        if (!nodesByLevel[level]) nodesByLevel[level] = [];
+        nodesByLevel[level].push(id);
+      });
+
+      // Layout constants - increased spacing for better visibility
+      const HORIZONTAL_SPACING = 450;
+      const VERTICAL_SPACING = 200;
+      const BASE_X = 350;
+      const BASE_Y = 300;
+
+      // Position blocks based on level and vertical index
       agentIds.forEach((id, idx) => {
+        const level = levels[id] ?? 0;
+        const nodesAtLevel = nodesByLevel[level];
+        const verticalIndex = nodesAtLevel.indexOf(id);
+        const totalAtLevel = nodesAtLevel.length;
+        
+        // Center nodes vertically at each level
+        const verticalOffset = (verticalIndex - (totalAtLevel - 1) / 2) * VERTICAL_SPACING;
+        
         newBlocks.push({
           id: `block-${idx}`,
-          x: 200 + idx * 260,
-          y: 200,
-          name: id as string,
+          x: BASE_X + level * HORIZONTAL_SPACING,
+          y: BASE_Y + verticalOffset,
+          name: id,
           description: 'Imported from plan',
           inputCount: 1,
           outputCount: 1,
@@ -1064,8 +1127,12 @@ export default function App() {
       setTools(newTools);
       setUploads([]);
       setOutputs([]);
-      setConnections(newConnections);
       setSelectedEvals([]);
+      
+      // Set connections after a short delay to ensure blocks are rendered first
+      setTimeout(() => {
+        setConnections(newConnections);
+      }, 50);
     } catch {
       alert('Invalid workflow file');
     }
@@ -2365,17 +2432,6 @@ export default function App() {
                 });
 
               const snapshot = {
-                version: WORKFLOW_VERSION,
-                plan_id: `plan-${Date.now().toString(36)}`,
-                query: '',
-                intent: 'custom',
-                notes,
-                blocks,
-                tools,
-                uploads,
-                outputs,
-                connections,
-                evals: selectedEvals,
                 triples,
                 metadata: {
                   total_agents: blocks.length,
