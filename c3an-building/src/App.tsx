@@ -25,6 +25,7 @@ type AgentBlock = {
   y: number;
   name: string;
   description: string;
+  sourceAgentId?: string;
   inputCount: number;
   outputCount: number;
   inputRequired: boolean[];
@@ -107,6 +108,14 @@ type Selection =
 
 type PanelKey = "blocks" | "tools" | "settings";
 
+type AgentSpecTemplate = {
+  metadata?: Record<string, unknown>;
+  registry_type?: string;
+  compatible_protocols?: unknown;
+  global_protocols?: unknown;
+  description?: unknown;
+};
+
 function downloadWorkflow(snapshot: any, filename = 'c3an-workflow.json') {
 const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json' });
 const url = URL.createObjectURL(blob);
@@ -114,50 +123,6 @@ const a = document.createElement('a');
 a.href = url; a.download = filename;
 document.body.appendChild(a); a.click();
 document.body.removeChild(a); URL.revokeObjectURL(url);
-}
-
-
-
-function countOperators(conns: Connection[]) {
-  const counts = { seq: 0, brn: 0, agg: 0 };
-  
-  // Find unique nodes that branch (have >1 outgoing connections)
-  const outgoingCounts: Record<string, number> = {};
-  
-  conns.forEach((c) => {
-    const fromKey = `${c.from.type}:${c.from.id}`;
-    outgoingCounts[fromKey] = (outgoingCounts[fromKey] || 0) + 1;
-  });
-  
-  Object.values(outgoingCounts).forEach((count) => {
-    if (count > 1) counts.brn++;
-  });
-
-  // Find unique nodes that aggregate (have >1 incoming connections)
-  const incomingCounts: Record<string, number> = {};
-  
-  conns.forEach((c) => {
-    const toKey = `${c.to.type}:${c.to.id}`;
-    incomingCounts[toKey] = (incomingCounts[toKey] || 0) + 1;
-  });
-  
-  Object.values(incomingCounts).forEach((count) => {
-    if (count > 1) counts.agg++;
-  });
-
-  // Sequential = connections that are neither branching nor aggregating
-  let sequentialCount = 0;
-  conns.forEach((c) => {
-    const fromKey = `${c.from.type}:${c.from.id}`;
-    const toKey = `${c.to.type}:${c.to.id}`;
-    // A connection is sequential if its source has only 1 output AND its target has only 1 input
-    if (outgoingCounts[fromKey] === 1 && incomingCounts[toKey] === 1) {
-      sequentialCount++;
-    }
-  });
-  
-  counts.seq = sequentialCount;
-  return counts;
 }
 
 export default function App() {
@@ -211,6 +176,7 @@ export default function App() {
   );
   const [agentJsonInput, setAgentJsonInput] = useState<string>("input json here");
   const [agentParseError, setAgentParseError] = useState<string | null>(null);
+  const [agentSpecTemplate, setAgentSpecTemplate] = useState<AgentSpecTemplate | null>(null);
   const [connections, setConnections] = useState<Connection[]>([]);
   const [linking, setLinking] = useState<{
     origin: "output";
@@ -444,6 +410,7 @@ export default function App() {
             id: `block-${id}`,
             x: worldX,
             y: worldY,
+            sourceAgentId: `block-${id}`,
             name: preset?.name ?? "Agent Block",
             description: preset?.description ?? "1 input, 2 outputs",
             inputCount: inCount,
@@ -503,6 +470,94 @@ export default function App() {
     [agentPresets, containerRef, toolPalette, transform.x, transform.y, transform.zoom],
   );
 
+  const captureAgentSpecTemplate = useCallback((raw: any): AgentSpecTemplate | null => {
+    if (!raw || typeof raw !== "object") return null;
+    const {
+      agents: _ignoredAgents,
+      blocks: _ignoredBlocks,
+      tools: _ignoredTools,
+      uploads: _ignoredUploads,
+      outputs: _ignoredOutputs,
+      connections: _ignoredConnections,
+      notes: _ignoredNotes,
+      ...rest
+    } = raw as Record<string, unknown>;
+    return rest;
+  }, []);
+
+  const buildAgentsFromDefinition = useCallback(
+    (agents: any[], existingBlockCount: number) => {
+      const newBlocks: AgentBlock[] = [];
+      const newTools: ToolNode[] = [];
+      const newConnections: Connection[] = [];
+      const baseX = 140 + existingBlockCount * 40;
+      const baseY = 200;
+      const blockSpacing = 340;
+      const toolSpacingX = 150;
+      const toolSpacingY = 150;
+
+      agents.forEach((agent, idx) => {
+        const mandatoryInputs = Array.isArray(agent?.input_data_streams?.mandatory) ? agent.input_data_streams.mandatory : [];
+        const optionalInputs = Array.isArray(agent?.input_data_streams?.optional) ? agent.input_data_streams.optional : [];
+        const mandatoryOutputs = Array.isArray(agent?.output_data_streams?.mandatory) ? agent.output_data_streams.mandatory : [];
+        const optionalOutputs = Array.isArray(agent?.output_data_streams?.optional) ? agent.output_data_streams.optional : [];
+        const inputCount = mandatoryInputs.length + optionalInputs.length;
+        const outputCount = mandatoryOutputs.length + optionalOutputs.length;
+        const blockId = `block-${nextBlockIdRef.current++}`;
+        const blockX = baseX + idx * blockSpacing;
+        const blockY = baseY;
+
+        newBlocks.push({
+          id: blockId,
+          x: blockX,
+          y: blockY,
+          sourceAgentId: agent?.id ?? agent?.name ?? `agent-${idx + 1}`,
+          name: agent?.name ?? agent?.id ?? `Agent ${idx + 1}`,
+          description: agent?.description ?? "Generated from JSON",
+          inputCount: Math.max(1, inputCount || 1),
+          outputCount: Math.max(1, outputCount || 1),
+          inputRequired: [
+            ...Array(mandatoryInputs.length).fill(true),
+            ...Array(Math.max(0, inputCount - mandatoryInputs.length)).fill(false),
+          ].slice(0, Math.max(1, inputCount || 1)),
+          outputRequired: [
+            ...Array(mandatoryOutputs.length).fill(true),
+            ...Array(Math.max(0, outputCount - mandatoryOutputs.length)).fill(false),
+          ].slice(0, Math.max(1, outputCount || 1)),
+          inputNames: [...mandatoryInputs, ...optionalInputs].slice(0, Math.max(1, inputCount || 1)),
+          outputNames: [...mandatoryOutputs, ...optionalOutputs].slice(0, Math.max(1, outputCount || 1)),
+          mandatoryInputCount: mandatoryInputs.length,
+          mandatoryOutputCount: mandatoryOutputs.length,
+        });
+
+        const capabilities: string[] = Array.isArray(agent?.capabilities) ? agent.capabilities : [];
+        capabilities.forEach((cap, capIdx) => {
+          const palette = toolPalette[capIdx % toolPalette.length];
+          const toolId = `tool-${nextToolIdRef.current++}`;
+          const toolX = blockX + (capIdx % 2) * toolSpacingX - 40;
+          const toolY = blockY + 220 + Math.floor(capIdx / 2) * toolSpacingY;
+          newTools.push({
+            ...palette,
+            id: toolId,
+            x: toolX,
+            y: toolY,
+            name: typeof cap === "string" ? cap : `Capability ${capIdx + 1}`,
+            tagline: "Capability tool",
+          });
+          const connId = `conn-${nextConnectionIdRef.current++}`;
+          newConnections.push({
+            id: connId,
+            from: { type: "tool", id: toolId, port: 0 },
+            to: { type: "block", id: blockId, inputIndex: TOOL_PORT_OFFSET },
+          });
+        });
+      });
+
+      return { newBlocks, newTools, newConnections };
+    },
+    [toolPalette],
+  );
+
   const handleGenerateAgentsFromJson = useCallback(() => {
     setAgentParseError(null);
     let parsed: any;
@@ -518,75 +573,13 @@ export default function App() {
       return;
     }
 
-    const newBlocks: AgentBlock[] = [];
-    const newTools: ToolNode[] = [];
-    const newConnections: Connection[] = [];
-    const baseX = 140 + blocks.length * 40;
-    const baseY = 200;
-    const blockSpacing = 340;
-    const toolSpacingX = 150;
-    const toolSpacingY = 150;
-
-    agents.forEach((agent, idx) => {
-      const mandatoryInputs = Array.isArray(agent?.input_data_streams?.mandatory) ? agent.input_data_streams.mandatory : [];
-      const optionalInputs = Array.isArray(agent?.input_data_streams?.optional) ? agent.input_data_streams.optional : [];
-      const mandatoryOutputs = Array.isArray(agent?.output_data_streams?.mandatory) ? agent.output_data_streams.mandatory : [];
-      const optionalOutputs = Array.isArray(agent?.output_data_streams?.optional) ? agent.output_data_streams.optional : [];
-      const inputCount = mandatoryInputs.length + optionalInputs.length;
-      const outputCount = mandatoryOutputs.length + optionalOutputs.length;
-      const blockId = `block-${nextBlockIdRef.current++}`;
-      const blockX = baseX + idx * blockSpacing;
-      const blockY = baseY;
-
-      newBlocks.push({
-        id: blockId,
-        x: blockX,
-        y: blockY,
-        name: agent?.name ?? agent?.id ?? `Agent ${idx + 1}`,
-        description: agent?.description ?? "Generated from JSON",
-        inputCount: Math.max(1, inputCount || 1),
-        outputCount: Math.max(1, outputCount || 1),
-        inputRequired: [
-          ...Array(mandatoryInputs.length).fill(true),
-          ...Array(Math.max(0, inputCount - mandatoryInputs.length)).fill(false),
-        ].slice(0, Math.max(1, inputCount || 1)),
-        outputRequired: [
-          ...Array(mandatoryOutputs.length).fill(true),
-          ...Array(Math.max(0, outputCount - mandatoryOutputs.length)).fill(false),
-        ].slice(0, Math.max(1, outputCount || 1)),
-        inputNames: [...mandatoryInputs, ...optionalInputs].slice(0, Math.max(1, inputCount || 1)),
-        outputNames: [...mandatoryOutputs, ...optionalOutputs].slice(0, Math.max(1, outputCount || 1)),
-        mandatoryInputCount: mandatoryInputs.length,
-        mandatoryOutputCount: mandatoryOutputs.length,
-      });
-
-      const capabilities: string[] = Array.isArray(agent?.capabilities) ? agent.capabilities : [];
-      capabilities.forEach((cap, capIdx) => {
-        const palette = toolPalette[capIdx % toolPalette.length];
-        const toolId = `tool-${nextToolIdRef.current++}`;
-        const toolX = blockX + (capIdx % 2) * toolSpacingX - 40;
-        const toolY = blockY + 220 + Math.floor(capIdx / 2) * toolSpacingY;
-        newTools.push({
-          ...palette,
-          id: toolId,
-          x: toolX,
-          y: toolY,
-          name: typeof cap === "string" ? cap : `Capability ${capIdx + 1}`,
-          tagline: "Capability tool",
-        });
-        const connId = `conn-${nextConnectionIdRef.current++}`;
-        newConnections.push({
-          id: connId,
-          from: { type: "tool", id: toolId, port: 0 },
-          to: { type: "block", id: blockId, inputIndex: TOOL_PORT_OFFSET },
-        });
-      });
-    });
+    setAgentSpecTemplate(captureAgentSpecTemplate(parsed));
+    const { newBlocks, newTools, newConnections } = buildAgentsFromDefinition(agents, blocks.length);
 
     setBlocks((prev) => [...prev, ...newBlocks]);
     setTools((prev) => [...prev, ...newTools]);
     setConnections((prev) => [...prev, ...newConnections]);
-  }, [agentJsonInput, blocks.length, toolPalette]);
+  }, [agentJsonInput, blocks.length, buildAgentsFromDefinition, captureAgentSpecTemplate]);
 
   const clamp = useCallback((value: number, min: number, max: number) => Math.min(max, Math.max(min, value)), []);
   const MIN_IO = 1;
@@ -598,6 +591,109 @@ export default function App() {
     return next;
   }, []);
   const clampNames = useCallback((arr: string[] | undefined, count: number) => (arr ?? []).slice(0, count), []);
+
+  const buildAgentRegistrySpec = useCallback(() => {
+    const baseTemplate: AgentSpecTemplate = agentSpecTemplate ?? {
+      metadata: { version: "1.0.0" },
+      registry_type: "agent_registry",
+      global_protocols: ["a2a", "mcp"],
+    };
+
+    const rawMetadata = baseTemplate?.metadata;
+    const metadata: Record<string, unknown> =
+      rawMetadata && typeof rawMetadata === "object" && !Array.isArray(rawMetadata)
+        ? { ...rawMetadata }
+        : {};
+    if (typeof metadata.version !== "string") {
+      metadata.version = "1.0.0";
+    }
+
+    const toStringArray = (value: unknown, fallback: string[]) => {
+      if (!Array.isArray(value)) return fallback;
+      return (value as unknown[]).filter((item): item is string => typeof item === "string");
+    };
+
+    const ensureNames = (names: string[] | undefined, count: number, prefix: string) => {
+      const base = (names ?? []).slice(0, count);
+      const next = [...base];
+      while (next.length < count) {
+        next.push(`${prefix}_${next.length + 1}`);
+      }
+      return next;
+    };
+
+    const agentsSpec = blocks.map((block) => {
+      const inputs = ensureNames(block.inputNames, block.inputCount, "input");
+      const outputs = ensureNames(block.outputNames, block.outputCount, "output");
+
+      const mandatoryInputs: string[] = [];
+      const optionalInputs: string[] = [];
+      inputs.forEach((name, idx) => {
+        const isRequired = block.inputRequired[idx] ?? false;
+        (isRequired ? mandatoryInputs : optionalInputs).push(name);
+      });
+
+      const mandatoryOutputs: string[] = [];
+      const optionalOutputs: string[] = [];
+      outputs.forEach((name, idx) => {
+        const isRequired = block.outputRequired[idx] ?? false;
+        (isRequired ? mandatoryOutputs : optionalOutputs).push(name);
+      });
+
+      const capabilityConnections = connections.filter(
+        (conn) =>
+          conn.to.type === "block" &&
+          conn.to.id === block.id &&
+          (conn.to.inputIndex ?? 0) >= TOOL_PORT_OFFSET &&
+          conn.from.type === "tool",
+      );
+
+      const capabilities: string[] = [];
+      capabilityConnections.forEach((conn) => {
+        const toolName = tools.find((tool) => tool.id === conn.from.id)?.name;
+        if (toolName && !capabilities.includes(toolName)) {
+          capabilities.push(toolName);
+        }
+      });
+
+      return {
+        id: block.sourceAgentId ?? block.name ?? block.id,
+        name: block.name,
+        description: block.description,
+        capabilities,
+        input_data_streams: {
+          mandatory: mandatoryInputs,
+          optional: optionalInputs,
+        },
+        output_data_streams: {
+          mandatory: mandatoryOutputs,
+          optional: optionalOutputs,
+        },
+      };
+    });
+
+    const registryType =
+      typeof baseTemplate?.registry_type === "string" ? baseTemplate.registry_type : "agent_registry";
+    const globalProtocols = toStringArray(baseTemplate?.global_protocols, ["a2a", "mcp"]);
+    const description = typeof baseTemplate?.description === "string" ? baseTemplate.description : undefined;
+
+    const {
+      metadata: _ignoredMeta,
+      registry_type: _ignoredRegistry,
+      global_protocols: _ignoredGlobal,
+      description: _ignoredDescription,
+      ...rest
+    } = baseTemplate ?? {};
+
+    return {
+      ...rest,
+      metadata,
+      registry_type: registryType,
+      global_protocols: globalProtocols,
+      ...(description ? { description } : {}),
+      agents: agentsSpec,
+    };
+  }, [agentSpecTemplate, blocks, connections, tools]);
 
   const getBlockMode = useCallback(
     (block: AgentBlock) => {
@@ -637,8 +733,14 @@ export default function App() {
         }
       });
       return blocksState.map((b) => {
-        const desiredInputs = clamp((maxInputs[b.id] ?? -1) + 1, MIN_IO, MAX_IO);
-        const desiredOutputs = clamp((maxOutputs[b.id] ?? -1) + 1, MIN_IO, MAX_IO);
+        const desiredInputs = Math.max(
+          b.inputCount,
+          clamp((maxInputs[b.id] ?? -1) + 1, MIN_IO, MAX_IO),
+        );
+        const desiredOutputs = Math.max(
+          b.outputCount,
+          clamp((maxOutputs[b.id] ?? -1) + 1, MIN_IO, MAX_IO),
+        );
         if (b.inputCount === desiredInputs && b.outputCount === desiredOutputs) return b;
         return {
           ...b,
@@ -949,6 +1051,7 @@ export default function App() {
     setUploads([]);
     setOutputs([]);
     setConnections([]);
+    setAgentSpecTemplate(null);
     setLinking(null);
     setHoveredInput(null);
     setHoveredOutput(null);
@@ -977,156 +1080,275 @@ export default function App() {
     localStorage.removeItem("c3an-workspace");
   }, [reset]);
 
-  const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-  const file = e.target.files?.[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = (ev) => {
-    try {
-      const src = JSON.parse(ev.target?.result as string);
+  const resetInteractionState = useCallback(() => {
+    setSelected(null);
+    setHoveredInput(null);
+    setHoveredOutput(null);
+    setHoveredBlockId(null);
+    setHoveredToolId(null);
+    setHoveredUploadId(null);
+    setHoveredOutputId(null);
+    setLinking(null);
+    linkingRef.current = false;
+    setDraggingNoteId(null);
+    setDraggingBlockId(null);
+    setDraggingToolId(null);
+    setDraggingUploadId(null);
+    setDraggingOutputId(null);
+  }, []);
 
-      // 1.  If it’s already our native format, just load it
-      if (Array.isArray(src.blocks) && Array.isArray(src.connections)) {
-        setNotes(src.notes ?? []);
-        setBlocks(src.blocks ?? []);
-        setTools(src.tools ?? []);
-        setUploads(src.uploads ?? []);
-        setOutputs(src.outputs ?? []);
-        setSelectedEvals(src.evals ?? []);
-        
-        // Set connections after a short delay to ensure blocks are rendered first
-        const loadedConnections = src.connections ?? [];
-        setTimeout(() => {
-          setConnections(loadedConnections);
-        }, 50);
-        return;
-      }
-
-      // 2.  Otherwise assume it’s a “plan” file and convert
-      if (!src.triples || !src.metadata) {
-        alert('Unrecognised JSON format');
-        return;
-      }
-
-      const newBlocks: AgentBlock[] = [];
-      const newConnections: Connection[] = [];
-      const newTools: ToolNode[] = [];
-
-      // create one agent block per unique agent mentioned
-      const agentIds = Array.from(
-        new Set(
-          src.triples.flatMap((t: any) => [t.from, t.to])
-        )
-      ) as string[];
-
-      // Build adjacency lists for layout calculation
-      const outgoing: Record<string, string[]> = {};
-      const incoming: Record<string, string[]> = {};
-      agentIds.forEach((id) => {
-        outgoing[id] = [];
-        incoming[id] = [];
-      });
-      src.triples.forEach((t: any) => {
-        if (outgoing[t.from] && incoming[t.to]) {
-          outgoing[t.from].push(t.to);
-          incoming[t.to].push(t.from);
-        }
-      });
-
-      // Calculate levels using longest path from sources (topological layering)
-      const levels: Record<string, number> = {};
-      const visited = new Set<string>();
-      
-      const calcLevel = (nodeId: string): number => {
-        if (levels[nodeId] !== undefined) return levels[nodeId];
-        if (visited.has(nodeId)) return 0; // cycle protection
-        visited.add(nodeId);
-        
-        const parents = incoming[nodeId] || [];
-        if (parents.length === 0) {
-          levels[nodeId] = 0;
-        } else {
-          levels[nodeId] = Math.max(...parents.map(calcLevel)) + 1;
-        }
-        return levels[nodeId];
+  const updateIdRefsFromImport = useCallback(
+    (payload: { blocks?: AgentBlock[]; tools?: ToolNode[]; uploads?: UploadNode[]; outputs?: OutputNode[]; connections?: Connection[]; notes?: Note[] }) => {
+      const bumpRef = (items: { id?: string }[], ref: typeof nextBlockIdRef, prefix: string) => {
+        let maxSeen = ref.current - 1;
+        items.forEach((item) => {
+          const match = typeof item.id === "string" ? item.id.match(new RegExp(`^${prefix}-(\\d+)$`)) : null;
+          if (!match) return;
+          const numeric = Number(match[1]);
+          if (!Number.isNaN(numeric)) {
+            maxSeen = Math.max(maxSeen, numeric);
+          }
+        });
+        ref.current = Math.max(ref.current, maxSeen + 1);
       };
-      
-      agentIds.forEach(calcLevel);
 
-      // Group nodes by level
-      const nodesByLevel: Record<number, string[]> = {};
-      agentIds.forEach((id) => {
-        const level = levels[id] ?? 0;
-        if (!nodesByLevel[level]) nodesByLevel[level] = [];
-        nodesByLevel[level].push(id);
-      });
+      bumpRef(payload.blocks ?? [], nextBlockIdRef, "block");
+      bumpRef(payload.tools ?? [], nextToolIdRef, "tool");
+      bumpRef(payload.uploads ?? [], nextUploadIdRef, "upload");
+      bumpRef(payload.outputs ?? [], nextOutputIdRef, "output");
+      bumpRef(payload.connections ?? [], nextConnectionIdRef, "conn");
+      bumpRef(payload.notes ?? [], nextIdRef, "note");
+    },
+    [],
+  );
 
-      // Layout constants - increased spacing for better visibility
-      const HORIZONTAL_SPACING = 450;
-      const VERTICAL_SPACING = 200;
-      const BASE_X = 350;
-      const BASE_Y = 300;
+  const applyImportedWorkspace = useCallback(
+    (payload: { notes?: Note[]; blocks?: AgentBlock[]; tools?: ToolNode[]; uploads?: UploadNode[]; outputs?: OutputNode[]; connections?: Connection[]; evals?: string[]; theme?: "light" | "dark"; agentSpecTemplate?: AgentSpecTemplate | null }) => {
+      resetInteractionState();
+      setNotes(payload.notes ?? []);
+      setBlocks(payload.blocks ?? []);
+      setTools(payload.tools ?? []);
+      setUploads(payload.uploads ?? []);
+      setOutputs(payload.outputs ?? []);
+      setSelectedEvals(payload.evals ?? []);
+      if (payload.theme) setTheme(payload.theme);
+      setAgentSpecTemplate(payload.agentSpecTemplate ?? null);
+      updateIdRefsFromImport(payload);
 
-      // Position blocks based on level and vertical index
-      agentIds.forEach((id, idx) => {
-        const level = levels[id] ?? 0;
-        const nodesAtLevel = nodesByLevel[level];
-        const verticalIndex = nodesAtLevel.indexOf(id);
-        const totalAtLevel = nodesAtLevel.length;
-        
-        // Center nodes vertically at each level
-        const verticalOffset = (verticalIndex - (totalAtLevel - 1) / 2) * VERTICAL_SPACING;
-        
-        newBlocks.push({
-          id: `block-${idx}`,
-          x: BASE_X + level * HORIZONTAL_SPACING,
-          y: BASE_Y + verticalOffset,
-          name: id,
-          description: 'Imported from plan',
-          inputCount: 1,
-          outputCount: 1,
-          inputRequired: [false],
-          outputRequired: [false],
-          inputNames: [],
-          outputNames: [],
-        });
-      });
-
-      // create connections that mirror the triples
-      src.triples.forEach((t: any, idx: number) => {
-        const fromIdx = agentIds.indexOf(t.from);
-        const toIdx = agentIds.indexOf(t.to);
-        if (fromIdx === -1 || toIdx === -1) return;
-        newConnections.push({
-          id: `conn-${idx}`,
-          from: { type: 'block', id: `block-${fromIdx}`, port: 0 },
-          to: { type: 'block', id: `block-${toIdx}`, inputIndex: 0 },
-        });
-      });
-
-      setNotes([]);
-      setBlocks(newBlocks);
-      setTools(newTools);
-      setUploads([]);
-      setOutputs([]);
-      setSelectedEvals([]);
-      
-      // Set connections after a short delay to ensure blocks are rendered first
+      const loadedConnections = payload.connections ?? [];
       setTimeout(() => {
-        setConnections(newConnections);
+        setConnections(loadedConnections);
       }, 50);
-    } catch {
-      alert('Invalid workflow file');
-    }
+    },
+    [resetInteractionState, setAgentSpecTemplate, updateIdRefsFromImport],
+  );
+
+  const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const src = JSON.parse(ev.target?.result as string);
+        const template = captureAgentSpecTemplate(src);
+
+        // 1. If it’s already our native format, just load it
+        if (Array.isArray(src.blocks) && Array.isArray(src.connections)) {
+          applyImportedWorkspace({
+            notes: src.notes ?? [],
+            blocks: src.blocks ?? [],
+            tools: src.tools ?? [],
+            uploads: src.uploads ?? [],
+            outputs: src.outputs ?? [],
+            connections: src.connections ?? [],
+            evals: src.evals ?? [],
+            theme: src.theme,
+            agentSpecTemplate: src.agentSpecTemplate ?? template ?? null,
+          });
+          return;
+        }
+
+        // 2. Agents definition file (same structure as the textarea generator)
+        const agentDefinitions = Array.isArray(src?.agents) ? src.agents : null;
+        if (agentDefinitions?.length) {
+          const { newBlocks, newTools, newConnections } = buildAgentsFromDefinition(agentDefinitions, 0);
+          applyImportedWorkspace({
+            notes: [],
+            blocks: newBlocks,
+            tools: newTools,
+            uploads: [],
+            outputs: [],
+            connections: newConnections,
+            evals: [],
+            agentSpecTemplate: template ?? null,
+          });
+          return;
+        }
+
+        // 3. Otherwise assume it’s a “plan” file and convert
+        const triples = Array.isArray(src?.triples)
+          ? src.triples
+          : Array.isArray(src?.plan?.triples)
+            ? src.plan.triples
+            : null;
+        if (!triples) {
+          alert("Unrecognised JSON format");
+          return;
+        }
+
+        const newBlocks: AgentBlock[] = [];
+        const newConnections: Connection[] = [];
+        const newTools: ToolNode[] = [];
+
+        // create one agent block per unique agent mentioned
+        const agentIds = Array.from(new Set(triples.flatMap((t: any) => [t.from, t.to]))) as string[];
+
+        // Build adjacency lists for layout calculation
+        const outgoing: Record<string, string[]> = {};
+        const incoming: Record<string, string[]> = {};
+        agentIds.forEach((id) => {
+          outgoing[id] = [];
+          incoming[id] = [];
+        });
+        triples.forEach((t: any) => {
+          if (outgoing[t.from] && incoming[t.to]) {
+            outgoing[t.from].push(t.to);
+            incoming[t.to].push(t.from);
+          }
+        });
+
+        // Calculate levels using longest path from sources (topological layering)
+        const levels: Record<string, number> = {};
+        const visited = new Set<string>();
+        
+        const calcLevel = (nodeId: string): number => {
+          if (levels[nodeId] !== undefined) return levels[nodeId];
+          if (visited.has(nodeId)) return 0; // cycle protection
+          visited.add(nodeId);
+          
+          const parents = incoming[nodeId] || [];
+          if (parents.length === 0) {
+            levels[nodeId] = 0;
+          } else {
+            levels[nodeId] = Math.max(...parents.map(calcLevel)) + 1;
+          }
+          return levels[nodeId];
+        };
+        
+        agentIds.forEach(calcLevel);
+
+        // Group nodes by level
+        const nodesByLevel: Record<number, string[]> = {};
+        agentIds.forEach((id) => {
+          const level = levels[id] ?? 0;
+          if (!nodesByLevel[level]) nodesByLevel[level] = [];
+          nodesByLevel[level].push(id);
+        });
+
+        // Layout constants - increased spacing for better visibility
+        const HORIZONTAL_SPACING = 450;
+        const VERTICAL_SPACING = 200;
+        const BASE_X = 350;
+        const BASE_Y = 300;
+
+        // Position blocks based on level and vertical index
+        agentIds.forEach((id, idx) => {
+          const level = levels[id] ?? 0;
+          const nodesAtLevel = nodesByLevel[level];
+          const verticalIndex = nodesAtLevel.indexOf(id);
+          const totalAtLevel = nodesAtLevel.length;
+          
+          // Center nodes vertically at each level
+          const verticalOffset = (verticalIndex - (totalAtLevel - 1) / 2) * VERTICAL_SPACING;
+          
+          newBlocks.push({
+            id: `block-${idx}`,
+            x: BASE_X + level * HORIZONTAL_SPACING,
+            y: BASE_Y + verticalOffset,
+            sourceAgentId: id,
+            name: id,
+            description: 'Imported from plan',
+            inputCount: 1,
+            outputCount: 1,
+            inputRequired: [false],
+            outputRequired: [false],
+            inputNames: [],
+            outputNames: [],
+          });
+        });
+
+        // create connections that mirror the triples
+        triples.forEach((t: any, idx: number) => {
+          const fromIdx = agentIds.indexOf(t.from);
+          const toIdx = agentIds.indexOf(t.to);
+          if (fromIdx === -1 || toIdx === -1) return;
+          newConnections.push({
+            id: `conn-${idx}`,
+            from: { type: 'block', id: `block-${fromIdx}`, port: 0 },
+            to: { type: 'block', id: `block-${toIdx}`, inputIndex: 0 },
+          });
+        });
+
+        applyImportedWorkspace({
+          notes: [],
+          blocks: newBlocks,
+          tools: newTools,
+          uploads: [],
+          outputs: [],
+          connections: newConnections,
+          evals: [],
+          agentSpecTemplate: null,
+        });
+      } catch {
+        alert('Invalid workflow file');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
   };
-  reader.readAsText(file);
-  e.target.value = '';
-};
 
   const handleRun = useCallback(() => {
     setActivePanel(null);
     setSelected(null);
   }, []);
+
+  const handleDownloadJson = useCallback(() => {
+    if (agentSpecTemplate) {
+      const spec = buildAgentRegistrySpec();
+      downloadWorkflow(spec);
+      return;
+    }
+
+    const snapshot = {
+      notes,
+      blocks,
+      tools,
+      uploads,
+      outputs,
+      connections,
+      evals: selectedEvals,
+      theme,
+      agentSpecTemplate,
+      nextBlockId: nextBlockIdRef.current,
+      nextToolId: nextToolIdRef.current,
+      nextUploadId: nextUploadIdRef.current,
+      nextOutputId: nextOutputIdRef.current,
+      nextConnectionId: nextConnectionIdRef.current,
+      nextNoteId: nextIdRef.current,
+    };
+    downloadWorkflow(snapshot);
+  }, [
+    agentSpecTemplate,
+    blocks,
+    buildAgentRegistrySpec,
+    connections,
+    notes,
+    outputs,
+    selectedEvals,
+    theme,
+    tools,
+    uploads,
+  ]);
 
   const getOutputAnchor = useCallback(
     (endpoint: LinkSource) => {
@@ -1190,10 +1412,14 @@ export default function App() {
   const buildConnectionPath = useCallback(
     (start: AnchorPoint, end: AnchorPoint) => {
       const dx = end.x - start.x;
-      const offset = Math.max(Math.abs(dx) * 0.5, 40);
-      const c1x = start.x + offset;
-      const c2x = end.x - offset;
-      return `M ${start.x} ${start.y} C ${c1x} ${start.y} ${c2x} ${end.y} ${end.x} ${end.y}`;
+      const dy = end.y - start.y;
+      const offsetX = Math.max(Math.abs(dx) * 0.45, 40);
+      const offsetY = Math.sign(dy) * Math.min(Math.abs(dy) * 0.25, 160);
+      const c1x = start.x + offsetX;
+      const c1y = start.y + offsetY;
+      const c2x = end.x - offsetX;
+      const c2y = end.y - offsetY;
+      return `M ${start.x} ${start.y} C ${c1x} ${c1y} ${c2x} ${c2y} ${end.x} ${end.y}`;
     },
     [],
   );
@@ -2024,6 +2250,7 @@ export default function App() {
       setOutputs(parsed.outputs ?? []);
       setConnections(parsed.connections ?? []);
       setTheme(parsed.theme ?? "dark");
+      setAgentSpecTemplate(parsed.agentSpecTemplate ?? null);
       nextBlockIdRef.current = parsed.nextBlockId ?? nextBlockIdRef.current;
       nextToolIdRef.current = parsed.nextToolId ?? nextToolIdRef.current;
       nextUploadIdRef.current = parsed.nextUploadId ?? nextUploadIdRef.current;
@@ -2044,6 +2271,7 @@ export default function App() {
       outputs,
       connections,
       theme,
+      agentSpecTemplate,
       nextBlockId: nextBlockIdRef.current,
       nextToolId: nextToolIdRef.current,
       nextUploadId: nextUploadIdRef.current,
@@ -2052,7 +2280,7 @@ export default function App() {
       nextNoteId: nextIdRef.current,
     };
     localStorage.setItem("c3an-workspace", JSON.stringify(snapshot));
-  }, [notes, blocks, tools, uploads, outputs, connections, theme]);
+  }, [notes, blocks, tools, uploads, outputs, connections, theme, agentSpecTemplate]);
 
   const appThemeClass =
     theme === "dark"
@@ -2358,32 +2586,7 @@ export default function App() {
           </button>
           <button
             className={actionButtonClass}
-            onClick={() => {
-              // Convert connections to triples format (agent-to-agent sequential operations)
-              const triples = connections
-                .filter((conn) => conn.from.type === "block" && conn.to.type === "block")
-                .map((conn) => {
-                  const fromBlock = blocks.find((b) => b.id === conn.from.id);
-                  const toBlock = blocks.find((b) => b.id === conn.to.id);
-                  return {
-                    from: fromBlock?.name || conn.from.id,
-                    op: "seq",
-                    to: toBlock?.name || conn.to.id,
-                  };
-                });
-
-              const snapshot = {
-                triples,
-                metadata: {
-                  total_agents: blocks.length,
-                  total_triples: triples.length,
-                  operator_counts: countOperators(connections),
-                  estimated_latency_ms: 0,
-                  estimated_cost: 0,
-                },
-              };
-              downloadWorkflow(snapshot);
-            }}
+            onClick={handleDownloadJson}
           >
             Download JSON
           </button>
@@ -2451,25 +2654,27 @@ export default function App() {
                 {/* Simple arrow markers */}
                 <marker
                   id="arrowhead-default"
-                  markerWidth="10"
-                  markerHeight="10"
-                  refX="9"
-                  refY="3"
+                  viewBox="0 0 12 12"
+                  markerWidth="12"
+                  markerHeight="12"
+                  refX="6"
+                  refY="6"
                   orient="auto"
-                  markerUnits="strokeWidth"
+                  markerUnits="userSpaceOnUse"
                 >
-                  <path d="M0,0 L0,6 L9,3 z" fill="#38bdf8" />
+                  <path d="M0,2 L12,6 L0,10 z" fill="#38bdf8" />
                 </marker>
                 <marker
                   id="arrowhead-preview"
-                  markerWidth="10"
-                  markerHeight="10"
-                  refX="9"
-                  refY="3"
+                  viewBox="0 0 12 12"
+                  markerWidth="12"
+                  markerHeight="12"
+                  refX="6"
+                  refY="6"
                   orient="auto"
-                  markerUnits="strokeWidth"
+                  markerUnits="userSpaceOnUse"
                 >
-                  <path d="M0,0 L0,6 L9,3 z" fill="#3b82f6" />
+                  <path d="M0,2 L12,6 L0,10 z" fill="#3b82f6" />
                 </marker>
               </defs>
                   {connections.map((conn) => {
@@ -2478,6 +2683,7 @@ export default function App() {
                     if (!start || !end) return null;
                     const d = buildConnectionPath(start, end);
                     const isSelected = selected?.type === "connection" && selected.id === conn.id;
+                const isToolWire = conn.from.type === "tool" || conn.to.type === "tool";
                 return (
                   <g key={conn.id}>
                     {/* Main connection path */}
@@ -2487,7 +2693,7 @@ export default function App() {
                       stroke="#38bdf8"
                       strokeWidth={isSelected ? 3 : 2}
                       strokeLinecap="round"
-                      markerEnd="url(#arrowhead-default)"
+                      markerEnd={isToolWire ? undefined : "url(#arrowhead-default)"}
                       style={{ 
                         pointerEvents: "visibleStroke", 
                         cursor: "pointer",
@@ -2506,6 +2712,10 @@ export default function App() {
                 if (!start) return null;
                 const end = linking.current;
                 const d = buildConnectionPath(start, end);
+                const isToolWire =
+                  linking.origin === "output"
+                    ? linking.from.type === "tool"
+                    : linking.target.type === "tool";
                 return (
                   <g>
                     <path
@@ -2515,7 +2725,7 @@ export default function App() {
                       strokeDasharray="6 6"
                       strokeWidth={2}
                       strokeLinecap="round"
-                      markerEnd="url(#arrowhead-preview)"
+                      markerEnd={isToolWire ? undefined : "url(#arrowhead-preview)"}
                     />
                   </g>
                 );
