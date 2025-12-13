@@ -3,7 +3,7 @@
 // =============================================================================
 
 import type { PointerEvent as ReactPointerEvent } from "react";
-import type { Note, Selection } from "../../types";
+import type { Note } from "../../types";
 
 type Props = {
   note: Note;

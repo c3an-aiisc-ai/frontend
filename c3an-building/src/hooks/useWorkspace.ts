@@ -16,14 +16,9 @@ import type {
   PanelKey,
   LinkingState,
   LinkSource,
-  LinkTarget,
-  AnchorPoint,
-  BlockHandles,
 } from "../types";
 import {
   STORAGE_KEY,
-  AGENT_PRESETS,
-  TOOL_PALETTE,
   MIN_IO,
   MAX_IO,
   TOOL_PORT_OFFSET,
@@ -98,27 +93,32 @@ export function useWorkspace() {
     linkingRef.current = Boolean(linking);
   }, [linking]);
 
-  // Load from localStorage
+  // Load from localStorage with defensive shape checks to avoid runtime crashes
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (!saved) return;
     try {
       const parsed = JSON.parse(saved);
-      setNotes(parsed.notes ?? []);
-      setBlocks(parsed.blocks ?? []);
-      setTools(parsed.tools ?? []);
-      setUploads(parsed.uploads ?? []);
-      setOutputs(parsed.outputs ?? []);
-      setConnections(parsed.connections ?? []);
-      setTheme(parsed.theme ?? "dark");
-      nextBlockIdRef.current = parsed.nextBlockId ?? nextBlockIdRef.current;
-      nextToolIdRef.current = parsed.nextToolId ?? nextToolIdRef.current;
-      nextUploadIdRef.current = parsed.nextUploadId ?? nextUploadIdRef.current;
-      nextOutputIdRef.current = parsed.nextOutputId ?? nextOutputIdRef.current;
-      nextConnectionIdRef.current = parsed.nextConnectionId ?? nextConnectionIdRef.current;
-      nextIdRef.current = parsed.nextNoteId ?? nextIdRef.current;
+      const safeArray = (value: unknown) => (Array.isArray(value) ? value : []);
+      const safeTheme = parsed?.theme === "light" || parsed?.theme === "dark" ? parsed.theme : "dark";
+
+      setNotes(safeArray(parsed?.notes));
+      setBlocks(safeArray(parsed?.blocks));
+      setTools(safeArray(parsed?.tools));
+      setUploads(safeArray(parsed?.uploads));
+      setOutputs(safeArray(parsed?.outputs));
+      setConnections(safeArray(parsed?.connections));
+      setTheme(safeTheme);
+
+      nextBlockIdRef.current = typeof parsed?.nextBlockId === "number" ? parsed.nextBlockId : nextBlockIdRef.current;
+      nextToolIdRef.current = typeof parsed?.nextToolId === "number" ? parsed.nextToolId : nextToolIdRef.current;
+      nextUploadIdRef.current = typeof parsed?.nextUploadId === "number" ? parsed.nextUploadId : nextUploadIdRef.current;
+      nextOutputIdRef.current = typeof parsed?.nextOutputId === "number" ? parsed.nextOutputId : nextOutputIdRef.current;
+      nextConnectionIdRef.current =
+        typeof parsed?.nextConnectionId === "number" ? parsed.nextConnectionId : nextConnectionIdRef.current;
+      nextIdRef.current = typeof parsed?.nextNoteId === "number" ? parsed.nextNoteId : nextIdRef.current;
     } catch {
-      // ignore bad saves
+      localStorage.removeItem(STORAGE_KEY);
     }
   }, []);
 
@@ -151,13 +151,20 @@ export function useWorkspace() {
     };
     applySystemTheme(media.matches);
     const listener = (event: MediaQueryListEvent) => applySystemTheme(event.matches);
-    media.addEventListener("change", listener);
-    return () => media.removeEventListener("change", listener);
+    if (typeof media.addEventListener === "function") {
+      media.addEventListener("change", listener);
+      return () => media.removeEventListener("change", listener);
+    }
+    // Older browsers
+    if (typeof media.addListener === "function") media.addListener(listener);
+    return () => {
+      if (typeof media.removeListener === "function") media.removeListener(listener);
+    };
   }, [userThemeLocked]);
 
   // Reset workspace
-  const resetWorkspace = useCallback((resetZoom: () => void) => {
-    resetZoom();
+  const resetWorkspace = useCallback((resetZoom?: () => void) => {
+    resetZoom?.();
     setNotes([]);
     setBlocks([]);
     setTools([]);
@@ -234,20 +241,31 @@ export function useWorkspace() {
   // Get block mode based on connections
   const getBlockMode = useCallback(
     (block: AgentBlock) => {
-      const inbound = connections.filter(
-        (conn) =>
-          conn.to.type === "block" &&
-          conn.to.id === block.id &&
-          (conn.to.inputIndex ?? 0) < TOOL_PORT_OFFSET
-      ).length;
-      const outbound = connections.filter(
-        (conn) => conn.from.type === "block" && conn.from.id === block.id
-      ).length;
+      const inboundSources = new Set(
+        connections
+          .filter(
+            (conn) =>
+              conn.to.type === "block" &&
+              conn.to.id === block.id &&
+              conn.from.type === "block" &&
+              (conn.to.inputIndex ?? 0) < TOOL_PORT_OFFSET
+          )
+          .map((conn) => conn.from.id)
+      );
 
-      if (block.inputCount > 1 || inbound > 1) return "aggregate";
-      if (block.outputCount > 1 || outbound > 1) return "branch";
-      if (inbound > 0 && outbound > 0) return "sequential";
-      if (outbound > 0) return "sequential";
+      const outboundTargets = new Set(
+        connections
+          .filter((conn) => conn.from.type === "block" && conn.from.id === block.id)
+          .map((conn) => `${conn.to.type}:${conn.to.id}:${conn.to.inputIndex ?? ""}`)
+      );
+
+      const inboundCount = inboundSources.size;
+      const outboundCount = outboundTargets.size;
+
+      if (inboundCount > 1) return "aggregate";
+      if (outboundCount > 1) return "branch";
+      if (inboundCount > 0 && outboundCount > 0) return "sequential";
+      if (outboundCount > 0) return "sequential";
       return null;
     },
     [connections]

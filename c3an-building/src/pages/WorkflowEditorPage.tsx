@@ -10,8 +10,8 @@ import {
   useEffect,
   useMemo,
   useRef,
+  useState,
 } from "react";
-
 import { Background } from "../components";
 import { Sidebar } from "../components/panels";
 import { Toolbar, ConnectionLines } from "../components/ui";
@@ -21,13 +21,13 @@ import {
   UploadNode,
   OutputNode,
   StickyNote,
+  PlanningCanvas,
 } from "../components/canvas";
 import {
   BlockDetailsModal,
   ToolDetailsModal,
   EvalsModal,
 } from "../components/modals";
-
 import { usePanZoom, useWorkspace } from "../hooks";
 import {
   AGENT_PRESETS,
@@ -38,27 +38,46 @@ import {
   TOOL_PORT_OFFSET,
 } from "../constants";
 import {
+  clamp,
+  clampNames,
   countOperators,
   downloadWorkflow,
-  clamp,
   resizeRequired,
-  clampNames,
 } from "../utils";
+import { detectWorkflowType } from "../utils/detectWorkflowType";
+import { hydrateWorkflowFromPlan } from "../workflow/hydrateFromPlan";
+import { parsePlanningJSON } from "../planning/parsePlan";
+import { inferTripleOpsByDegree } from "../planning/planOps";
+import type { PlanningBlock } from "../types/planning";
 import type {
   AgentBlock as AgentBlockType,
-  ToolNode as ToolNodeType,
+  AnchorPoint,
+  BlockHandles,
   Connection,
   LinkSource,
   LinkTarget,
-  AnchorPoint,
-  BlockHandles,
+  Selection,
+  ToolHandles,
+  UploadHandles,
+  OutputHandles,
 } from "../types";
 
 export default function WorkflowEditorPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadedPlan, setUploadedPlan] = useState<PlanningBlock | null>(null);
+  const [showPlanningView, setShowPlanningView] = useState(false);
+  const [plans, setPlans] = useState<PlanningBlock[]>([]);
+  const [planConnections, setPlanConnections] = useState<{ from: string; to: string }[]>([]);
+  const [linkingPlanId, setLinkingPlanId] = useState<string | null>(null);
+  const [linkingPlanPoint, setLinkingPlanPoint] = useState<{ x: number; y: number } | null>(null);
 
-  // Workspace state
-  const workspace = useWorkspace();
+  const handleRemovePlan = useCallback((id: string) => {
+    setPlans((prev) => prev.filter((p) => p.id !== id));
+    setPlanConnections((prev) => prev.filter((c) => c.from !== id && c.to !== id));
+    if (linkingPlanId === id) setLinkingPlanId(null);
+    if (linkingPlanPoint) setLinkingPlanPoint(null);
+  }, [linkingPlanId]);
+
   const {
     notes,
     setNotes,
@@ -74,7 +93,6 @@ export default function WorkflowEditorPage() {
     setConnections,
     theme,
     setTheme,
-    userThemeLocked,
     setUserThemeLocked,
     selectedEvals,
     setSelectedEvals,
@@ -126,7 +144,6 @@ export default function WorkflowEditorPage() {
     setAgentJsonInput,
     agentParseError,
     setAgentParseError,
-    nextIdRef,
     nextBlockIdRef,
     nextToolIdRef,
     nextUploadIdRef,
@@ -135,9 +152,65 @@ export default function WorkflowEditorPage() {
     resetWorkspace,
     recalcBlockPorts,
     getBlockMode,
-  } = workspace;
+  } = useWorkspace();
 
-  // Pan/zoom
+  const persistWorkflowIntoUploadedPlan = useCallback(() => {
+    if (!uploadedPlan) return;
+
+    const blockById = new Map(blocks.map((b) => [b.id, b] as const));
+
+    const nameCounts = new Map<string, number>();
+    for (const b of blocks) {
+      nameCounts.set(b.name, (nameCounts.get(b.name) ?? 0) + 1);
+    }
+    const hasDuplicateNames = Array.from(nameCounts.values()).some((c) => c > 1);
+    const labelFor = (blockId: string) => {
+      const b = blockById.get(blockId);
+      if (!b) return blockId;
+      return hasDuplicateNames ? b.id : b.name;
+    };
+
+    const rawTriples = connections
+      .filter((conn) => conn.from.type === "block" && conn.to.type === "block")
+      .map((conn) => ({
+        from: labelFor(conn.from.id),
+        to: labelFor(conn.to.id),
+      }));
+
+    const triples = inferTripleOpsByDegree(rawTriples);
+
+    const workflow = {
+      notes,
+      blocks,
+      tools,
+      uploads,
+      outputs,
+      connections,
+      evals: selectedEvals,
+    };
+
+    setPlans((prev) => {
+      const exists = prev.some((p) => p.id === uploadedPlan.id);
+      const next = exists
+        ? prev.map((p) => (p.id === uploadedPlan.id ? { ...p, triples, workflow } : p))
+        : [...prev, { ...uploadedPlan, triples, workflow }];
+      return next;
+    });
+    setUploadedPlan((prev) => (prev && prev.id === uploadedPlan.id ? { ...prev, triples, workflow } : prev));
+  }, [blocks, connections, notes, outputs, selectedEvals, tools, uploads, uploadedPlan]);
+
+  const togglePlanningView = useCallback(() => {
+    setShowPlanningView((prev) => {
+      if (!prev) persistWorkflowIntoUploadedPlan();
+      return !prev;
+    });
+  }, [persistWorkflowIntoUploadedPlan]);
+
+  const handleC3ANClick = useCallback(() => {
+    window.open("https://c3an.aiisc.ai/", "_blank", "noopener,noreferrer");
+  }, []);
+
+
   const { containerRef, transform, reset } = usePanZoom({
     initial: { x: 0, y: 0, zoom: 1 },
     shouldAllowPan: (event) => {
@@ -150,7 +223,6 @@ export default function WorkflowEditorPage() {
     isPanDisabled: () => linkingRef.current,
   });
 
-  // Convert screen coordinates to world coordinates
   const toWorldPoint = useCallback(
     (clientX: number, clientY: number) => {
       const el = containerRef.current;
@@ -166,27 +238,19 @@ export default function WorkflowEditorPage() {
     [containerRef, transform.x, transform.y, transform.zoom]
   );
 
-  // Tool palette memo
   const toolPalette = useMemo(() => TOOL_PALETTE, []);
   const agentPresets = useMemo(() => AGENT_PRESETS, []);
   const evalOptions = useMemo(() => EVAL_OPTIONS, []);
 
-  // ==========================================================================
-  // DRAG HANDLERS
-  // ==========================================================================
-
-  const handleBlockDragStart = useCallback((event: DragEvent<HTMLDivElement>) => {
-    event.dataTransfer.effectAllowed = "copy";
-    event.dataTransfer.setData(
-      "application/json",
-      JSON.stringify({ type: "agent-block" })
-    );
+  const handleBlockDragStart = useCallback((e: DragEvent<HTMLDivElement>) => {
+    e.dataTransfer.effectAllowed = "copy";
+    e.dataTransfer.setData("application/json", JSON.stringify({ type: "agent-block" }));
   }, []);
 
   const handleToolDragStart = useCallback(
-    (toolName: string) => (event: DragEvent<HTMLDivElement>) => {
-      event.dataTransfer.effectAllowed = "copy";
-      event.dataTransfer.setData(
+    (toolName: string) => (e: DragEvent<HTMLDivElement>) => {
+      e.dataTransfer.effectAllowed = "copy";
+      e.dataTransfer.setData(
         "application/json",
         JSON.stringify({ type: "tool", name: toolName })
       );
@@ -194,64 +258,71 @@ export default function WorkflowEditorPage() {
     []
   );
 
-  const handleUploadDragStart = useCallback((event: DragEvent<HTMLDivElement>) => {
-    event.dataTransfer.effectAllowed = "copy";
-    event.dataTransfer.setData(
-      "application/json",
-      JSON.stringify({ type: "upload-block" })
-    );
+  const handleUploadDragStart = useCallback((e: DragEvent<HTMLDivElement>) => {
+    e.dataTransfer.effectAllowed = "copy";
+    e.dataTransfer.setData("application/json", JSON.stringify({ type: "upload-block" }));
   }, []);
 
-  const handleOutputDragStart = useCallback((event: DragEvent<HTMLDivElement>) => {
-    event.dataTransfer.effectAllowed = "copy";
-    event.dataTransfer.setData(
-      "application/json",
-      JSON.stringify({ type: "output-block" })
-    );
+  const handleOutputDragStart = useCallback((e: DragEvent<HTMLDivElement>) => {
+    e.dataTransfer.effectAllowed = "copy";
+    e.dataTransfer.setData("application/json", JSON.stringify({ type: "output-block" }));
   }, []);
 
-  const handleCanvasDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    event.dataTransfer.dropEffect = "copy";
+  const handleCanvasDragOver = useCallback((e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
   }, []);
 
   const handleCanvasDrop = useCallback(
-    (event: DragEvent<HTMLDivElement>) => {
-      event.preventDefault();
+    (e: DragEvent<HTMLDivElement>) => {
+      e.preventDefault();
       const el = containerRef.current;
       if (!el) return;
 
-      const payloadRaw = event.dataTransfer.getData("application/json");
-      let payloadType: string | null = null;
-      let payloadToolName: string | null = null;
-      
+      const payloadRaw =
+        e.dataTransfer.getData("application/json") ||
+        e.dataTransfer.getData("text/plain");
+
+      let payload: { type?: string; name?: string } = {};
       try {
-        const parsed = payloadRaw ? JSON.parse(payloadRaw) : null;
-        payloadType = parsed?.type ?? null;
-        payloadToolName = parsed?.name ?? null;
+        payload = payloadRaw ? JSON.parse(payloadRaw) : {};
       } catch {
         // ignore
       }
 
-      if (!payloadType) return;
-
       const rect = el.getBoundingClientRect();
-      const localX = event.clientX - rect.left;
-      const localY = event.clientY - rect.top;
-      const worldX = (localX - transform.x) / transform.zoom;
-      const worldY = (localY - transform.y) / transform.zoom;
+      const world = {
+        x: (e.clientX - rect.left - transform.x) / transform.zoom,
+        y: (e.clientY - rect.top - transform.y) / transform.zoom,
+      };
 
-      if (payloadType === "agent-block") {
-        const id = nextBlockIdRef.current++;
+      if (showPlanningView && payload.type === "planning-block") {
+        const id = `plan-${plans.length + 1}`;
+        setPlans((prev) => [
+          ...prev,
+          {
+            id,
+            x: world.x,
+            y: world.y,
+            name: id,
+            query: "Describe this plan",
+            triples: [],
+          },
+        ]);
+        return;
+      }
+
+      if (payload.type === "agent-block") {
         const preset = agentPresets[0];
+        const id = nextBlockIdRef.current++;
         setBlocks((prev) => [
           ...prev,
           {
             id: `block-${id}`,
-            x: worldX,
-            y: worldY,
+            x: world.x,
+            y: world.y,
             name: preset?.name ?? "Agent Block",
-            description: preset?.description ?? "1 input, 2 outputs",
+            description: preset?.description ?? "Adaptive block",
             inputCount: preset?.inputCount ?? 1,
             outputCount: preset?.outputCount ?? 1,
             inputRequired: Array(preset?.inputCount ?? 1).fill(false),
@@ -263,62 +334,131 @@ export default function WorkflowEditorPage() {
         ]);
       }
 
-      if (payloadType === "upload-block") {
+      if (payload.type === "tool") {
+        const paletteItem = toolPalette.find((t) => t.name === payload.name);
+        if (!paletteItem) return;
+        const id = nextToolIdRef.current++;
+        setTools((prev) => [
+          ...prev,
+          { ...paletteItem, id: `tool-${id}`, x: world.x, y: world.y },
+        ]);
+      }
+
+      if (payload.type === "upload-block") {
         const id = nextUploadIdRef.current++;
         setUploads((prev) => [
           ...prev,
-          {
-            id: `upload-${id}`,
-            x: worldX,
-            y: worldY,
-            name: "Upload data",
-            status: "idle",
-          },
+          { id: `upload-${id}`, x: world.x, y: world.y, name: "Upload data", status: "idle" },
         ]);
       }
 
-      if (payloadType === "output-block") {
+      if (payload.type === "output-block") {
         const id = nextOutputIdRef.current++;
         setOutputs((prev) => [
           ...prev,
-          {
-            id: `output-${id}`,
-            x: worldX,
-            y: worldY,
-            name: "Output",
-            format: "Describe the format here.",
-          },
+          { id: `output-${id}`, x: world.x, y: world.y, name: "Output", format: "Describe the format." },
         ]);
       }
-
-      if (payloadType === "tool" && payloadToolName) {
-        const paletteItem = toolPalette.find((t) => t.name === payloadToolName);
-        if (paletteItem) {
-          const id = nextToolIdRef.current++;
-          setTools((prev) => [
-            ...prev,
-            { ...paletteItem, id: `tool-${id}`, x: worldX, y: worldY },
-          ]);
-        }
-      }
     },
-    [
-      agentPresets,
-      containerRef,
-      toolPalette,
-      transform.x,
-      transform.y,
-      transform.zoom,
-      setBlocks,
-      setTools,
-      setUploads,
-      setOutputs,
-    ]
+    [agentPresets, containerRef, nextBlockIdRef, nextOutputIdRef, nextToolIdRef, nextUploadIdRef, plans.length, setBlocks, setOutputs, setPlans, setTools, setUploads, showPlanningView, toolPalette, transform.x, transform.y, transform.zoom]
   );
 
-  // ==========================================================================
-  // HANDLE CALCULATIONS
-  // ==========================================================================
+  const handleGenerateAgentsFromJson = useCallback(() => {
+    setAgentParseError(null);
+    let parsed: any;
+    try {
+      parsed = JSON.parse(agentJsonInput);
+    } catch {
+      setAgentParseError("Invalid JSON: please check formatting.");
+      return;
+    }
+
+    const agents: any[] | null = Array.isArray(parsed?.agents) ? parsed.agents : null;
+    if (!agents || agents.length === 0) {
+      setAgentParseError("No agents found in JSON (expected an `agents` array).");
+      return;
+    }
+
+    const newBlocks: AgentBlockType[] = [];
+    const newTools: any[] = [];
+    const newConnections: Connection[] = [];
+    const baseX = 140 + blocks.length * 40;
+    const baseY = 200;
+    const blockSpacing = 340;
+    const toolSpacingX = 150;
+    const toolSpacingY = 150;
+
+    agents.forEach((agent, idx) => {
+      const mandatoryInputs = Array.isArray(agent?.input_data_streams?.mandatory)
+        ? agent.input_data_streams.mandatory
+        : [];
+      const optionalInputs = Array.isArray(agent?.input_data_streams?.optional)
+        ? agent.input_data_streams.optional
+        : [];
+      const mandatoryOutputs = Array.isArray(agent?.output_data_streams?.mandatory)
+        ? agent.output_data_streams.mandatory
+        : [];
+      const optionalOutputs = Array.isArray(agent?.output_data_streams?.optional)
+        ? agent.output_data_streams.optional
+        : [];
+
+      const inputCount = mandatoryInputs.length + optionalInputs.length || 1;
+      const outputCount = mandatoryOutputs.length + optionalOutputs.length || 1;
+      const blockId = `block-${nextBlockIdRef.current++}`;
+      const blockX = baseX + idx * blockSpacing;
+      const blockY = baseY;
+
+      newBlocks.push({
+        id: blockId,
+        x: blockX,
+        y: blockY,
+        name: agent?.name ?? agent?.id ?? `Agent ${idx + 1}`,
+        description: agent?.description ?? "Generated from JSON",
+        inputCount: Math.max(1, inputCount),
+        outputCount: Math.max(1, outputCount),
+        inputRequired: [
+          ...Array(mandatoryInputs.length).fill(true),
+          ...Array(Math.max(0, inputCount - mandatoryInputs.length)).fill(false),
+        ].slice(0, Math.max(1, inputCount)),
+        outputRequired: [
+          ...Array(mandatoryOutputs.length).fill(true),
+          ...Array(Math.max(0, outputCount - mandatoryOutputs.length)).fill(false),
+        ].slice(0, Math.max(1, outputCount)),
+        inputNames: [...mandatoryInputs, ...optionalInputs].slice(0, Math.max(1, inputCount)),
+        outputNames: [...mandatoryOutputs, ...optionalOutputs].slice(0, Math.max(1, outputCount)),
+        mandatoryInputCount: mandatoryInputs.length,
+        mandatoryOutputCount: mandatoryOutputs.length,
+      });
+
+      const capabilities: string[] = Array.isArray(agent?.capabilities)
+        ? agent.capabilities
+        : [];
+      capabilities.forEach((cap, capIdx) => {
+        const palette = toolPalette[capIdx % toolPalette.length];
+        const toolId = `tool-${nextToolIdRef.current++}`;
+        const toolX = blockX + (capIdx % 2) * toolSpacingX - 40;
+        const toolY = blockY + 220 + Math.floor(capIdx / 2) * toolSpacingY;
+        newTools.push({
+          ...palette,
+          id: toolId,
+          x: toolX,
+          y: toolY,
+          name: typeof cap === "string" ? cap : `Capability ${capIdx + 1}`,
+          tagline: "Capability tool",
+        });
+        const connId = `conn-${nextConnectionIdRef.current++}`;
+        newConnections.push({
+          id: connId,
+          from: { type: "tool", id: toolId, port: 0 },
+          to: { type: "block", id: blockId, inputIndex: TOOL_PORT_OFFSET },
+        });
+      });
+    });
+
+    setBlocks((prev) => [...prev, ...newBlocks]);
+    setTools((prev) => [...prev, ...newTools]);
+    setConnections((prev) => [...prev, ...newConnections]);
+  }, [agentJsonInput, blocks.length, nextBlockIdRef, nextConnectionIdRef, nextToolIdRef, setAgentParseError, setBlocks, setConnections, setTools, toolPalette]);
 
   const getBlockHandles = useCallback(
     (block: AgentBlockType): BlockHandles => {
@@ -326,8 +466,6 @@ export default function WorkflowEditorPage() {
       const baseHeight = 120;
       const baseInputs = Math.max(1, block.inputCount);
       const baseOutputs = Math.max(1, block.outputCount);
-      const topPadding = 18;
-      const slotGap = 28;
 
       const maxConnectedInput = connections
         .filter(
@@ -349,20 +487,25 @@ export default function WorkflowEditorPage() {
         .filter((conn) => conn.from.type === "block" && conn.from.id === block.id)
         .reduce((max, conn) => Math.max(max, conn.from.port), -1);
 
-      const inputSlots = Math.min(MAX_IO, Math.max(baseInputs, maxConnectedInput + 1));
-      const outputSlots = Math.min(MAX_IO, Math.max(baseOutputs, maxConnectedOutput + 1));
-      const toolSlots = hasToolConnection ? 1 : 1;
+      const desiredInputs = Math.max(baseInputs, maxConnectedInput + 1);
+      const inputSlots = Math.min(MAX_IO, desiredInputs);
+
+      const desiredOutputs = Math.max(baseOutputs, maxConnectedOutput + 1);
+      const outputSlots = Math.min(MAX_IO, desiredOutputs);
+
+      const hoverIsOnBottom =
+        linking?.origin === "output" && linking.from.type === "tool" && hoveredBlockId === block.id;
+      const toolSlots = hasToolConnection ? 1 : 1 + (hoverIsOnBottom ? 1 : 0);
 
       const maxSlots = Math.max(inputSlots, outputSlots);
+      const topPadding = 18;
+      const slotGap = 28;
       const height =
         maxSlots > 1
           ? Math.max(baseHeight, topPadding * 2 + slotGap * (maxSlots - 1))
           : baseHeight;
 
-      const buildAnchors = (
-        count: number,
-        side: "left" | "right"
-      ): AnchorPoint[] => {
+      const buildAnchors = (count: number, side: "left" | "right"): AnchorPoint[] => {
         if (count <= 1) {
           return [
             {
@@ -380,14 +523,11 @@ export default function WorkflowEditorPage() {
         }));
       };
 
-      const buildBottomAnchors = (
-        count: number
-      ): { anchor: AnchorPoint; slot: number }[] => {
-        return Array.from({ length: count }, (_, idx) => ({
+      const buildBottomAnchors = (count: number) =>
+        Array.from({ length: Math.max(1, count) }, (_, idx) => ({
           anchor: { x: block.x + width / 2 + 4, y: block.y + height, dir: "down" as const },
           slot: TOOL_PORT_OFFSET + idx,
         }));
-      };
 
       return {
         width,
@@ -397,39 +537,139 @@ export default function WorkflowEditorPage() {
         toolAnchors: buildBottomAnchors(toolSlots),
       };
     },
-    [connections]
+    [MAX_IO, TOOL_PORT_OFFSET, connections, hoveredBlockId, hoveredInput, linking]
   );
 
-  const getToolHandles = useCallback((tool: ToolNodeType) => {
-    const width = 180;
-    const height = 110;
-    const output: AnchorPoint = { x: tool.x + width / 2, y: tool.y - 6, dir: "up" };
-    return { width, height, output, input: output };
-  }, []);
+  const getToolHandles = useCallback(
+    (tool: any): ToolHandles => {
+      const width = 180;
+      const height = 110;
+      const output: AnchorPoint = {
+        x: tool.x + width / 2,
+        y: tool.y - 6,
+        dir: "up",
+      };
+      return { width, height, output, input: output };
+    },
+    []
+  );
 
-  const getUploadHandles = useCallback((upload: { x: number; y: number }) => {
-    const width = 240;
-    const height = 210;
-    return {
-      width,
-      height,
-      output: { x: upload.x + width, y: upload.y + height / 2, dir: "right" as const },
-    };
-  }, []);
+  const getUploadHandles = useCallback(
+    (upload: any): UploadHandles => {
+      const width = 240;
+      const height = 210;
+      const output: AnchorPoint = {
+        x: upload.x + width,
+        y: upload.y + height / 2,
+        dir: "right",
+      };
+      return { width, height, output };
+    },
+    []
+  );
 
-  const getOutputHandles = useCallback((output: { x: number; y: number }) => {
-    const width = 240;
-    const height = 240;
-    return {
-      width,
-      height,
-      input: { x: output.x, y: output.y + height / 2, dir: "left" as const },
-    };
-  }, []);
+  const getOutputHandles = useCallback(
+    (output: any): OutputHandles => {
+      const width = 240;
+      const height = 240;
+      const input: AnchorPoint = {
+        x: output.x,
+        y: output.y + height / 2,
+        dir: "left",
+      };
+      return { width, height, input };
+    },
+    []
+  );
 
-  // ==========================================================================
-  // ANCHOR GETTERS
-  // ==========================================================================
+  const addToolToBlock = useCallback(
+    (blockId: string, toolName: string) => {
+      const block = blocks.find((b) => b.id === blockId);
+      const palette = toolPalette.find((t) => t.name === toolName);
+      if (!block || !palette) return;
+
+      const handles = getBlockHandles(block);
+      const toolWidth = 180;
+      const toolId = `tool-${nextToolIdRef.current++}`;
+      const toolX = block.x + handles.width / 2 - toolWidth / 2;
+      const toolY = block.y + handles.height + 60;
+      const newTool = { ...palette, id: toolId, x: toolX, y: toolY };
+
+      setTools((prev) => [...prev, newTool]);
+      const connId = `conn-${nextConnectionIdRef.current++}`;
+      setConnections((prev) => {
+        const next: Connection[] = [
+          ...prev,
+          {
+            id: connId,
+            from: { type: "tool", id: toolId, port: 0 },
+            to: { type: "block", id: blockId, inputIndex: TOOL_PORT_OFFSET },
+          },
+        ];
+        setBlocks((state) => recalcBlockPorts(next, state));
+        return next;
+      });
+    },
+    [blocks, getBlockHandles, nextConnectionIdRef, nextToolIdRef, recalcBlockPorts, setBlocks, setConnections, setTools, toolPalette]
+  );
+
+  const applyBlockIO = useCallback(
+    (blockId: string, nextInputCount: number, nextOutputCount: number) => {
+      const newInputs = clamp(nextInputCount, MIN_IO, MAX_IO);
+      const newOutputs = clamp(nextOutputCount, MIN_IO, MAX_IO);
+
+      setBlocks((prev) =>
+        prev.map((b) =>
+          b.id === blockId
+            ? {
+                ...b,
+                inputCount: newInputs,
+                outputCount: newOutputs,
+                inputRequired: resizeRequired(b.inputRequired, newInputs),
+                outputRequired: resizeRequired(b.outputRequired, newOutputs),
+                inputNames: clampNames(b.inputNames, newInputs),
+                outputNames: clampNames(b.outputNames, newOutputs),
+                presetId: "custom",
+              }
+            : b
+        )
+      );
+
+      setConnections((prev) => {
+        let next = prev.filter(
+          (conn) => !(conn.from.type === "block" && conn.from.id === blockId && conn.from.port >= newOutputs)
+        );
+        next = next.filter((conn) => {
+          if (conn.to.type === "block" && conn.to.id === blockId) {
+            const idx = conn.to.inputIndex ?? 0;
+            if (idx >= TOOL_PORT_OFFSET) return true;
+            return idx < newInputs;
+          }
+          return true;
+        });
+        return next;
+      });
+    },
+    [MAX_IO, MIN_IO, TOOL_PORT_OFFSET, clamp, clampNames, resizeRequired, setBlocks, setConnections]
+  );
+
+  const changeBlockInputs = useCallback(
+    (blockId: string, delta: number) => {
+      const block = blocks.find((b) => b.id === blockId);
+      if (!block) return;
+      applyBlockIO(blockId, block.inputCount + delta, block.outputCount);
+    },
+    [applyBlockIO, blocks]
+  );
+
+  const changeBlockOutputs = useCallback(
+    (blockId: string, delta: number) => {
+      const block = blocks.find((b) => b.id === blockId);
+      if (!block) return;
+      applyBlockIO(blockId, block.inputCount, block.outputCount + delta);
+    },
+    [applyBlockIO, blocks]
+  );
 
   const getOutputAnchor = useCallback(
     (endpoint: LinkSource) => {
@@ -437,21 +677,16 @@ export default function WorkflowEditorPage() {
         const block = blocks.find((b) => b.id === endpoint.id);
         if (!block) return null;
         const handles = getBlockHandles(block);
-        const index = Math.min(
-          handles.outputAnchors.length - 1,
-          Math.max(0, endpoint.port)
-        );
+        const index = Math.min(handles.outputAnchors.length - 1, Math.max(0, endpoint.port));
         return handles.outputAnchors[index];
       }
       if (endpoint.type === "tool") {
         const tool = tools.find((t) => t.id === endpoint.id);
-        if (!tool) return null;
-        return getToolHandles(tool).output;
+        return tool ? getToolHandles(tool).output : null;
       }
       if (endpoint.type === "upload") {
         const upload = uploads.find((u) => u.id === endpoint.id);
-        if (!upload) return null;
-        return getUploadHandles(upload).output;
+        return upload ? getUploadHandles(upload).output : null;
       }
       return null;
     },
@@ -467,80 +702,92 @@ export default function WorkflowEditorPage() {
         const inputIndex = target.inputIndex ?? 0;
         const toolAnchor = handles.toolAnchors.find((item) => item.slot === inputIndex);
         if (toolAnchor) return toolAnchor.anchor;
-        const boundedIndex = Math.min(
-          handles.inputAnchors.length - 1,
-          Math.max(0, inputIndex)
-        );
+        const boundedIndex = Math.min(handles.inputAnchors.length - 1, Math.max(0, inputIndex));
         return handles.inputAnchors[boundedIndex];
       }
       if (target.type === "tool") {
         const tool = tools.find((t) => t.id === target.id);
-        if (!tool) return null;
-        return getToolHandles(tool).input;
+        return tool ? getToolHandles(tool).input : null;
       }
       if (target.type === "output") {
         const output = outputs.find((o) => o.id === target.id);
-        if (!output) return null;
-        return getOutputHandles(output).input;
+        return output ? getOutputHandles(output).input : null;
       }
       return null;
     },
     [blocks, getBlockHandles, getOutputHandles, getToolHandles, outputs, tools]
   );
 
-  // ==========================================================================
-  // CONNECTION HANDLERS
-  // ==========================================================================
-
   const handleConnectionPointerDown = useCallback(
-    (conn: Connection) => (event: ReactPointerEvent<SVGPathElement>) => {
-      event.stopPropagation();
-      event.preventDefault();
+    (conn: Connection) => (e: ReactPointerEvent<SVGPathElement>) => {
+      e.stopPropagation();
+      e.preventDefault();
+      const isDouble = e.detail >= 2;
       setConnections((prev) => {
         const next = prev.filter((c) => c.id !== conn.id);
-        setBlocks((blocksState) => recalcBlockPorts(next, blocksState));
+        setBlocks((state) => recalcBlockPorts(next, state));
         return next;
       });
+
+      if (isDouble) {
+        const anchor = getOutputAnchor(conn.from);
+        const world = toWorldPoint(e.clientX, e.clientY);
+        const currentPoint = world ?? anchor ?? { x: 0, y: 0 };
+        linkingRef.current = true;
+        setLinking({ origin: "output", from: conn.from, current: currentPoint });
+        setHoveredInput(null);
+        setHoveredOutput(null);
+      }
     },
-    [recalcBlockPorts, setBlocks, setConnections]
+    [getOutputAnchor, recalcBlockPorts, setBlocks, setConnections, setHoveredInput, setHoveredOutput, setLinking, toWorldPoint, linkingRef]
   );
 
-  // ==========================================================================
-  // LINKING HANDLERS
-  // ==========================================================================
-
   const startLinkingFromInput = useCallback(
-    (target: LinkTarget) =>
-      (event: ReactPointerEvent<HTMLDivElement | HTMLButtonElement>) => {
-        event.stopPropagation();
-        event.preventDefault();
-        const anchor = getInputAnchor(target);
-        if (!anchor) return;
-        linkingRef.current = true;
-        setLinking({ origin: "input", target, current: anchor });
-      },
-    [getInputAnchor, setLinking]
+    (target: LinkTarget) => (e: ReactPointerEvent<HTMLDivElement>) => {
+      e.stopPropagation();
+      e.preventDefault();
+      if (e.detail >= 2) return;
+      setHoveredInput(null);
+      setHoveredOutput(null);
+      const anchor = getInputAnchor(target);
+      if (!anchor) return;
+      linkingRef.current = true;
+      setLinking({ origin: "input", target, current: anchor });
+    },
+    [getInputAnchor, setHoveredInput, setHoveredOutput, setLinking, linkingRef]
   );
 
   const startLinkingFromOutput = useCallback(
-    (from: LinkSource) =>
-      (event: ReactPointerEvent<HTMLButtonElement | HTMLDivElement>) => {
-        event.stopPropagation();
-        event.preventDefault();
-        setHoveredInput(null);
-        setHoveredOutput(null);
-        const anchor = getOutputAnchor(from);
-        if (!anchor) return;
-        linkingRef.current = true;
-        setLinking({ origin: "output", from, current: anchor });
-      },
-    [getOutputAnchor, setHoveredInput, setHoveredOutput, setLinking]
+    (from: LinkSource) => (e: ReactPointerEvent<HTMLDivElement>) => {
+      e.stopPropagation();
+      e.preventDefault();
+      if (e.detail >= 2) return;
+      setHoveredInput(null);
+      setHoveredOutput(null);
+
+      let effectiveFrom = from;
+      if (from.type === "block") {
+        const ports = connections
+          .filter((c) => c.from.type === "block" && c.from.id === from.id)
+          .map((c) => c.from.port);
+        const hasPort = ports.includes(from.port);
+        const maxPort = ports.reduce((max, p) => Math.max(max, p), -1);
+        const nextPort = Math.min(MAX_IO - 1, Math.max(maxPort + 1, from.port));
+        if (hasPort) effectiveFrom = { ...from, port: nextPort };
+      }
+
+      const anchor = getOutputAnchor(effectiveFrom);
+      if (!anchor) return;
+      linkingRef.current = true;
+      setLinking({ origin: "output", from: effectiveFrom, current: anchor });
+    },
+    [MAX_IO, connections, getOutputAnchor, setHoveredInput, setHoveredOutput, setLinking, linkingRef]
   );
 
   const moveLinking = useCallback(
-    (event: ReactPointerEvent<HTMLDivElement | HTMLButtonElement>) => {
+    (e: ReactPointerEvent<HTMLDivElement>) => {
       if (!linking) return;
-      const world = toWorldPoint(event.clientX, event.clientY);
+      const world = toWorldPoint(e.clientX, e.clientY);
       if (!world) return;
       setLinking((prev) => (prev ? { ...prev, current: world } : prev));
     },
@@ -550,32 +797,123 @@ export default function WorkflowEditorPage() {
   const finalizeLinking = useCallback(
     (overrideTarget?: LinkTarget) => {
       if (!linking) return;
+      const autoToolTarget =
+        linking.origin === "output" &&
+        linking.from.type === "tool" &&
+        hoveredBlockId
+          ? { type: "block" as const, id: hoveredBlockId, inputIndex: TOOL_PORT_OFFSET }
+          : null;
 
       const target =
         overrideTarget ??
-        (linking.origin === "output" ? hoveredInput : linking.target);
+        (linking.origin === "output"
+          ? linking.from.type === "tool"
+            ? autoToolTarget || hoveredInput
+            : hoveredInput
+          : linking.target);
+
       const from = linking.origin === "output" ? linking.from : hoveredOutput;
 
-      if (
-        target &&
-        from &&
-        !(target.type === from.type && target.id === from.id)
-      ) {
+      if (target && from && !(target.type === from.type && target.id === from.id)) {
+        // First inbound defaults to slot 0. Additional inbound connections will
+        // auto-allocate the next free input slot (0..MAX_IO-1) so you can
+        // connect multiple agents into the same target block.
+        const normalizedTarget: LinkTarget =
+          target.type === "block" && (target.inputIndex ?? 0) < TOOL_PORT_OFFSET
+            ? { ...target, inputIndex: target.inputIndex ?? 0 }
+            : target;
+
+        const isToolPortTarget =
+          normalizedTarget.type === "block" && (normalizedTarget.inputIndex ?? 0) >= TOOL_PORT_OFFSET;
+        if (isToolPortTarget && from.type !== "tool") {
+          setLinking(null);
+          linkingRef.current = false;
+          return;
+        }
+
+        if (
+          from.type === "tool" &&
+          normalizedTarget.type === "block" &&
+          (normalizedTarget.inputIndex ?? 0) < TOOL_PORT_OFFSET
+        ) {
+          setLinking(null);
+          linkingRef.current = false;
+          return;
+        }
+
         const id = nextConnectionIdRef.current++;
         setConnections((prev) => {
-          const targetSlot = target.inputIndex ?? 0;
-          const next = [
-            ...prev.filter(
-              (conn) =>
-                !(
-                  conn.to.type === target.type &&
-                  conn.to.id === target.id &&
-                  (conn.to.inputIndex ?? 0) === targetSlot
-                )
-            ),
-            { id: `conn-${id}`, from, to: target },
-          ];
-          setBlocks((blocksState) => recalcBlockPorts(next, blocksState));
+          // Keep tool nodes single-attached (a tool belongs to one agent)
+          const base =
+            from.type === "tool"
+              ? prev.filter((c) => !(c.from.type === "tool" && c.from.id === from.id))
+              : prev;
+
+          let targetSlot = normalizedTarget.inputIndex ?? 0;
+          let finalTarget: LinkTarget = normalizedTarget;
+
+          if (normalizedTarget.type === "block" && targetSlot < TOOL_PORT_OFFSET) {
+            const inbound = base.filter(
+              (c) =>
+                c.to.type === "block" &&
+                c.to.id === normalizedTarget.id &&
+                (c.to.inputIndex ?? 0) < TOOL_PORT_OFFSET
+            );
+            const occupied = new Set(inbound.map((c) => c.to.inputIndex ?? 0));
+
+            // First inbound always uses slot 0.
+            if (inbound.length === 0) {
+              targetSlot = 0;
+            } else if (occupied.has(targetSlot)) {
+              // Additional inbound: pick the next free slot.
+              const free = Array.from({ length: MAX_IO }, (_, i) => i).find((i) => !occupied.has(i));
+              if (typeof free === "number") targetSlot = free;
+            }
+
+            finalTarget = { ...normalizedTarget, inputIndex: targetSlot };
+          }
+
+          // Enforce: a single source agent cannot feed multiple inputs of the same target agent.
+          // This ensures multi-input targets are driven by multiple *different* agents.
+          if (
+            from.type === "block" &&
+            finalTarget.type === "block" &&
+            (finalTarget.inputIndex ?? 0) < TOOL_PORT_OFFSET
+          ) {
+            const alreadyConnectedFromSameSource = base.some(
+              (c) =>
+                c.from.type === "block" &&
+                c.from.id === from.id &&
+                c.to.type === "block" &&
+                c.to.id === finalTarget.id &&
+                (c.to.inputIndex ?? 0) < TOOL_PORT_OFFSET
+            );
+            if (alreadyConnectedFromSameSource) return prev;
+          }
+
+          const isDuplicate = base.some(
+            (conn) =>
+              conn.from.type === from.type &&
+              conn.from.id === from.id &&
+              conn.from.port === from.port &&
+              conn.to.type === finalTarget.type &&
+              conn.to.id === finalTarget.id &&
+              (conn.to.inputIndex ?? 0) === (finalTarget.inputIndex ?? 0)
+          );
+          if (isDuplicate) return prev;
+
+          // Enforce a single connection per *slot* (but allow multiple slots).
+          const withoutExistingTargetSlot = base.filter(
+            (c) =>
+              !(
+                c.to.type === finalTarget.type &&
+                c.to.id === finalTarget.id &&
+                (c.to.inputIndex ?? 0) === (finalTarget.inputIndex ?? 0)
+              )
+          );
+
+          const next = [...withoutExistingTargetSlot, { id: `conn-${id}`, from, to: finalTarget }];
+          setBlocks((state) => recalcBlockPorts(next, state));
           return next;
         });
       }
@@ -585,254 +923,256 @@ export default function WorkflowEditorPage() {
       setHoveredInput(null);
       setHoveredOutput(null);
     },
-    [
-      hoveredInput,
-      hoveredOutput,
-      linking,
-      recalcBlockPorts,
-      setBlocks,
-      setConnections,
-      setHoveredInput,
-      setHoveredOutput,
-      setLinking,
-    ]
+    [MAX_IO, TOOL_PORT_OFFSET, hoveredBlockId, hoveredInput, hoveredOutput, linking, nextConnectionIdRef, recalcBlockPorts, setBlocks, setConnections, setHoveredInput, setHoveredOutput, setLinking, linkingRef]
   );
 
-  // ==========================================================================
-  // NODE POINTER HANDLERS
-  // ==========================================================================
-
-  const handleBlockPointerDown = useCallback(
-    (blockId: string) => (event: ReactPointerEvent<HTMLDivElement>) => {
-      const target = event.target as HTMLElement | null;
-      if (linkingRef.current || target?.closest("[data-connector]")) return;
-      event.stopPropagation();
-      event.preventDefault();
-      setSelected({ type: "block", id: blockId });
-      const block = blocks.find((b) => b.id === blockId);
-      const world = toWorldPoint(event.clientX, event.clientY);
-      if (!block || !world) return;
-      blockDragOffsetRef.current = { x: world.x - block.x, y: world.y - block.y };
-      setDraggingBlockId(blockId);
-      event.currentTarget.setPointerCapture?.(event.pointerId);
+  const handleCanvasPointerDown = useCallback(
+    (e: ReactPointerEvent<HTMLDivElement>) => {
+      const target = e.target as HTMLElement | null;
+      if (
+        target?.closest(
+          "[data-note],[data-block],[data-tool],[data-upload],[data-output],[data-connector]"
+        )
+      )
+        return;
+      setSelected(null);
+      setHoveredInput(null);
+      setHoveredOutput(null);
+      setHoveredBlockId(null);
+      setHoveredToolId(null);
+      setHoveredUploadId(null);
+      setHoveredOutputId(null);
+      setLinking(null);
+      linkingRef.current = false;
     },
-    [blocks, setDraggingBlockId, setSelected, toWorldPoint]
+    [linkingRef, setHoveredBlockId, setHoveredInput, setHoveredOutput, setHoveredOutputId, setHoveredToolId, setHoveredUploadId, setLinking, setSelected]
   );
 
-  const handleBlockPointerMove = useCallback(
-    (blockId: string) => (event: ReactPointerEvent<HTMLDivElement>) => {
-      if (draggingBlockId !== blockId) return;
-      const world = toWorldPoint(event.clientX, event.clientY);
+  const handleNotePointerDown = useCallback(
+    (noteId: string) => (e: ReactPointerEvent<HTMLDivElement>) => {
+      e.stopPropagation();
+      e.preventDefault();
+      setSelected({ type: "note", id: noteId });
+      const note = notes.find((n) => n.id === noteId);
+      const world = toWorldPoint(e.clientX, e.clientY);
+      if (!note || !world) return;
+      dragOffsetRef.current = { x: world.x - note.x, y: world.y - note.y };
+      setDraggingNoteId(noteId);
+      e.currentTarget.setPointerCapture?.(e.pointerId);
+    },
+    [notes, setSelected, toWorldPoint, dragOffsetRef, setDraggingNoteId]
+  );
+
+  const handleNotePointerMove = useCallback(
+    (noteId: string) => (e: ReactPointerEvent<HTMLDivElement>) => {
+      if (draggingNoteId !== noteId) return;
+      const world = toWorldPoint(e.clientX, e.clientY);
       if (!world) return;
-      setBlocks((prev) =>
-        prev.map((b) =>
-          b.id === blockId
-            ? {
-                ...b,
-                x: world.x - blockDragOffsetRef.current.x,
-                y: world.y - blockDragOffsetRef.current.y,
-              }
-            : b
+      setNotes((prev) =>
+        prev.map((n) =>
+          n.id === noteId
+            ? { ...n, x: world.x - dragOffsetRef.current.x, y: world.y - dragOffsetRef.current.y }
+            : n
         )
       );
     },
-    [draggingBlockId, setBlocks, toWorldPoint]
+    [dragOffsetRef, draggingNoteId, setNotes, toWorldPoint]
   );
 
-  const handleBlockPointerUp = useCallback(
-    (blockId: string) => (event: ReactPointerEvent<HTMLDivElement>) => {
-      if (draggingBlockId !== blockId) return;
-      setDraggingBlockId(null);
-      blockDragOffsetRef.current = { x: 0, y: 0 };
-      event.currentTarget.releasePointerCapture?.(event.pointerId);
+  const handleNotePointerUp = useCallback(
+    (noteId: string) => (e: ReactPointerEvent<HTMLDivElement>) => {
+      if (draggingNoteId !== noteId) return;
+      setDraggingNoteId(null);
+      dragOffsetRef.current = { x: 0, y: 0 };
+      e.currentTarget.releasePointerCapture?.(e.pointerId);
     },
-    [draggingBlockId, setDraggingBlockId]
+    [draggingNoteId, dragOffsetRef, setDraggingNoteId]
+  );
+
+  const handleRemoveNote = useCallback(
+    (noteId: string) => {
+      setNotes((prev) => prev.filter((n) => n.id !== noteId));
+      if (selected?.type === "note" && selected.id === noteId) setSelected(null);
+    },
+    [selected, setNotes, setSelected]
+  );
+
+  const makeDragHandlers = useCallback(
+    (
+      type: NonNullable<Selection>["type"],
+      getItem: (id: string) => { x: number; y: number } | undefined,
+      setItem: (updater: (prev: any[]) => any[]) => void,
+      setDragging: React.Dispatch<React.SetStateAction<string | null>>,
+      offsetRef: React.MutableRefObject<{ x: number; y: number }>,
+      getDraggingId: () => string | null
+    ) => ({
+      onPointerDown:
+        (id: string) => (e: ReactPointerEvent<HTMLDivElement>) => {
+          const target = e.target as HTMLElement | null;
+          if (linkingRef.current || target?.closest("[data-connector]")) return;
+          const container = e.currentTarget as HTMLElement;
+          const rect = container.getBoundingClientRect();
+          const edgePadding = 20;
+          const withinCenterArea =
+            e.clientX >= rect.left + edgePadding &&
+            e.clientX <= rect.right - edgePadding &&
+            e.clientY >= rect.top + edgePadding &&
+            e.clientY <= rect.bottom - edgePadding;
+          if (!withinCenterArea) return;
+          e.stopPropagation();
+          e.preventDefault();
+          setSelected({ type, id } as Selection);
+          const item = getItem(id);
+          const world = toWorldPoint(e.clientX, e.clientY);
+          if (!item || !world) return;
+          offsetRef.current = { x: world.x - item.x, y: world.y - item.y };
+          setDragging(id);
+          e.currentTarget.setPointerCapture?.(e.pointerId);
+        },
+      onPointerMove:
+        (id: string) => (e: ReactPointerEvent<HTMLDivElement>) => {
+          if (getDraggingId() !== id) return;
+          if (linkingRef.current) return;
+          const world = toWorldPoint(e.clientX, e.clientY);
+          if (!world) return;
+          setItem((prev) =>
+            prev.map((item: any) =>
+              item.id === id
+                ? { ...item, x: world.x - offsetRef.current.x, y: world.y - offsetRef.current.y }
+                : item
+            )
+          );
+        },
+      onPointerUp:
+        (id: string) => (e: ReactPointerEvent<HTMLDivElement>) => {
+          setDragging((current) => (current === id ? null : current));
+          offsetRef.current = { x: 0, y: 0 };
+          e.currentTarget.releasePointerCapture?.(e.pointerId);
+        },
+    }),
+    [linkingRef, setSelected, toWorldPoint]
+  );
+
+  const blockDrag = makeDragHandlers(
+    "block",
+    (id) => blocks.find((b) => b.id === id),
+    setBlocks,
+    setDraggingBlockId,
+    blockDragOffsetRef,
+    () => draggingBlockId
+  );
+  const toolDrag = makeDragHandlers(
+    "tool",
+    (id) => tools.find((t) => t.id === id),
+    setTools,
+    setDraggingToolId,
+    toolDragOffsetRef,
+    () => draggingToolId
+  );
+  const uploadDrag = makeDragHandlers(
+    "upload",
+    (id) => uploads.find((u) => u.id === id),
+    setUploads,
+    setDraggingUploadId,
+    uploadDragOffsetRef,
+    () => draggingUploadId
+  );
+  const outputDrag = makeDragHandlers(
+    "output",
+    (id) => outputs.find((o) => o.id === id),
+    setOutputs,
+    setDraggingOutputId,
+    outputDragOffsetRef,
+    () => draggingOutputId
   );
 
   const handleRemoveBlock = useCallback(
-    (blockId: string) => {
-      setBlocks((prev) => prev.filter((b) => b.id !== blockId));
-      if (draggingBlockId === blockId) setDraggingBlockId(null);
-      if (selected?.type === "block" && selected.id === blockId) setSelected(null);
-      setConnections((prev) =>
-        prev.filter(
-          (conn) =>
-            !(
-              (conn.from.type === "block" && conn.from.id === blockId) ||
-              (conn.to.type === "block" && conn.to.id === blockId)
-            )
-        )
-      );
+    (id: string) => {
+      setBlocks((prev) => prev.filter((b) => b.id !== id));
+      setConnections((prev) => prev.filter((c) => !(c.from.type === "block" && c.from.id === id) && !(c.to.type === "block" && c.to.id === id)));
+      if (selected?.type === "block" && selected.id === id) setSelected(null);
     },
-    [draggingBlockId, selected, setBlocks, setConnections, setDraggingBlockId, setSelected]
-  );
-
-  // Similar handlers for tools, uploads, outputs, notes...
-  // (Abbreviated for brevity - full implementation would include all handlers)
-
-  const handleToolPointerDown = useCallback(
-    (toolId: string) => (event: ReactPointerEvent<HTMLDivElement>) => {
-      const target = event.target as HTMLElement | null;
-      if (linkingRef.current || target?.closest("[data-connector]")) return;
-      event.stopPropagation();
-      event.preventDefault();
-      setSelected({ type: "tool", id: toolId });
-      const tool = tools.find((t) => t.id === toolId);
-      const world = toWorldPoint(event.clientX, event.clientY);
-      if (!tool || !world) return;
-      toolDragOffsetRef.current = { x: world.x - tool.x, y: world.y - tool.y };
-      setDraggingToolId(toolId);
-      event.currentTarget.setPointerCapture?.(event.pointerId);
-    },
-    [setDraggingToolId, setSelected, toWorldPoint, tools]
-  );
-
-  const handleToolPointerMove = useCallback(
-    (toolId: string) => (event: ReactPointerEvent<HTMLDivElement>) => {
-      if (draggingToolId !== toolId) return;
-      const world = toWorldPoint(event.clientX, event.clientY);
-      if (!world) return;
-      setTools((prev) =>
-        prev.map((t) =>
-          t.id === toolId
-            ? {
-                ...t,
-                x: world.x - toolDragOffsetRef.current.x,
-                y: world.y - toolDragOffsetRef.current.y,
-              }
-            : t
-        )
-      );
-    },
-    [draggingToolId, setTools, toWorldPoint]
-  );
-
-  const handleToolPointerUp = useCallback(
-    (toolId: string) => (event: ReactPointerEvent<HTMLDivElement>) => {
-      if (draggingToolId !== toolId) return;
-      setDraggingToolId(null);
-      toolDragOffsetRef.current = { x: 0, y: 0 };
-      event.currentTarget.releasePointerCapture?.(event.pointerId);
-    },
-    [draggingToolId, setDraggingToolId]
+    [selected, setBlocks, setConnections, setSelected]
   );
 
   const handleRemoveTool = useCallback(
-    (toolId: string) => {
-      setTools((prev) => prev.filter((t) => t.id !== toolId));
-      if (draggingToolId === toolId) setDraggingToolId(null);
-      if (selected?.type === "tool" && selected.id === toolId) setSelected(null);
-      setConnections((prev) =>
-        prev.filter(
-          (conn) =>
-            !(
-              (conn.from.type === "tool" && conn.from.id === toolId) ||
-              (conn.to.type === "tool" && conn.to.id === toolId)
-            )
-        )
-      );
+    (id: string) => {
+      setTools((prev) => prev.filter((t) => t.id !== id));
+      setConnections((prev) => prev.filter((c) => !(c.from.type === "tool" && c.from.id === id) && !(c.to.type === "tool" && c.to.id === id)));
+      if (selected?.type === "tool" && selected.id === id) setSelected(null);
     },
-    [draggingToolId, selected, setConnections, setDraggingToolId, setSelected, setTools]
+    [selected, setConnections, setSelected, setTools]
   );
 
-  // ==========================================================================
-  // INPUT/OUTPUT HOVER HANDLERS
-  // ==========================================================================
-
-  const handleInputEnter = useCallback(
-    (target: { type: "block" | "tool" | "output"; id: string; inputIndex?: number }) =>
-      () => {
-        if (linking) setHoveredInput(target);
-      },
-    [linking, setHoveredInput]
-  );
-
-  const handleInputLeave = useCallback(
-    (target: { type: "block" | "tool" | "output"; id: string; inputIndex?: number }) =>
-      () => {
-        if (
-          hoveredInput &&
-          hoveredInput.type === target.type &&
-          hoveredInput.id === target.id
-        ) {
-          setHoveredInput(null);
-        }
-      },
-    [hoveredInput, setHoveredInput]
-  );
-
-  const handleOutputEnter = useCallback(
-    (source: LinkSource) => () => {
-      if (linking) setHoveredOutput(source);
+  const handleRemoveUpload = useCallback(
+    (id: string) => {
+      setUploads((prev) => prev.filter((u) => u.id !== id));
+      setConnections((prev) => prev.filter((c) => !(c.from.type === "upload" && c.from.id === id)));
+      if (selected?.type === "upload" && selected.id === id) setSelected(null);
     },
-    [linking, setHoveredOutput]
+    [selected, setConnections, setSelected, setUploads]
   );
 
-  const handleOutputLeave = useCallback(
-    (source: LinkSource) => () => {
-      if (
-        hoveredOutput &&
-        hoveredOutput.type === source.type &&
-        hoveredOutput.id === source.id
-      ) {
-        setHoveredOutput(null);
-      }
+  const handleRemoveOutput = useCallback(
+    (id: string) => {
+      setOutputs((prev) => prev.filter((o) => o.id !== id));
+      setConnections((prev) => prev.filter((c) => !(c.to.type === "output" && c.to.id === id)));
+      if (selected?.type === "output" && selected.id === id) setSelected(null);
     },
-    [hoveredOutput, setHoveredOutput]
+    [selected, setConnections, setOutputs, setSelected]
   );
 
-  // ==========================================================================
-  // BLOCK IO HANDLERS
-  // ==========================================================================
-
-  const applyBlockIO = useCallback(
-    (
-      blockId: string,
-      nextInputCount: number,
-      nextOutputCount: number,
-      extra?: Partial<{ name: string; description: string; presetId: string }>
-    ) => {
-      const newInputs = clamp(nextInputCount, MIN_IO, MAX_IO);
-      const newOutputs = clamp(nextOutputCount, MIN_IO, MAX_IO);
-
-      setBlocks((prev) =>
-        prev.map((b) =>
-          b.id === blockId
+  const handleUploadFileChange = useCallback(
+    (uploadId: string) => (event: ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      setUploads((prev) =>
+        prev.map((upload) =>
+          upload.id === uploadId
             ? {
-                ...b,
-                inputCount: newInputs,
-                outputCount: newOutputs,
-                inputRequired: resizeRequired(b.inputRequired, newInputs),
-                outputRequired: resizeRequired(b.outputRequired, newOutputs),
-                inputNames: clampNames(b.inputNames, newInputs),
-                outputNames: clampNames(b.outputNames, newOutputs),
-                ...extra,
+                ...upload,
+                status: file ? "ready" : "idle",
+                fileName: file?.name,
+                fileSize: file?.size,
+                fileType:
+                  file?.type ||
+                  (file?.name ? `.${file.name.split(".").pop() ?? ""}` : undefined),
               }
-            : b
+            : upload
+        )
+      );
+      event.target.value = "";
+    },
+    [setUploads]
+  );
+
+  const handleClearFile = useCallback(
+    (uploadId: string) => {
+      setUploads((prev) =>
+        prev.map((upload) =>
+          upload.id === uploadId
+            ? { ...upload, status: "idle", fileName: undefined, fileSize: undefined, fileType: undefined }
+            : upload
         )
       );
     },
-    [setBlocks]
+    [setUploads]
   );
 
-  const changeBlockInputs = useCallback(
-    (blockId: string, delta: number) => {
-      const block = blocks.find((b) => b.id === blockId);
-      if (!block) return;
-      const newInputs = clamp(block.inputCount + delta, MIN_IO, MAX_IO);
-      applyBlockIO(blockId, newInputs, block.outputCount, { presetId: "custom" });
+  const handleOutputFormatChange = useCallback(
+    (outputId: string) => (event: ChangeEvent<HTMLTextAreaElement>) => {
+      const value = event.target.value;
+      setOutputs((prev) => prev.map((output) => (output.id === outputId ? { ...output, format: value } : output)));
     },
-    [applyBlockIO, blocks]
+    [setOutputs]
   );
 
-  const changeBlockOutputs = useCallback(
-    (blockId: string, delta: number) => {
-      const block = blocks.find((b) => b.id === blockId);
-      if (!block) return;
-      const newOutputs = clamp(block.outputCount + delta, MIN_IO, MAX_IO);
-      applyBlockIO(blockId, block.inputCount, newOutputs, { presetId: "custom" });
+  const handleOutputFormatBlur = useCallback(
+    (outputId: string) => () => {
+      setTimeout(() => {
+        setSelected((prev) => (prev?.type === "output" && prev.id === outputId ? null : prev));
+      }, 0);
     },
-    [applyBlockIO, blocks]
+    [setSelected]
   );
 
   const toggleInputRequired = useCallback(
@@ -840,8 +1180,8 @@ export default function WorkflowEditorPage() {
       setBlocks((prev) =>
         prev.map((b) => {
           if (b.id !== blockId) return b;
-          if (index < 0 || index >= b.inputCount) return b;
-          if (index < (b.mandatoryInputCount ?? 0)) return b;
+          const mandatoryCount = b.mandatoryInputCount ?? 0;
+          if (index < mandatoryCount) return b;
           const next = [...b.inputRequired];
           next[index] = !next[index];
           return { ...b, inputRequired: next };
@@ -856,8 +1196,8 @@ export default function WorkflowEditorPage() {
       setBlocks((prev) =>
         prev.map((b) => {
           if (b.id !== blockId) return b;
-          if (index < 0 || index >= b.outputCount) return b;
-          if (index < (b.mandatoryOutputCount ?? 0)) return b;
+          const mandatoryCount = b.mandatoryOutputCount ?? 0;
+          if (index < mandatoryCount) return b;
           const next = [...b.outputRequired];
           next[index] = !next[index];
           return { ...b, outputRequired: next };
@@ -872,8 +1212,8 @@ export default function WorkflowEditorPage() {
       setTools((prev) =>
         prev.map((t) => {
           if (t.id !== toolId) return t;
-          if (index < 0 || index >= t.inputCount) return t;
-          if (index < (t.mandatoryInputCount ?? 0)) return t;
+          const mandatoryCount = t.mandatoryInputCount ?? 0;
+          if (index < mandatoryCount) return t;
           const next = [...t.inputRequired];
           next[index] = !next[index];
           return { ...t, inputRequired: next };
@@ -888,8 +1228,8 @@ export default function WorkflowEditorPage() {
       setTools((prev) =>
         prev.map((t) => {
           if (t.id !== toolId) return t;
-          if (index < 0 || index >= t.outputCount) return t;
-          if (index < (t.mandatoryOutputCount ?? 0)) return t;
+          const mandatoryCount = t.mandatoryOutputCount ?? 0;
+          if (index < mandatoryCount) return t;
           const next = [...t.outputRequired];
           next[index] = !next[index];
           return { ...t, outputRequired: next };
@@ -899,125 +1239,255 @@ export default function WorkflowEditorPage() {
     [setTools]
   );
 
-  // ==========================================================================
-  // TOOLBAR HANDLERS
-  // ==========================================================================
+  const toggleEval = useCallback(
+    (evalId: string) => {
+      setSelectedEvals((prev) =>
+        prev.includes(evalId) ? prev.filter((id) => id !== evalId) : [...prev, evalId]
+      );
+    },
+    [setSelectedEvals]
+  );
 
-  const handleDownload = useCallback(() => {
-    const triples = connections
-      .filter((conn) => conn.from.type === "block" && conn.to.type === "block")
-      .map((conn) => {
-        const fromBlock = blocks.find((b) => b.id === conn.from.id);
-        const toBlock = blocks.find((b) => b.id === conn.to.id);
-        return {
-          from: fromBlock?.name || conn.from.id,
-          op: "seq",
-          to: toBlock?.name || conn.to.id,
-        };
+  const handleRemoveConnection = useCallback(
+    (connectionId: string) => {
+      setConnections((prev) => {
+        const next = prev.filter((conn) => conn.id !== connectionId);
+        setBlocks((state) => recalcBlockPorts(next, state));
+        return next;
       });
-
-    const snapshot = {
-      triples,
-      metadata: {
-        total_agents: blocks.length,
-        total_triples: triples.length,
-        operator_counts: countOperators(connections),
-        estimated_latency_ms: 0,
-        estimated_cost: 0,
-      },
-    };
-    downloadWorkflow(snapshot);
-  }, [blocks, connections]);
+      setSelected((prev) => (prev?.type === "connection" && prev.id === connectionId ? null : prev));
+    },
+    [recalcBlockPorts, setBlocks, setConnections, setSelected]
+  );
 
   const handleUpload = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
+    (e: ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file) return;
       const reader = new FileReader();
       reader.onload = (ev) => {
         try {
           const src = JSON.parse(ev.target?.result as string);
-          if (Array.isArray(src.blocks) && Array.isArray(src.connections)) {
+          const kind = detectWorkflowType(src);
+
+          if (kind === "planning") {
+            const plan = parsePlanningJSON(src);
+            setUploadedPlan(plan);
+            setPlans((prev) => {
+              const exists = prev.some((p) => p.id === plan.id);
+              if (exists) return prev;
+              return [...prev, plan];
+            });
+            setShowPlanningView(true);
+            return;
+          }
+
+          if (kind === "agent") {
             setNotes(src.notes ?? []);
             setBlocks(src.blocks ?? []);
             setTools(src.tools ?? []);
             setUploads(src.uploads ?? []);
             setOutputs(src.outputs ?? []);
             setSelectedEvals(src.evals ?? []);
-            setTimeout(() => setConnections(src.connections ?? []), 50);
+            const loadedConnections = src.connections ?? [];
+            setConnections(loadedConnections);
+            setBlocks((prev) => recalcBlockPorts(loadedConnections, prev));
+            return;
           }
+
+          throw new Error("Unsupported workflow");
         } catch {
           alert("Invalid workflow file");
         }
       };
+
       reader.readAsText(file);
       e.target.value = "";
     },
-    [setBlocks, setConnections, setNotes, setOutputs, setSelectedEvals, setTools, setUploads]
+    [recalcBlockPorts, setBlocks, setConnections, setNotes, setOutputs, setSelectedEvals, setTools, setUploads, setUploadedPlan]
   );
+
+  const handleDownload = useCallback(() => {
+    const rawTriples = connections
+      .filter((conn) => conn.from.type === "block" && conn.to.type === "block")
+      .map((conn) => ({ from: conn.from.id, to: conn.to.id }));
+
+    const triples = inferTripleOpsByDegree(rawTriples);
+
+    const metadata = {
+      total_agents: blocks.length,
+      operator_counts: countOperators(connections),
+    };
+
+    downloadWorkflow({
+      blocks,
+      tools,
+      uploads,
+      outputs,
+      connections,
+      triples,
+      metadata,
+      evals: selectedEvals,
+    });
+  }, [blocks, connections, outputs, selectedEvals, tools, uploads]);
 
   const handleReset = useCallback(() => {
-    resetWorkspace(reset);
-  }, [reset, resetWorkspace]);
+    // Reset behavior depends on which view you're in.
+    // - Plan view: clear all plan blocks/connections.
+    // - Agent view (when editing a workflow hydrated from a plan): reset the workflow back to the plan.
+    reset();
 
-  const toggleEval = useCallback(
-    (evalId: string) => {
-      setSelectedEvals((prev) =>
-        prev.includes(evalId)
-          ? prev.filter((id) => id !== evalId)
-          : [...prev, evalId]
-      );
-    },
-    [setSelectedEvals]
-  );
-
-  // Add tool to block
-  const addToolToBlock = useCallback(
-    (blockId: string, toolName: string) => {
-      const block = blocks.find((b) => b.id === blockId);
-      if (!block) return;
-      const palette = toolPalette.find((t) => t.name === toolName) ?? toolPalette[0];
-      if (!palette) return;
-      const handles = getBlockHandles(block);
-      const toolId = `tool-${nextToolIdRef.current++}`;
-      const toolX = block.x + handles.width / 2 - 90;
-      const toolY = block.y + handles.height + 60;
-      setTools((prev) => [...prev, { ...palette, id: toolId, x: toolX, y: toolY }]);
-      const connId = `conn-${nextConnectionIdRef.current++}`;
-      setConnections((prev) => [
-        ...prev,
-        {
-          id: connId,
-          from: { type: "tool", id: toolId, port: 0 },
-          to: { type: "block", id: blockId, inputIndex: TOOL_PORT_OFFSET },
-        },
-      ]);
-    },
-    [blocks, getBlockHandles, setConnections, setTools, toolPalette]
-  );
-
-  // Set modal tool choice when modal opens
-  useEffect(() => {
-    if (modalBlockId) {
-      setModalToolChoice(toolPalette[0]?.name ?? "");
+    if (showPlanningView) {
+      resetWorkspace();
+      setUploadedPlan(null);
+      setPlans([]);
+      setPlanConnections([]);
+      setLinkingPlanId(null);
+      setLinkingPlanPoint(null);
+      return;
     }
-  }, [modalBlockId, setModalToolChoice, toolPalette]);
 
-  // Theme classes
-  const appThemeClass =
-    theme === "dark"
-      ? "bg-slate-950 text-slate-100"
-      : "bg-slate-50 text-slate-900";
+    resetWorkspace();
 
-  // ==========================================================================
-  // RENDER
-  // ==========================================================================
+    if (uploadedPlan) {
+      // Agent-view reset while editing a plan: clear the workflow inside that plan.
+      const cleared = { ...uploadedPlan, triples: [], workflow: { notes: [], blocks: [], tools: [], uploads: [], outputs: [], connections: [], evals: [] } };
+      setUploadedPlan(cleared);
+      setPlans((prev) => {
+        const exists = prev.some((p) => p.id === uploadedPlan.id);
+        return exists
+          ? prev.map((p) => (p.id === uploadedPlan.id ? cleared : p))
+          : [...prev, cleared];
+      });
+      setSelectedEvals([]);
+      // Keep plan blocks/plan connections intact; agent canvas stays empty after resetWorkspace().
+      return;
+    }
+
+    // No uploaded plan: full reset to a blank agent workspace.
+    setShowPlanningView(false);
+    setUploadedPlan(null);
+    setPlans([]);
+    setPlanConnections([]);
+    setLinkingPlanId(null);
+    setLinkingPlanPoint(null);
+  }, [reset, resetWorkspace, showPlanningView, uploadedPlan, recalcBlockPorts, setBlocks, setConnections, setNotes, setOutputs, setSelectedEvals, setTools, setUploads]);
+
+  const handleKeyDown = useCallback(
+    (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
+
+      const isMac = navigator.platform.toUpperCase().includes("MAC");
+      const modKey = isMac ? event.metaKey : event.ctrlKey;
+      const key = event.key.toLowerCase();
+
+      if (modKey && key === "c" && selected) {
+        event.preventDefault();
+        if (selected.type === "block") {
+          const block = blocks.find((b) => b.id === selected.id);
+          if (block) setClipboard({ type: "block", data: block });
+        }
+        if (selected.type === "tool") {
+          const tool = tools.find((t) => t.id === selected.id);
+          if (tool) setClipboard({ type: "tool", data: tool });
+        }
+      }
+
+      if (modKey && key === "v" && clipboard) {
+        event.preventDefault();
+        const OFFSET = 24;
+        if (clipboard.type === "block") {
+          const id = nextBlockIdRef.current++;
+          setBlocks((prev) => [
+            ...prev,
+            {
+              ...clipboard.data,
+              id: `block-${id}`,
+              x: clipboard.data.x + OFFSET,
+              y: clipboard.data.y + OFFSET,
+            },
+          ]);
+        }
+        if (clipboard.type === "tool") {
+          const id = nextToolIdRef.current++;
+          setTools((prev) => [
+            ...prev,
+            { ...clipboard.data, id: `tool-${id}`, x: clipboard.data.x + OFFSET, y: clipboard.data.y + OFFSET },
+          ]);
+        }
+      }
+
+      if (selected && (event.key === "Backspace" || event.key === "Delete")) {
+        event.preventDefault();
+        if (selected.type === "note") handleRemoveNote(selected.id);
+        if (selected.type === "block") handleRemoveBlock(selected.id);
+        if (selected.type === "tool") handleRemoveTool(selected.id);
+        if (selected.type === "upload") handleRemoveUpload(selected.id);
+        if (selected.type === "output") handleRemoveOutput(selected.id);
+        if (selected.type === "connection") handleRemoveConnection(selected.id);
+      }
+    },
+    [blocks, clipboard, handleRemoveBlock, handleRemoveConnection, handleRemoveNote, handleRemoveOutput, handleRemoveTool, handleRemoveUpload, selected, setBlocks, setClipboard, setTools]
+  );
+
+  useEffect(() => {
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [handleKeyDown]);
+
+  const showHandlesForId = useCallback(
+    (id: string) =>
+      Boolean(
+        linking ||
+          hoveredBlockId === id ||
+          hoveredToolId === id ||
+          hoveredUploadId === id ||
+          hoveredOutputId === id ||
+          draggingBlockId === id ||
+          draggingToolId === id ||
+          draggingUploadId === id ||
+          draggingOutputId === id ||
+          (selected?.id === id && selected.type !== "note")
+      ),
+    [draggingBlockId, draggingOutputId, draggingToolId, draggingUploadId, hoveredBlockId, hoveredOutputId, hoveredToolId, hoveredUploadId, linking, selected]
+  );
+
+  const enterWorkflowFromPlan = useCallback(
+    (plan: PlanningBlock) => {
+      if (plan.workflow) {
+        const wf = plan.workflow;
+        setNotes(wf.notes ?? []);
+        setBlocks(wf.blocks ?? []);
+        setTools(wf.tools ?? []);
+        setUploads(wf.uploads ?? []);
+        setOutputs(wf.outputs ?? []);
+        setSelectedEvals(wf.evals ?? []);
+        setConnections(wf.connections ?? []);
+        setBlocks((prev) => recalcBlockPorts(wf.connections ?? [], prev));
+      } else {
+        const hydrated = hydrateWorkflowFromPlan(plan);
+        setNotes([]);
+        setBlocks(hydrated.blocks);
+        setTools(hydrated.tools);
+        setUploads(hydrated.uploads);
+        setOutputs(hydrated.outputs);
+        setSelectedEvals([]);
+        setConnections(hydrated.connections);
+        setBlocks((prev) => recalcBlockPorts(hydrated.connections, prev));
+      }
+      setShowPlanningView(false);
+      setLinkingPlanId(null);
+      setLinkingPlanPoint(null);
+      setUploadedPlan(plan);
+    },
+    [recalcBlockPorts, setBlocks, setConnections, setNotes, setOutputs, setSelectedEvals, setTools, setUploads]
+  );
+
+  const appThemeClass = theme === "dark" ? "bg-slate-950 text-slate-100" : "bg-slate-50 text-slate-900";
 
   return (
-    <div
-      className={`relative h-screen w-screen overflow-hidden transition-colors duration-200 ${appThemeClass}`}
-    >
-      {/* Sidebar */}
+    <div className={`relative h-screen w-screen overflow-hidden ${appThemeClass}`}>
       <Sidebar
         activePanel={activePanel}
         theme={theme}
@@ -1025,216 +1495,279 @@ export default function WorkflowEditorPage() {
         agentJsonInput={agentJsonInput}
         agentParseError={agentParseError}
         onPanelChange={setActivePanel}
-        onThemeChange={(t) => {
+        onThemeChange={(value) => {
+          setTheme(value);
           setUserThemeLocked(true);
-          setTheme(t);
         }}
         onAgentJsonInputChange={setAgentJsonInput}
-        onGenerateAgentsFromJson={() => {}}
+        onGenerateAgentsFromJson={handleGenerateAgentsFromJson}
+        onOpenPlanning={togglePlanningView}
+        isPlanningView={showPlanningView}
+        planningLoaded={Boolean(uploadedPlan)}
+        planningName={uploadedPlan?.name}
+        onAddPlanBlock={() => {
+          const idx = plans.length + 1;
+          const newPlan: PlanningBlock = {
+            id: `plan-${idx}`,
+            x: 160 + idx * 60,
+            y: 160 + idx * 40,
+            name: `Plan ${idx}`,
+            query: "Describe this plan",
+            triples: [],
+          };
+          setPlans((prev) => [...prev, newPlan]);
+        }}
         onBlockDragStart={handleBlockDragStart}
         onUploadDragStart={handleUploadDragStart}
         onOutputDragStart={handleOutputDragStart}
         onToolDragStart={handleToolDragStart}
       />
 
-      {/* Main canvas area */}
-      <main className="relative z-0 h-full w-full">
-        {/* Toolbar */}
-        <Toolbar
-          theme={theme}
-          fileInputRef={fileInputRef as React.RefObject<HTMLInputElement>}
-          onC3ANClick={() => window.open("https://c3an.aiisc.ai/", "_blank")}
-          onAboutClick={() => setActivePanel("settings")}
-          onEvalsClick={() => setShowEvalsModal(true)}
-          onDownloadClick={handleDownload}
-          onUploadClick={() => fileInputRef.current?.click()}
-          onRunClick={() => {
-            setActivePanel(null);
-            setSelected(null);
-          }}
-          onResetClick={handleReset}
-          onFileUpload={handleUpload}
-        />
+      <Toolbar
+        theme={theme}
+        fileInputRef={fileInputRef}
+        onC3ANClick={handleC3ANClick}
+        onAboutClick={() => setActivePanel((prev) => (prev === "settings" ? null : "settings"))}
+        onEvalsClick={() => setShowEvalsModal(true)}
+        onDownloadClick={handleDownload}
+        onUploadClick={() => fileInputRef.current?.click()}
+        onRunClick={() => alert("Run triggered")}
+        onResetClick={handleReset}
+        onFileUpload={handleUpload}
+      />
 
-        {/* Canvas container */}
+      <main className="relative z-0 h-full w-full">
         <div
           ref={containerRef}
           className="absolute inset-0"
           style={{ touchAction: "none" }}
           onDragOver={handleCanvasDragOver}
           onDrop={handleCanvasDrop}
-          onPointerDownCapture={(event) => {
-            const target = event.target as HTMLElement | null;
-            if (
-              target?.closest(
-                "[data-note],[data-block],[data-tool],[data-upload],[data-output]"
-              )
-            )
-              return;
-            setSelected(null);
-            setLinking(null);
-            linkingRef.current = false;
-          }}
+          onPointerDownCapture={handleCanvasPointerDown}
         >
           <Background transform={transform} theme={theme} />
 
-          {/* Transform layer */}
-          <div
-            style={{
-              position: "absolute",
-              left: 0,
-              top: 0,
-              transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.zoom})`,
-              transformOrigin: "0 0",
-              width: "100%",
-              height: "100%",
-              pointerEvents: "auto",
-            }}
-            onPointerMove={moveLinking}
-            onPointerUp={() => {
-              if (linking) finalizeLinking();
-            }}
-          >
-            {/* Connection lines */}
-            <ConnectionLines
-              connections={connections}
-              linking={linking}
-              selected={selected}
-              getOutputAnchor={getOutputAnchor}
-              getInputAnchor={getInputAnchor}
-              onConnectionPointerDown={handleConnectionPointerDown}
-            />
+          {!showPlanningView && (
+            <div
+              style={{
+                position: "absolute",
+                left: 0,
+                top: 0,
+                transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.zoom})`,
+                transformOrigin: "0 0",
+                width: "100%",
+                height: "100%",
+                overflow: "visible",
+                pointerEvents: "auto",
+              }}
+              onPointerMove={moveLinking}
+              onPointerUp={() => linking && finalizeLinking()}
+            >
+              <ConnectionLines
+                connections={connections}
+                linking={linking}
+                selected={selected}
+                getOutputAnchor={getOutputAnchor}
+                getInputAnchor={getInputAnchor}
+                onConnectionPointerDown={handleConnectionPointerDown}
+              />
 
-            {/* Agent blocks */}
-            {blocks.map((block) => {
-              const isActive =
-                selected?.type === "block" && selected.id === block.id;
-              const showConnections =
-                isActive ||
-                draggingBlockId === block.id ||
-                Boolean(linking) ||
-                hoveredBlockId === block.id;
-              const toolIds = connections
-                .filter(
-                  (conn) =>
-                    conn.from.type === "tool" &&
-                    conn.to.type === "block" &&
-                    conn.to.id === block.id
-                )
-                .map((conn) => conn.from.id);
-              const toolCount = new Set(toolIds).size;
-              const handles = getBlockHandles(block);
+              {blocks.map((block) => {
+                const handles = getBlockHandles(block);
+                return (
+                  <AgentBlock
+                    key={block.id}
+                    block={block}
+                    handles={handles}
+                    isActive={selected?.type === "block" && selected.id === block.id}
+                    isDragging={draggingBlockId === block.id}
+                    showConnections={showHandlesForId(block.id)}
+                    toolCount={connections.filter((c) => c.to.type === "block" && c.to.id === block.id && (c.to.inputIndex ?? 0) >= TOOL_PORT_OFFSET).length}
+                    mode={getBlockMode(block)}
+                    onPointerDown={blockDrag.onPointerDown}
+                    onPointerMove={blockDrag.onPointerMove}
+                    onPointerUp={blockDrag.onPointerUp}
+                    onRemove={handleRemoveBlock}
+                    onDetailsClick={setModalBlockId}
+                    onHoverEnter={setHoveredBlockId}
+                    onHoverLeave={() => setHoveredBlockId(null)}
+                    onInputEnter={(target) => () => setHoveredInput(target)}
+                    onInputLeave={(target) => () => {
+                      void target;
+                      setHoveredInput(null);
+                    }}
+                    onOutputEnter={(source) => () => setHoveredOutput(source)}
+                    onOutputLeave={(source) => () => {
+                      void source;
+                      setHoveredOutput(null);
+                    }}
+                    onStartLinkingFromInput={startLinkingFromInput}
+                    onStartLinkingFromOutput={startLinkingFromOutput}
+                    onFinalizeLinking={finalizeLinking}
+                    onMoveLinking={moveLinking}
+                    onChangeInputs={changeBlockInputs}
+                    onChangeOutputs={changeBlockOutputs}
+                  />
+                );
+              })}
 
-              return (
-                <AgentBlock
-                  key={block.id}
-                  block={block}
-                  handles={handles}
-                  isActive={isActive}
-                  isDragging={draggingBlockId === block.id}
-                  showConnections={showConnections}
-                  toolCount={toolCount}
-                  mode={getBlockMode(block)}
-                  onPointerDown={handleBlockPointerDown}
-                  onPointerMove={handleBlockPointerMove}
-                  onPointerUp={handleBlockPointerUp}
-                  onRemove={handleRemoveBlock}
-                  onDetailsClick={setModalBlockId}
-                  onHoverEnter={setHoveredBlockId}
-                  onHoverLeave={(id) =>
-                    setHoveredBlockId((prev) => (prev === id ? null : prev))
-                  }
-                  onInputEnter={handleInputEnter}
-                  onInputLeave={handleInputLeave}
-                  onOutputEnter={handleOutputEnter}
-                  onOutputLeave={handleOutputLeave}
-                  onStartLinkingFromInput={startLinkingFromInput}
-                  onStartLinkingFromOutput={startLinkingFromOutput}
-                  onFinalizeLinking={finalizeLinking}
-                  onMoveLinking={moveLinking}
-                  onChangeInputs={changeBlockInputs}
-                  onChangeOutputs={changeBlockOutputs}
-                />
-              );
-            })}
-
-            {/* Tool nodes */}
-            {tools.map((tool) => {
-              const isActive =
-                selected?.type === "tool" && selected.id === tool.id;
-              const handles = getToolHandles(tool);
-              const showHandles =
-                isActive ||
-                draggingToolId === tool.id ||
-                hoveredToolId === tool.id ||
-                Boolean(linking);
-
-              return (
+              {tools.map((tool) => (
                 <ToolNode
                   key={tool.id}
                   tool={tool}
-                  handles={handles}
-                  isActive={isActive}
+                  handles={getToolHandles(tool)}
+                  isActive={selected?.type === "tool" && selected.id === tool.id}
                   isDragging={draggingToolId === tool.id}
-                  showHandles={showHandles}
-                  onPointerDown={handleToolPointerDown}
-                  onPointerMove={handleToolPointerMove}
-                  onPointerUp={handleToolPointerUp}
+                  showHandles={showHandlesForId(tool.id)}
+                  onPointerDown={toolDrag.onPointerDown}
+                  onPointerMove={toolDrag.onPointerMove}
+                  onPointerUp={toolDrag.onPointerUp}
                   onRemove={handleRemoveTool}
                   onDetailsClick={setModalToolId}
                   onHoverEnter={setHoveredToolId}
-                  onHoverLeave={(id) =>
-                    setHoveredToolId((prev) => (prev === id ? null : prev))
-                  }
-                  onOutputEnter={handleOutputEnter}
-                  onOutputLeave={handleOutputLeave}
+                  onHoverLeave={() => setHoveredToolId(null)}
+                  onOutputEnter={(source) => () => setHoveredOutput(source)}
+                  onOutputLeave={(source) => () => {
+                    void source;
+                    setHoveredOutput(null);
+                  }}
                   onStartLinkingFromOutput={startLinkingFromOutput}
                   onFinalizeLinking={finalizeLinking}
                   onMoveLinking={moveLinking}
                 />
-              );
-            })}
+              ))}
 
-            {/* Upload and Output nodes would be rendered here similarly */}
-          </div>
+              {uploads.map((upload) => (
+                <UploadNode
+                  key={upload.id}
+                  upload={upload}
+                  handles={getUploadHandles(upload)}
+                  isActive={selected?.type === "upload" && selected.id === upload.id}
+                  isDragging={draggingUploadId === upload.id}
+                  showHandles={showHandlesForId(upload.id)}
+                  onPointerDown={uploadDrag.onPointerDown}
+                  onPointerMove={uploadDrag.onPointerMove}
+                  onPointerUp={uploadDrag.onPointerUp}
+                  onRemove={handleRemoveUpload}
+                  onHoverEnter={setHoveredUploadId}
+                  onHoverLeave={() => setHoveredUploadId(null)}
+                  onFileChange={handleUploadFileChange}
+                  onClearFile={handleClearFile}
+                  onOutputEnter={(source) => () => setHoveredOutput(source)}
+                  onOutputLeave={(source) => () => {
+                    void source;
+                    setHoveredOutput(null);
+                  }}
+                  onStartLinkingFromOutput={startLinkingFromOutput}
+                  onFinalizeLinking={finalizeLinking}
+                  onMoveLinking={moveLinking}
+                />
+              ))}
+
+              {outputs.map((output) => (
+                <OutputNode
+                  key={output.id}
+                  output={output}
+                  handles={getOutputHandles(output)}
+                  isActive={selected?.type === "output" && selected.id === output.id}
+                  isDragging={draggingOutputId === output.id}
+                  showHandles={showHandlesForId(output.id)}
+                  onPointerDown={outputDrag.onPointerDown}
+                  onPointerMove={outputDrag.onPointerMove}
+                  onPointerUp={outputDrag.onPointerUp}
+                  onRemove={handleRemoveOutput}
+                  onHoverEnter={setHoveredOutputId}
+                  onHoverLeave={() => setHoveredOutputId(null)}
+                  onFormatChange={handleOutputFormatChange}
+                  onFormatBlur={handleOutputFormatBlur}
+                  onInputEnter={(target) => () => setHoveredInput(target)}
+                  onInputLeave={(target) => () => {
+                    void target;
+                    setHoveredInput(null);
+                  }}
+                  onStartLinkingFromInput={startLinkingFromInput}
+                  onFinalizeLinking={finalizeLinking}
+                />
+              ))}
+
+              {notes.map((note) => (
+                <StickyNote
+                  key={note.id}
+                  note={note}
+                  isActive={selected?.type === "note" && selected.id === note.id}
+                  isDragging={draggingNoteId === note.id}
+                  onPointerDown={handleNotePointerDown}
+                  onPointerMove={handleNotePointerMove}
+                  onPointerUp={handleNotePointerUp}
+                  onRemove={handleRemoveNote}
+                />
+              ))}
+            </div>
+          )}
+
+          {showPlanningView && (
+            <PlanningCanvas
+              theme={theme}
+              plans={plans}
+              connections={planConnections}
+              linking={linkingPlanId && linkingPlanPoint ? { from: linkingPlanId, current: linkingPlanPoint } : null}
+              onStartLink={(id: string, anchor) => {
+                setLinkingPlanId(id);
+                setLinkingPlanPoint(anchor);
+              }}
+              onMoveLink={(point) => setLinkingPlanPoint(point)}
+              onCompleteLink={(id: string) => {
+                if (linkingPlanId && linkingPlanId !== id) {
+                  setPlanConnections((prev) => {
+                    const exists = prev.some((c) => c.from === linkingPlanId && c.to === id);
+                    return exists ? prev : [...prev, { from: linkingPlanId, to: id }];
+                  });
+                }
+                setLinkingPlanId(null);
+                setLinkingPlanPoint(null);
+              }}
+              onCancelLink={() => {
+                setLinkingPlanId(null);
+                setLinkingPlanPoint(null);
+              }}
+              onPlanMove={(id: string, x: number, y: number) =>
+                setPlans((prev) => prev.map((p) => (p.id === id ? { ...p, x, y } : p)))
+              }
+              onRemovePlan={handleRemovePlan}
+              onEnterWorkflow={(plan: PlanningBlock) => {
+                setUploadedPlan(plan);
+                enterWorkflowFromPlan(plan);
+                setShowPlanningView(false);
+              }}
+            />
+          )}
         </div>
       </main>
 
-      {/* Modals */}
-      {modalBlockId &&
-        (() => {
-          const block = blocks.find((b) => b.id === modalBlockId);
-          if (!block) return null;
-          return (
-            <BlockDetailsModal
-              block={block}
-              connections={connections}
-              toolPalette={toolPalette}
-              modalToolChoice={modalToolChoice}
-              onClose={() => setModalBlockId(null)}
-              onToolChoiceChange={setModalToolChoice}
-              onAddTool={addToolToBlock}
-              onToggleInputRequired={toggleInputRequired}
-              onToggleOutputRequired={toggleOutputRequired}
-              getBlockMode={getBlockMode}
-            />
-          );
-        })()}
+      {modalBlockId && (
+        <BlockDetailsModal
+          block={blocks.find((b) => b.id === modalBlockId)!}
+          connections={connections}
+          toolPalette={toolPalette}
+          modalToolChoice={modalToolChoice}
+          onClose={() => setModalBlockId(null)}
+          onToolChoiceChange={setModalToolChoice}
+          onAddTool={addToolToBlock}
+          onToggleInputRequired={toggleInputRequired}
+          onToggleOutputRequired={toggleOutputRequired}
+          getBlockMode={getBlockMode}
+        />
+      )}
 
-      {modalToolId &&
-        (() => {
-          const tool = tools.find((t) => t.id === modalToolId);
-          if (!tool) return null;
-          return (
-            <ToolDetailsModal
-              tool={tool}
-              connections={connections}
-              onClose={() => setModalToolId(null)}
-              onToggleInputRequired={toggleToolInputRequired}
-              onToggleOutputRequired={toggleToolOutputRequired}
-            />
-          );
-        })()}
+      {modalToolId && (
+        <ToolDetailsModal
+          tool={tools.find((t) => t.id === modalToolId)!}
+          connections={connections}
+          onClose={() => setModalToolId(null)}
+          onToggleInputRequired={toggleToolInputRequired}
+          onToggleOutputRequired={toggleToolOutputRequired}
+        />
+      )}
 
       {showEvalsModal && (
         <EvalsModal
@@ -1245,11 +1778,7 @@ export default function WorkflowEditorPage() {
           onClearAll={() => setSelectedEvals([])}
         />
       )}
-
-      {/* Footer */}
-      <div className="absolute bottom-3 right-4 z-20 text-xs font-semibold text-slate-400">
-        © 2025 All rights reserved
-      </div>
     </div>
   );
 }
+
