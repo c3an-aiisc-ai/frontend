@@ -8,3 +8,5 @@ export { default as ToolNode } from "./ToolNode";
 export { default as UploadNode } from "./UploadNode";
 export { default as OutputNode } from "./OutputNode";
 export { default as StickyNote } from "./StickyNote";
+export { default as PlanningCanvas } from "./PlanningCanvas";
+export { default as PlanningBlockNode } from "./PlanningBlockNode";

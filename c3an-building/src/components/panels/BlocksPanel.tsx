@@ -3,29 +3,57 @@
 // =============================================================================
 
 import type { DragEvent } from "react";
-import type { Theme } from "../../types";
-
 type Props = {
-  theme: Theme;
+  isPlanningView?: boolean;
   agentJsonInput: string;
   agentParseError: string | null;
   onAgentJsonInputChange: (value: string) => void;
   onGenerateAgentsFromJson: () => void;
+  onAddPlanBlock?: () => void;
   onBlockDragStart: (e: DragEvent<HTMLDivElement>) => void;
   onUploadDragStart: (e: DragEvent<HTMLDivElement>) => void;
   onOutputDragStart: (e: DragEvent<HTMLDivElement>) => void;
 };
 
 export default function BlocksPanel({
-  theme,
+  isPlanningView = false,
   agentJsonInput,
   agentParseError,
   onAgentJsonInputChange,
   onGenerateAgentsFromJson,
+  onAddPlanBlock,
   onBlockDragStart,
   onUploadDragStart,
   onOutputDragStart,
 }: Props) {
+  if (isPlanningView) {
+    return (
+      <div className="mt-4 space-y-4 flex-1 overflow-y-auto pr-1">
+        <p className="text-xs uppercase tracking-wide text-slate-500">Planning Blocks</p>
+        <div className="space-y-3">
+          <div
+            className="w-full rounded-xl border border-slate-200 bg-gradient-to-br from-white via-white to-slate-50 p-4 text-left shadow-sm hover:shadow-md transition cursor-grab active:cursor-grabbing"
+            draggable
+            onDragStart={(e) => {
+              e.dataTransfer.effectAllowed = "copy";
+              e.dataTransfer.setData("application/json", JSON.stringify({ type: "planning-block" }));
+            }}
+            onClick={onAddPlanBlock}
+          >
+            <div className="flex items-start justify-between">
+              <div className="flex flex-col gap-0.5">
+                <p className="text-sm font-semibold text-slate-900">Add plan block</p>
+                <p className="text-xs text-slate-600 leading-snug">Creates a planning card with id/query you can wire to others.</p>
+              </div>
+              <span className="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-700">Add</span>
+            </div>
+            <p className="mt-3 text-xs text-slate-600">Use this view to organize plans before entering workflows.</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="mt-4 space-y-4 flex-1 overflow-y-auto pr-1">
       <p className="text-xs uppercase tracking-wide text-slate-500">

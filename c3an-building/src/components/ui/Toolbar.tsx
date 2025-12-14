@@ -7,7 +7,7 @@ import type { Theme } from "../../types";
 
 type Props = {
   theme: Theme;
-  fileInputRef: RefObject<HTMLInputElement>;
+  fileInputRef: RefObject<HTMLInputElement | null>;
   onC3ANClick: () => void;
   onAboutClick: () => void;
   onEvalsClick: () => void;

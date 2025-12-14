@@ -8,7 +8,6 @@ import type {
   BlockHandles,
   LinkSource,
   LinkTarget,
-  Selection,
 } from "../../types";
 import HandleDot from "./HandleDot";
 
@@ -75,7 +74,7 @@ export default function AgentBlock({
       <div
         className={`relative rounded-lg border border-slate-200 bg-white/90 shadow-md backdrop-blur-sm transition-all duration-150 w-[220px] px-3 pt-2 pb-3 scale-[0.97] min-h-[120px] ${
           showConnections ? "ring-2 ring-emerald-300" : ""
-        } cursor-grab active:cursor-grabbing select-none`}
+        } ${isDragging ? "scale-[1.01]" : ""} cursor-grab active:cursor-grabbing select-none`}
         data-block
         style={{ width: 220, height: handles.height }}
         onPointerDown={onPointerDown(block.id)}
@@ -280,7 +279,6 @@ export default function AgentBlock({
           onPointerEnter={onOutputEnter({ type: "block", id: block.id, port: idx })}
           onPointerLeave={onOutputLeave({ type: "block", id: block.id, port: idx })}
           onPointerMove={onMoveLinking}
-          onPointerUp={() => onFinalizeLinking()}
           onDoubleClick={(e) => {
             e.stopPropagation();
             e.preventDefault();

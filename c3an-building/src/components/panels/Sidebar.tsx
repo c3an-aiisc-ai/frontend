@@ -12,6 +12,7 @@ import SettingsPanel from "./SettingsPanel";
 type Props = {
   activePanel: PanelKey | null;
   theme: Theme;
+  isPlanningView?: boolean;
   toolPalette: ToolPreset[];
   agentJsonInput: string;
   agentParseError: string | null;
@@ -19,6 +20,10 @@ type Props = {
   onThemeChange: (theme: Theme) => void;
   onAgentJsonInputChange: (value: string) => void;
   onGenerateAgentsFromJson: () => void;
+  onOpenPlanning: () => void;
+  planningLoaded: boolean;
+  planningName?: string;
+  onAddPlanBlock?: () => void;
   onBlockDragStart: (e: DragEvent<HTMLDivElement>) => void;
   onUploadDragStart: (e: DragEvent<HTMLDivElement>) => void;
   onOutputDragStart: (e: DragEvent<HTMLDivElement>) => void;
@@ -28,6 +33,7 @@ type Props = {
 export default function Sidebar({
   activePanel,
   theme,
+  isPlanningView = false,
   toolPalette,
   agentJsonInput,
   agentParseError,
@@ -35,6 +41,10 @@ export default function Sidebar({
   onThemeChange,
   onAgentJsonInputChange,
   onGenerateAgentsFromJson,
+  onOpenPlanning,
+  planningLoaded,
+  planningName,
+  onAddPlanBlock,
   onBlockDragStart,
   onUploadDragStart,
   onOutputDragStart,
@@ -44,6 +54,18 @@ export default function Sidebar({
     <div className="absolute left-0 top-0 bottom-0 z-30 flex">
       {/* Tab buttons */}
       <div className="flex flex-col items-center gap-2 bg-slate-900/95 px-2 py-3 text-white shadow-xl">
+        <button
+          className={`h-12 w-12 rounded-md border text-sm font-semibold transition ${
+            isPlanningView
+              ? "bg-purple-600 text-white border-purple-700 shadow-sm"
+              : "bg-slate-800/70 text-white border-slate-700 hover:bg-slate-800"
+          }`}
+          onClick={onOpenPlanning}
+          aria-label="Planning"
+          title={planningLoaded ? `Plan ready${planningName ? `: ${planningName}` : ""}` : "Open planner"}
+        >
+          PL
+        </button>
         {PANEL_TABS.map((item) => (
           <button
             key={item.id}
@@ -88,11 +110,12 @@ export default function Sidebar({
 
           {activePanel === "blocks" && (
             <BlocksPanel
-              theme={theme}
+              isPlanningView={isPlanningView}
               agentJsonInput={agentJsonInput}
               agentParseError={agentParseError}
               onAgentJsonInputChange={onAgentJsonInputChange}
               onGenerateAgentsFromJson={onGenerateAgentsFromJson}
+              onAddPlanBlock={onAddPlanBlock}
               onBlockDragStart={onBlockDragStart}
               onUploadDragStart={onUploadDragStart}
               onOutputDragStart={onOutputDragStart}

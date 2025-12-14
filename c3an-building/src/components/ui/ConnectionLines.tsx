@@ -28,6 +28,8 @@ export default function ConnectionLines({
   getInputAnchor,
   onConnectionPointerDown,
 }: Props) {
+  const glow = "drop-shadow(0 0 4px rgba(56,189,248,0.35))";
+
   return (
     <svg
       className="absolute inset-0 w-full h-full pointer-events-none"
@@ -80,6 +82,7 @@ export default function ConnectionLines({
               style={{
                 pointerEvents: "visibleStroke",
                 cursor: "pointer",
+                filter: glow,
               }}
               onPointerDown={onConnectionPointerDown(conn)}
             />
@@ -107,6 +110,7 @@ export default function ConnectionLines({
                 strokeWidth={2}
                 strokeLinecap="round"
                 markerEnd="url(#arrowhead-preview)"
+                style={{ filter: glow }}
               />
             </g>
           );
