@@ -23,6 +23,8 @@ import { formatBytes } from "../workflow/utils";
 import { useWorkflowPageActions } from "./useWorkflowPageActions";
 import WorkflowModals from "./WorkflowModals";
 import WorkflowSidebarPanels from "./WorkflowSidebarPanels";
+import { REGISTRY_TEMPLATES } from "../constants/registryTemplates";
+import { useRegistryTemplates } from "./workflow-builder/useRegistryTemplates";
 
 export default function WorkflowBuilderPage() {
   const {
@@ -91,9 +93,7 @@ export default function WorkflowBuilderPage() {
     outputDragOffsetRef,
     uploadDragOffsetRef,
   } = useWorkflowState();
-
   const { theme, setTheme, setUserThemeLocked, appThemeClass, actionButtonClass } = useThemeMode("dark");
-
   const { linking, setLinking, hoveredInput, setHoveredInput, hoveredOutput, setHoveredOutput, linkingRef } =
     useLinkingState();
 
@@ -111,26 +111,9 @@ export default function WorkflowBuilderPage() {
     shouldAllowPan,
     isPanDisabled: () => linkingRef.current,
   });
-
   const toWorldPoint = useWorldPoint({ containerRef, transform });
-
-  const io = useWorkflowIO({
-    blocks,
-    setBlocks,
-    setTools,
-    setConnections,
-  });
-
-  const geometry = useCanvasGeometry({
-    blocks,
-    tools,
-    uploads,
-    outputs,
-    connections,
-    linking,
-    hoveredInput,
-    hoveredBlockId,
-  });
+  const io = useWorkflowIO({ blocks, setBlocks, setTools, setConnections });
+  const geometry = useCanvasGeometry({ blocks, tools, uploads, outputs, connections, linking, hoveredInput, hoveredBlockId });
 
   const linkingHandlers = useLinkingHandlers({
     blocks,
@@ -289,6 +272,9 @@ export default function WorkflowBuilderPage() {
       resetInteractionState,
     });
 
+  const { activeRegistryTemplateId, registryTemplateLabel, handleApplyRegistryTemplate, handleClearRegistryTemplate } =
+    useRegistryTemplates({ agentSpecTemplate, setAgentSpecTemplate, setAgentParseError });
+
   useWorkflowPersistence({
     applyImportedWorkspace,
     persistWorkspace,
@@ -349,6 +335,9 @@ export default function WorkflowBuilderPage() {
         theme={theme}
         onTogglePanel={handleTogglePanel}
         onClosePanel={() => setActivePanel(null)}
+        onOpenPlanning={() => {
+          window.location.hash = "#/editor?planning=1";
+        }}
       >
         <WorkflowSidebarPanels
           activePanel={activePanel}
@@ -364,12 +353,19 @@ export default function WorkflowBuilderPage() {
           onToolDragStart={handleToolDragStart}
           onSelectTheme={handleSelectTheme}
           onClearSelection={handleClearSelection}
+          registryTemplates={REGISTRY_TEMPLATES}
+          activeRegistryTemplateId={activeRegistryTemplateId}
+          onApplyRegistryTemplate={handleApplyRegistryTemplate}
+          onClearRegistryTemplate={handleClearRegistryTemplate}
+          hasRegistryTemplate={Boolean(agentSpecTemplate)}
+          activeRegistryLabel={registryTemplateLabel}
         />
       </Sidebar>
 
       <main className="relative z-0 h-full w-full">
         <TopBar
           actionButtonClass={actionButtonClass}
+          theme={theme}
           fileInputRef={fileInputRef}
           onUploadChange={handleUpload}
           onOpenC3AN={handleOpenC3an}

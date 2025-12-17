@@ -1,13 +1,11 @@
 // src/components/canvas/PlanningBlockNode.tsx
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import HandleDot from "./HandleDot";
 import type { PlanningBlock } from "../../types/planning";
-import { iconPaths } from "../../assets";
 
 type Props = {
   plan: PlanningBlock;
-  isActive?: boolean;
   modeOverride?: "sequential" | "branch" | "aggregate" | null;
   onEnterWorkflow: () => void;
   onMove: (x: number, y: number) => void;
@@ -30,7 +28,6 @@ type Props = {
 
 export default function PlanningBlockNode({
   plan,
-  isActive = false,
   modeOverride,
   onEnterWorkflow,
   onMove,
@@ -48,7 +45,6 @@ export default function PlanningBlockNode({
   showHandles = false,
 }: Props) {
   const cardRef = useRef<HTMLDivElement | null>(null);
-  const [measuredSize, setMeasuredSize] = useState<{ width: number; height: number }>({ width: 220, height: 140 });
   const effectiveMode = modeOverride ?? null;
 
   // Touching props to satisfy usage and keep lints clean
@@ -58,19 +54,21 @@ export default function PlanningBlockNode({
   useEffect(() => {
     if (!cardRef.current || !onSize) return;
     const observer = new ResizeObserver(([entry]) => {
-      const { width, height } = entry.contentRect;
-      setMeasuredSize({ width, height });
+      const width = Math.round(entry.contentRect.width);
+      const height = Math.round(entry.contentRect.height);
       onSize({ width, height });
     });
     observer.observe(cardRef.current);
-    const initialWidth = cardRef.current.offsetWidth;
-    const initialHeight = cardRef.current.offsetHeight;
-    setMeasuredSize({ width: initialWidth, height: initialHeight });
-    onSize({ width: initialWidth, height: initialHeight });
+    onSize({
+      width: Math.round(cardRef.current.offsetWidth),
+      height: Math.round(cardRef.current.offsetHeight),
+    });
     return () => observer.disconnect();
   }, [onSize]);
 
-  const outputAnchor = { x: plan.x + measuredSize.width, y: plan.y + measuredSize.height / 2 };
+  const measuredWidth = cardRef.current?.offsetWidth ?? 220;
+  const measuredHeight = cardRef.current?.offsetHeight ?? 140;
+  const outputAnchor = { x: plan.x + measuredWidth, y: plan.y + measuredHeight / 2 };
 
   return (
     <div
@@ -89,29 +87,6 @@ export default function PlanningBlockNode({
           linkingFrom || linkingTarget ? "ring-2 ring-sky-300" : ""
         }`}
       >
-        {/* Remove button (matches workflow nodes: only visible when selected) */}
-        <button
-          className={`absolute -right-3 -top-3 flex h-7 w-7 items-center justify-center rounded-full bg-slate-900 text-white text-xs shadow-md transition-all duration-150 ${
-            isActive ? "scale-100 opacity-100" : "scale-75 opacity-0 pointer-events-none"
-          }`}
-          onPointerDown={(e) => {
-            e.stopPropagation();
-            e.preventDefault();
-          }}
-          onClick={(e) => {
-            e.stopPropagation();
-            onRemove?.();
-          }}
-          aria-label="Remove plan"
-        >
-          <img
-            src={iconPaths.close}
-            alt=""
-            className="h-3.5 w-3.5 invert"
-            draggable={false}
-          />
-        </button>
-
         <div className="flex items-start justify-between">
           <div>
             <p className="text-sm font-semibold text-slate-900 break-words whitespace-pre-wrap leading-snug">{plan.name}</p>
@@ -124,6 +99,20 @@ export default function PlanningBlockNode({
             <span className="rounded-full bg-amber-50 px-2 py-1 text-[10px] font-semibold uppercase text-amber-700 ring-1 ring-amber-100">
               Plan
             </span>
+            {onRemove && (
+              <button
+                className={`h-7 w-7 rounded-full bg-slate-900 text-white text-xs font-bold shadow transition-all duration-150 ${
+                  linkingFrom || linkingTarget ? "opacity-100 scale-100" : "opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100"
+                }`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRemove();
+                }}
+                aria-label="Remove plan"
+              >
+                ×
+              </button>
+            )}
           </div>
         </div>
 

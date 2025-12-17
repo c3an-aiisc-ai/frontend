@@ -2,6 +2,7 @@
 // Toolbar Component - Top action buttons
 // =============================================================================
 
+import { useEffect, useId, useRef, useState } from "react";
 import type { RefObject } from "react";
 import type { Theme } from "../../../types";
 
@@ -10,6 +11,8 @@ type Props = {
   fileInputRef: RefObject<HTMLInputElement | null>;
   onC3ANClick: () => void;
   onAboutClick: () => void;
+  onPlanningClick?: () => void;
+  onEvaluationClick?: () => void;
   onEvalsClick: () => void;
   onDownloadClick: () => void;
   onUploadClick: () => void;
@@ -23,6 +26,8 @@ export default function Toolbar({
   fileInputRef,
   onC3ANClick,
   onAboutClick,
+  onPlanningClick,
+  onEvaluationClick,
   onEvalsClick,
   onDownloadClick,
   onUploadClick,
@@ -30,28 +35,122 @@ export default function Toolbar({
   onResetClick,
   onFileUpload,
 }: Props) {
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const menuId = useId().replace(/:/g, "");
+
   const actionButtonClass =
     theme === "dark"
       ? "rounded-full border border-slate-700 bg-slate-800/90 px-4 py-2 text-sm font-semibold text-slate-100 shadow-sm hover:bg-slate-700"
       : "rounded-full border border-slate-200 bg-white/90 px-4 py-2 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-100";
 
+  const menuPanelClass =
+    theme === "dark"
+      ? "absolute right-0 mt-2 w-48 rounded-xl border border-slate-700 bg-slate-900/95 p-2 shadow-lg"
+      : "absolute right-0 mt-2 w-48 rounded-xl border border-slate-200 bg-white p-2 shadow-lg";
+
+  const menuItemClass =
+    theme === "dark"
+      ? "flex w-full items-center rounded-lg px-3 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-800"
+      : "flex w-full items-center rounded-lg px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100";
+
+  useEffect(() => {
+    if (!isMenuOpen) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!menuRef.current || menuRef.current.contains(event.target as Node)) return;
+      setIsMenuOpen(false);
+    };
+    window.addEventListener("pointerdown", handlePointerDown);
+    return () => window.removeEventListener("pointerdown", handlePointerDown);
+  }, [isMenuOpen]);
+
+  const handleMenuAction = (action: () => void) => {
+    action();
+    setIsMenuOpen(false);
+  };
+
   return (
     <div className="absolute top-4 right-6 z-30 flex items-center gap-3">
-      <button className={actionButtonClass} onClick={onC3ANClick}>
-        C3AN
-      </button>
-      <button className={actionButtonClass} onClick={onAboutClick}>
-        About
-      </button>
-      <button className={actionButtonClass} onClick={onEvalsClick}>
-        Evals
-      </button>
-      <button className={actionButtonClass} onClick={onDownloadClick}>
-        Download JSON
-      </button>
-      <button className={actionButtonClass} onClick={onUploadClick}>
-        Upload JSON
-      </button>
+      <div className="hidden lg:flex items-center gap-3">
+        <button className={actionButtonClass} onClick={onC3ANClick}>
+          C3AN
+        </button>
+        <button className={actionButtonClass} onClick={onAboutClick}>
+          About
+        </button>
+        {onPlanningClick && (
+          <button className={actionButtonClass} onClick={onPlanningClick}>
+            Planning
+          </button>
+        )}
+        {onEvaluationClick && (
+          <button className={actionButtonClass} onClick={onEvaluationClick}>
+            Evaluation
+          </button>
+        )}
+        <button className={actionButtonClass} onClick={onEvalsClick}>
+          Evals
+        </button>
+        <button className={actionButtonClass} onClick={onDownloadClick}>
+          Download JSON
+        </button>
+        <button className={actionButtonClass} onClick={onUploadClick}>
+          Upload JSON
+        </button>
+        <button className={actionButtonClass} onClick={onRunClick}>
+          Run
+        </button>
+        <button className={actionButtonClass} onClick={onResetClick}>
+          Reset
+        </button>
+      </div>
+
+      <div className="relative lg:hidden" ref={menuRef}>
+        <button
+          className={actionButtonClass}
+          onClick={() => setIsMenuOpen((prev) => !prev)}
+          aria-expanded={isMenuOpen}
+          aria-controls={menuId}
+        >
+          Menu
+        </button>
+        {isMenuOpen && (
+          <div id={menuId} className={menuPanelClass} role="menu">
+            <button className={menuItemClass} onClick={() => handleMenuAction(onC3ANClick)} role="menuitem">
+              C3AN
+            </button>
+            <button className={menuItemClass} onClick={() => handleMenuAction(onAboutClick)} role="menuitem">
+              About
+            </button>
+            {onPlanningClick && (
+              <button className={menuItemClass} onClick={() => handleMenuAction(onPlanningClick)} role="menuitem">
+                Planning
+              </button>
+            )}
+            {onEvaluationClick && (
+              <button className={menuItemClass} onClick={() => handleMenuAction(onEvaluationClick)} role="menuitem">
+                Evaluation
+              </button>
+            )}
+            <button className={menuItemClass} onClick={() => handleMenuAction(onEvalsClick)} role="menuitem">
+              Evals
+            </button>
+            <button className={menuItemClass} onClick={() => handleMenuAction(onDownloadClick)} role="menuitem">
+              Download JSON
+            </button>
+            <button className={menuItemClass} onClick={() => handleMenuAction(onUploadClick)} role="menuitem">
+              Upload JSON
+            </button>
+            <button className={menuItemClass} onClick={() => handleMenuAction(onRunClick)} role="menuitem">
+              Run
+            </button>
+            <button className={menuItemClass} onClick={() => handleMenuAction(onResetClick)} role="menuitem">
+              Reset
+            </button>
+          </div>
+        )}
+      </div>
+
       <input
         ref={fileInputRef}
         type="file"
@@ -59,12 +158,6 @@ export default function Toolbar({
         className="hidden"
         onChange={onFileUpload}
       />
-      <button className={actionButtonClass} onClick={onRunClick}>
-        Run
-      </button>
-      <button className={actionButtonClass} onClick={onResetClick}>
-        Reset
-      </button>
     </div>
   );
 }

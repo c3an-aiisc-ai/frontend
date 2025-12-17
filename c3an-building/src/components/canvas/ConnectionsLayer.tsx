@@ -1,5 +1,7 @@
 import type { PointerEventHandler } from "react";
+import { useId } from "react";
 import type { AnchorPoint, Connection, LinkSource, LinkTarget, LinkingState } from "../../types/workflow";
+import ConnectionArrowMarkers from "../ui/ConnectionArrowMarkers";
 
 type Props = {
   connections: Connection[];
@@ -20,6 +22,10 @@ export default function ConnectionsLayer({
   buildConnectionPath,
   onConnectionPointerDown,
 }: Props) {
+  const markerBaseId = useId().replace(/:/g, "");
+  const defaultMarkerId = `arrowhead-default-${markerBaseId}`;
+  const previewMarkerId = `arrowhead-preview-${markerBaseId}`;
+
   return (
     <svg
       className="absolute inset-0 w-full h-full pointer-events-none"
@@ -27,30 +33,10 @@ export default function ConnectionsLayer({
       overflow="visible"
     >
       <defs>
-        <marker
-          id="arrowhead-default"
-          viewBox="0 0 12 12"
-          markerWidth="12"
-          markerHeight="12"
-          refX="6"
-          refY="6"
-          orient="auto"
-          markerUnits="userSpaceOnUse"
-        >
-          <path d="M0,2 L12,6 L0,10 z" fill="#38bdf8" />
-        </marker>
-        <marker
-          id="arrowhead-preview"
-          viewBox="0 0 12 12"
-          markerWidth="12"
-          markerHeight="12"
-          refX="6"
-          refY="6"
-          orient="auto"
-          markerUnits="userSpaceOnUse"
-        >
-          <path d="M0,2 L12,6 L0,10 z" fill="#3b82f6" />
-        </marker>
+        <ConnectionArrowMarkers
+          defaultId={defaultMarkerId}
+          previewId={previewMarkerId}
+        />
       </defs>
       {connections.map((conn) => {
         const start = getOutputAnchor(conn.from);
@@ -67,7 +53,7 @@ export default function ConnectionsLayer({
               stroke="#38bdf8"
               strokeWidth={isSelected ? 3 : 2}
               strokeLinecap="round"
-              markerEnd={isToolWire ? undefined : "url(#arrowhead-default)"}
+              markerEnd={isToolWire ? undefined : `url(#${defaultMarkerId})`}
               style={{
                 pointerEvents: "visibleStroke",
                 cursor: "pointer",
@@ -99,7 +85,7 @@ export default function ConnectionsLayer({
               strokeDasharray="6 6"
               strokeWidth={2}
               strokeLinecap="round"
-              markerEnd={isToolWire ? undefined : "url(#arrowhead-preview)"}
+              markerEnd={isToolWire ? undefined : `url(#${previewMarkerId})`}
             />
           </g>
         );
