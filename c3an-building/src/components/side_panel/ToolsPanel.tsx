@@ -16,9 +16,7 @@ export default function ToolsPanel({ toolPalette, onToolDragStart }: Props) {
       <div className="flex items-center justify-between">
         <div>
           <p className="text-xs uppercase tracking-wide text-slate-500">Tools</p>
-          <p className="text-sm text-slate-600">
-            Eleven trapezoid picks ready to drop
-          </p>
+          <p className="text-sm text-slate-600">Eleven trapezoid picks ready to drop</p>
         </div>
       </div>
       <div className="mt-3 h-[calc(100vh-240px)] overflow-y-auto pr-2">
@@ -35,12 +33,8 @@ export default function ToolsPanel({ toolPalette, onToolDragStart }: Props) {
                 aria-label={tool.name}
               >
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-4 text-center">
-                  <p className="text-sm font-semibold text-slate-900 drop-shadow-sm">
-                    {tool.name}
-                  </p>
-                  <p className="text-[11px] text-slate-700 leading-tight">
-                    {tool.tagline}
-                  </p>
+                  <p className="text-sm font-semibold text-slate-900 drop-shadow-sm">{tool.name}</p>
+                  <p className="text-[11px] text-slate-700 leading-tight">{tool.tagline}</p>
                 </div>
               </div>
             </div>

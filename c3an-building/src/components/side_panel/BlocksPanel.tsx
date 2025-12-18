@@ -3,6 +3,7 @@
 // =============================================================================
 
 import type { DragEvent } from "react";
+
 type Props = {
   isPlanningView?: boolean;
   onAddPlanBlock?: () => void;
@@ -24,18 +25,27 @@ export default function BlocksPanel({
             draggable
             onDragStart={(e) => {
               e.dataTransfer.effectAllowed = "copy";
-              e.dataTransfer.setData("application/json", JSON.stringify({ type: "planning-block" }));
+              e.dataTransfer.setData(
+                "application/json",
+                JSON.stringify({ type: "planning-block" }),
+              );
             }}
             onClick={onAddPlanBlock}
           >
             <div className="flex items-start justify-between">
               <div className="flex flex-col gap-0.5">
                 <p className="text-sm font-semibold text-slate-900">Add plan block</p>
-                <p className="text-xs text-slate-600 leading-snug">Creates a planning card with id/query you can wire to others.</p>
+                <p className="text-xs text-slate-600 leading-snug">
+                  Creates a planning card with id/query you can wire to others.
+                </p>
               </div>
-              <span className="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-700">Add</span>
+              <span className="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
+                Add
+              </span>
             </div>
-            <p className="mt-3 text-xs text-slate-600">Use this view to organize plans before entering workflows.</p>
+            <p className="mt-3 text-xs text-slate-600">
+              Use this view to organize plans before entering workflows.
+            </p>
           </div>
         </div>
       </div>
@@ -44,9 +54,7 @@ export default function BlocksPanel({
 
   return (
     <div className="mt-4 space-y-4 flex-1 overflow-y-auto pr-1">
-      <p className="text-xs uppercase tracking-wide text-slate-500">
-        Agent Blocks
-      </p>
+      <p className="text-xs uppercase tracking-wide text-slate-500">Agent Blocks</p>
       <div className="space-y-4">
         {/* Agent Block */}
         <div
@@ -80,8 +88,7 @@ export default function BlocksPanel({
             </span>
           </div>
           <p className="mt-3 text-xs text-slate-600">
-            Drag to canvas and add links; inputs/outputs grow as you connect
-            more wires.
+            Drag to canvas and add links; inputs/outputs grow as you connect more wires.
           </p>
         </div>
       </div>
