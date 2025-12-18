@@ -13,7 +13,7 @@ import {
   useState,
 } from "react";
 import { Background } from "../components";
-import { Sidebar } from "../components/panels";
+import { Sidebar } from "../components/side_panel";
 import { Toolbar, ConnectionLines } from "../components/ui";
 import {
   AgentBlock,

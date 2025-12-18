@@ -6,7 +6,7 @@
 export * from "./canvas";
 
 // Panel components
-export * from "./panels";
+export * from "./side_panel";
 
 // Modal components
 export * from "./modals";

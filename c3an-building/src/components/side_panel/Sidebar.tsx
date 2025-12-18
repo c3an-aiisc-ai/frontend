@@ -6,9 +6,9 @@ import type { DragEvent } from "react";
 import type { PanelKey, Theme, ToolPreset } from "../../types";
 import { PANEL_TABS, PANEL_TITLES } from "../../constants";
 import { iconPaths } from "../../assets";
-import BlocksPanel from "../side_panel/BlocksPanel";
-import ToolsPanel from "../side_panel/ToolsPanel";
-import SettingsPanel from "../side_panel/SettingsPanel";
+import BlocksPanel from "./BlocksPanel";
+import ToolsPanel from "./ToolsPanel";
+import SettingsPanel from "./SettingsPanel";
 
 type Props = {
   activePanel: PanelKey | null;
