@@ -55,16 +55,18 @@ export default function Sidebar({
       {/* Tab buttons */}
       <div className="flex flex-col items-center gap-2 bg-slate-900/95 px-2 py-3 text-white shadow-xl">
         <button
-          className={`h-12 w-12 rounded-md border text-sm font-semibold transition ${
-            isPlanningView
-              ? "bg-purple-600 text-white border-purple-700 shadow-sm"
-              : "bg-slate-800/70 text-white border-slate-700 hover:bg-slate-800"
-          }`}
+          className="h-12 w-12 rounded-md border border-slate-700 bg-slate-800/70 text-sm font-semibold text-white transition hover:bg-slate-800"
           onClick={onOpenPlanning}
           aria-label="Planning"
-          title={planningLoaded ? `Plan ready${planningName ? `: ${planningName}` : ""}` : "Open planner"}
+          title={
+            isPlanningView
+              ? "Workflow view"
+              : planningLoaded
+                ? `Plan ready${planningName ? `: ${planningName}` : ""}`
+                : "Plan view"
+          }
         >
-          PL
+          {isPlanningView ? "PL" : "WL"}
         </button>
         {PANEL_TABS.map((item) => (
           <button

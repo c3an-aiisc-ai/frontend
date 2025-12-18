@@ -73,6 +73,14 @@ export function hydrateWorkflowFromPlan(
     inboundOrder.set(t.to, list);
   }
 
+  // Allocate output ports per source based on distinct outbound targets.
+  const outboundOrder = new Map<string, string[]>();
+  for (const t of triples) {
+    const list = outboundOrder.get(t.from) ?? [];
+    if (!list.includes(t.to)) list.push(t.to);
+    outboundOrder.set(t.from, list);
+  }
+
   for (const triple of triples) {
     const fromId = ensureBlock(triple.from);
     const toId = ensureBlock(triple.to);
@@ -80,12 +88,15 @@ export function hydrateWorkflowFromPlan(
     const inbound = inboundOrder.get(triple.to) ?? [];
     const inputIndex = Math.max(0, inbound.indexOf(triple.from));
 
+    const outbound = outboundOrder.get(triple.from) ?? [];
+    const port = Math.max(0, outbound.indexOf(triple.to));
+
     connections.push({
       id: `conn-${connections.length + 1}`,
       from: {
         type: "block",
         id: fromId,
-        port: 0,
+        port,
       },
       to: {
         type: "block",
