@@ -6,6 +6,8 @@
 
 import type { PlanningBlock } from "../../types/planning";
 import type { AgentBlock, Connection, ToolNode, UploadNode, OutputNode } from "../../types";
+import { parsePlanningJSON } from "../../planning/parsePlan";
+import { inferTripleOpsByDegree } from "../../planning/planOps";
 
 export type AgentViewHydration = {
 	blocks: AgentBlock[];
@@ -18,6 +20,18 @@ export type HydratedWorkflow = {
 	uploads: UploadNode[];
 	outputs: OutputNode[];
 	connections: Connection[];
+};
+
+export type PlanJsonTriple = { from: string; op: string; to: string };
+
+export type PlanJson = {
+	plan_id: string;
+	query?: string;
+	intent?: string;
+	triples: PlanJsonTriple[];
+	metadata?: Record<string, unknown>;
+	// allow passthrough of unknown extra fields
+	[key: string]: unknown;
 };
 
 const START_X = 200;
@@ -122,6 +136,87 @@ export function hydrateWorkflowFromPlan(plan: PlanningBlock): HydratedWorkflow {
 		outputs: [],
 		connections: hydrated.connections,
 	};
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null;
+}
+
+function cloneJson<T>(value: T): T {
+	// structuredClone is available in modern browsers; fallback keeps behavior in older contexts.
+	try {
+		return structuredClone(value);
+	} catch {
+		return JSON.parse(JSON.stringify(value)) as T;
+	}
+}
+
+export function importAgentViewPlanJson(raw: unknown): { template: PlanJson; workflow: HydratedWorkflow } {
+	if (!isRecord(raw) || !Array.isArray((raw as any).triples)) {
+		throw new Error("Invalid plan JSON (missing triples)");
+	}
+
+	const template = cloneJson(raw) as PlanJson;
+	const plan = parsePlanningJSON(template);
+	const workflow = hydrateWorkflowFromPlan(plan);
+	return { template, workflow };
+}
+
+function countOps(triples: PlanJsonTriple[]): Record<string, number> {
+	const counts: Record<string, number> = {};
+	for (const t of triples) {
+		const op = String(t.op);
+		counts[op] = (counts[op] ?? 0) + 1;
+	}
+	return counts;
+}
+
+export function exportAgentViewPlanJson(args: {
+	blocks: AgentBlock[];
+	connections: Connection[];
+	base?: PlanJson | unknown;
+	defaults?: { plan_id?: string; query?: string; intent?: string };
+}): PlanJson {
+	const { blocks, connections, base, defaults } = args;
+
+	const baseObj: PlanJson = (isRecord(base) ? (cloneJson(base) as any) : {}) as any;
+
+	// Determine label mapping (prefer names when unique)
+	const blockById = new Map(blocks.map((b) => [b.id, b] as const));
+	const nameCounts = new Map<string, number>();
+	for (const b of blocks) nameCounts.set(b.name, (nameCounts.get(b.name) ?? 0) + 1);
+	const hasDuplicateNames = Array.from(nameCounts.values()).some((c) => c > 1);
+	const labelFor = (blockId: string) => {
+		const b = blockById.get(blockId);
+		if (!b) return blockId;
+		return hasDuplicateNames ? b.id : b.name;
+	};
+
+	const rawTriples = connections
+		.filter((c) => c.from.type === "block" && c.to.type === "block")
+		.map((c) => ({ from: labelFor(c.from.id), to: labelFor(c.to.id) }));
+
+	const inferred = inferTripleOpsByDegree(rawTriples);
+	const triples: PlanJsonTriple[] = inferred.map((t) => ({ from: t.from, op: t.op, to: t.to }));
+
+	// Fill required top-level fields without changing existing key order when possible.
+	const planId =
+		String((baseObj as any).plan_id ?? (baseObj as any).id ?? defaults?.plan_id ?? crypto.randomUUID?.() ?? `plan-${Date.now()}`);
+	(baseObj as any).plan_id = planId;
+
+	if ((baseObj as any).query === undefined && defaults?.query !== undefined) (baseObj as any).query = defaults.query;
+	if ((baseObj as any).intent === undefined && defaults?.intent !== undefined) (baseObj as any).intent = defaults.intent;
+	(baseObj as any).triples = triples;
+
+	const meta: Record<string, unknown> = isRecord((baseObj as any).metadata)
+		? ((baseObj as any).metadata as Record<string, unknown>)
+		: {};
+	meta.total_agents = blocks.length;
+	meta.total_triples = triples.length;
+	meta.operator_counts = countOps(triples);
+	(baseObj as any).metadata = meta;
+
+	return baseObj;
 }
 
 // -----------------------------------------------------------------------------

@@ -42,7 +42,7 @@ import {
   resizeRequired,
 } from "../utils";
 import { detectWorkflowType } from "../utils/detectWorkflowType";
-import { hydrateWorkflowFromPlan } from "../components/io_streams/handleIO";
+import { exportAgentViewPlanJson, hydrateWorkflowFromPlan, importAgentViewPlanJson } from "../components/io_streams/handleIO";
 import { parsePlanningJSON } from "../planning/parsePlan";
 import { inferTripleOpsByDegree } from "../planning/planOps";
 import type { PlanningBlock } from "../types/planning";
@@ -59,6 +59,11 @@ import type {
 
 export default function WorkflowEditorPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Agent-view-only IO: when the user uploads a plan JSON while in agent view,
+  // we keep the original payload as a template so download keeps the same schema.
+  const agentPlanTemplateRef = useRef<unknown | null>(null);
+
   const [uploadedPlan, setUploadedPlan] = useState<PlanningBlock | null>(null);
   const [showPlanningView, setShowPlanningView] = useState(false);
   const [plans, setPlans] = useState<PlanningBlock[]>([]);
@@ -944,7 +949,63 @@ export default function WorkflowEditorPage() {
           const src = JSON.parse(ev.target?.result as string);
           const kind = detectWorkflowType(src);
 
+          const bumpIdCounters = (args: {
+            blocks?: Array<{ id: string }>;
+            tools?: Array<{ id: string }>;
+            connections?: Array<{ id: string }>;
+          }) => {
+            const maxSuffix = (items: Array<{ id: string }> | undefined, prefix: string) => {
+              if (!items?.length) return 0;
+              let max = 0;
+              for (const item of items) {
+                if (!item.id?.startsWith(prefix)) continue;
+                const n = Number.parseInt(item.id.slice(prefix.length), 10);
+                if (Number.isFinite(n) && n > max) max = n;
+              }
+              return max;
+            };
+
+            const maxBlock = maxSuffix(args.blocks, "block-");
+            const maxTool = maxSuffix(args.tools, "tool-");
+            const maxConn = maxSuffix(args.connections, "conn-");
+
+            if (maxBlock > 0) nextBlockIdRef.current = Math.max(nextBlockIdRef.current, maxBlock + 1);
+            if (maxTool > 0) nextToolIdRef.current = Math.max(nextToolIdRef.current, maxTool + 1);
+            if (maxConn > 0) nextConnectionIdRef.current = Math.max(nextConnectionIdRef.current, maxConn + 1);
+          };
+
           if (kind === "planning") {
+            // Agent-view-only behavior: if we're currently in agent view, treat this as an
+            // agent-view import of a plan JSON and hydrate blocks/connections.
+            if (!showPlanningView) {
+              const imported = importAgentViewPlanJson(src);
+              agentPlanTemplateRef.current = imported.template;
+
+              // Clear transient UI/linking state so we don't carry over stale hover/selection.
+              setSelected(null);
+              setHoveredInput(null);
+              setHoveredOutput(null);
+              setHoveredBlockId(null);
+              setHoveredToolId(null);
+              setLinking(null);
+              linkingRef.current = false;
+
+              setBlocks(imported.workflow.blocks);
+              setTools([]);
+              setSelectedEvals([]);
+              setConnections(imported.workflow.connections);
+              setBlocks((prev) => recalcBlockPorts(imported.workflow.connections, prev));
+
+              // Ensure newly added blocks/connections get fresh IDs (avoid collisions like block-1).
+              bumpIdCounters({
+                blocks: imported.workflow.blocks,
+                connections: imported.workflow.connections,
+                tools: [],
+              });
+              return;
+            }
+
+            // Plan view behavior (will be reworked later)
             const plan = parsePlanningJSON(src);
             setUploadedPlan(plan);
             setPlans((prev) => {
@@ -957,12 +1018,28 @@ export default function WorkflowEditorPage() {
           }
 
           if (kind === "agent") {
+            // Clear transient UI/linking state so we don't carry over stale hover/selection.
+            setSelected(null);
+            setHoveredInput(null);
+            setHoveredOutput(null);
+            setHoveredBlockId(null);
+            setHoveredToolId(null);
+            setLinking(null);
+            linkingRef.current = false;
+
             setBlocks(src.blocks ?? []);
             setTools(src.tools ?? []);
             setSelectedEvals(src.evals ?? []);
             const loadedConnections = src.connections ?? [];
             setConnections(loadedConnections);
             setBlocks((prev) => recalcBlockPorts(loadedConnections, prev));
+            agentPlanTemplateRef.current = null;
+
+            bumpIdCounters({
+              blocks: src.blocks ?? [],
+              tools: src.tools ?? [],
+              connections: loadedConnections,
+            });
             return;
           }
 
@@ -975,10 +1052,23 @@ export default function WorkflowEditorPage() {
       reader.readAsText(file);
       e.target.value = "";
     },
-    [recalcBlockPorts, setBlocks, setConnections, setSelectedEvals, setTools, setUploadedPlan]
+    [recalcBlockPorts, setBlocks, setConnections, setSelectedEvals, setTools, setUploadedPlan, showPlanningView]
   );
 
   const handleDownload = useCallback(() => {
+    // Agent view: export *plan JSON schema* (round-trippable with importAgentViewPlanJson).
+    if (!showPlanningView) {
+      const planJson = exportAgentViewPlanJson({
+        blocks,
+        connections,
+        base: agentPlanTemplateRef.current,
+      });
+      const filename = `${String((planJson as any).plan_id ?? "plan")}.json`;
+      downloadWorkflow(planJson, filename);
+      return;
+    }
+
+    // Plan view download behavior will be reworked later.
     const rawTriples = connections
       .filter((conn) => conn.from.type === "block" && conn.to.type === "block")
       .map((conn) => ({ from: conn.from.id, to: conn.to.id }));
@@ -1000,7 +1090,7 @@ export default function WorkflowEditorPage() {
       metadata,
       evals: selectedEvals,
     });
-  }, [blocks, connections, selectedEvals, tools]);
+  }, [blocks, connections, selectedEvals, showPlanningView, tools]);
 
   const handleReset = useCallback(() => {
     // Reset behavior depends on which view you're in.
