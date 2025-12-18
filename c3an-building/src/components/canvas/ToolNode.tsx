@@ -9,6 +9,7 @@ import type {
   LinkSource,
   LinkTarget,
 } from "../../types";
+import { iconPaths } from "../../assets";
 import HandleDot from "./HandleDot";
 
 type Props = {
@@ -90,7 +91,12 @@ export default function ToolNode({
             onClick={() => onRemove(tool.id)}
             aria-label="Remove tool"
           >
-            ×
+            <img
+              src={iconPaths.close}
+              alt=""
+              className="h-3 w-3 invert"
+              draggable={false}
+            />
           </button>
 
           <p className="text-base font-semibold text-slate-900">{tool.name}</p>

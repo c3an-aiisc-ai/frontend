@@ -3,6 +3,7 @@
 // =============================================================================
 
 import type { EvalOption } from "../../types";
+import { iconPaths } from "../../assets";
 
 type Props = {
   evalOptions: EvalOption[];
@@ -48,8 +49,14 @@ export default function EvalsModal({
           <button
             className="h-9 w-9 rounded-full bg-slate-900 text-white text-sm font-semibold shadow-lg"
             onClick={onClose}
+            aria-label="Close"
           >
-            ×
+            <img
+              src={iconPaths.close}
+              alt=""
+              className="h-4 w-4 invert"
+              draggable={false}
+            />
           </button>
         </div>
 

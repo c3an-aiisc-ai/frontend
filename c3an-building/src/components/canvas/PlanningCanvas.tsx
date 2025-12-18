@@ -26,6 +26,7 @@ type Props = {
 
 export default function PlanningCanvas({ onEnterWorkflow, plans, onPlanMove, connections = [], linking, onStartLink, onMoveLink, onCompleteLink, onCancelLink, onRemovePlan, theme = "dark" }: Props) {
   const [hoveredPlanId, setHoveredPlanId] = useState<string | null>(null);
+  const [activePlanId, setActivePlanId] = useState<string | null>(null);
   const [planSizes, setPlanSizes] = useState<Record<string, { width: number; height: number }>>({});
   const [draggingPlanId, setDraggingPlanId] = useState<string | null>(null);
   const planDragOffsetRef = useRef({ x: 0, y: 0 });
@@ -154,6 +155,9 @@ export default function PlanningCanvas({ onEnterWorkflow, plans, onPlanMove, con
     if (isInteractive) return; // allow buttons/links inside the card to work normally
     e.stopPropagation();
     e.preventDefault();
+
+    setActivePlanId(plan.id);
+
     const world = toWorldPoint(e.clientX, e.clientY);
     if (!world) return;
     planDragOffsetRef.current = { x: world.x - plan.x, y: world.y - plan.y };
@@ -180,6 +184,13 @@ export default function PlanningCanvas({ onEnterWorkflow, plans, onPlanMove, con
     <div
       ref={containerRef}
       className="absolute inset-0 overflow-hidden"
+      onPointerDown={(e) => {
+        const target = e.target as HTMLElement | null;
+        // Clicking empty canvas deactivates the current plan (matches workflow selection behavior).
+        if (!target?.closest("[data-block],[data-connector]") && !activeLink) {
+          setActivePlanId(null);
+        }
+      }}
       onPointerMove={(e) => {
         if (!activeLink) return;
         const world = toWorldPoint(e.clientX, e.clientY);
@@ -271,11 +282,19 @@ export default function PlanningCanvas({ onEnterWorkflow, plans, onPlanMove, con
             inset: 0,
             pointerEvents: "auto",
           }}
+          onPointerDown={(e) => {
+            const target = e.target as HTMLElement | null;
+            // Clicking empty space deselects the active plan (matches workflow selection).
+            if (!activeLink && !target?.closest("[data-block],[data-connector]")) {
+              setActivePlanId(null);
+            }
+          }}
         >
           {plans.map((plan) => (
             <PlanningBlockNode
               key={plan.id}
               plan={plan}
+              isActive={activePlanId === plan.id}
               modeOverride={getPlanMode(plan.id)}
               onEnterWorkflow={() => onEnterWorkflow(plan)}
               toWorldPoint={toWorldPoint}

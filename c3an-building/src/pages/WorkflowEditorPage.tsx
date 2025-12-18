@@ -18,9 +18,6 @@ import { Toolbar, ConnectionLines } from "../components/ui";
 import {
   AgentBlock,
   ToolNode,
-  UploadNode,
-  OutputNode,
-  StickyNote,
   PlanningCanvas,
 } from "../components/canvas";
 import {
@@ -58,8 +55,6 @@ import type {
   LinkTarget,
   Selection,
   ToolHandles,
-  UploadHandles,
-  OutputHandles,
 } from "../types";
 
 export default function WorkflowEditorPage() {
@@ -79,16 +74,10 @@ export default function WorkflowEditorPage() {
   }, [linkingPlanId]);
 
   const {
-    notes,
-    setNotes,
     blocks,
     setBlocks,
     tools,
     setTools,
-    uploads,
-    setUploads,
-    outputs,
-    setOutputs,
     connections,
     setConnections,
     theme,
@@ -113,25 +102,12 @@ export default function WorkflowEditorPage() {
     setHoveredBlockId,
     hoveredToolId,
     setHoveredToolId,
-    hoveredUploadId,
-    setHoveredUploadId,
-    hoveredOutputId,
-    setHoveredOutputId,
-    draggingNoteId,
-    setDraggingNoteId,
     draggingBlockId,
     setDraggingBlockId,
     draggingToolId,
     setDraggingToolId,
-    draggingUploadId,
-    setDraggingUploadId,
-    draggingOutputId,
-    setDraggingOutputId,
-    dragOffsetRef,
     blockDragOffsetRef,
     toolDragOffsetRef,
-    uploadDragOffsetRef,
-    outputDragOffsetRef,
     modalBlockId,
     setModalBlockId,
     modalToolId,
@@ -140,14 +116,8 @@ export default function WorkflowEditorPage() {
     setModalToolChoice,
     showEvalsModal,
     setShowEvalsModal,
-    agentJsonInput,
-    setAgentJsonInput,
-    agentParseError,
-    setAgentParseError,
     nextBlockIdRef,
     nextToolIdRef,
-    nextUploadIdRef,
-    nextOutputIdRef,
     nextConnectionIdRef,
     resetWorkspace,
     recalcBlockPorts,
@@ -180,11 +150,11 @@ export default function WorkflowEditorPage() {
     const triples = inferTripleOpsByDegree(rawTriples);
 
     const workflow = {
-      notes,
+      notes: [],
       blocks,
       tools,
-      uploads,
-      outputs,
+      uploads: [],
+      outputs: [],
       connections,
       evals: selectedEvals,
     };
@@ -196,8 +166,11 @@ export default function WorkflowEditorPage() {
         : [...prev, { ...uploadedPlan, triples, workflow }];
       return next;
     });
-    setUploadedPlan((prev) => (prev && prev.id === uploadedPlan.id ? { ...prev, triples, workflow } : prev));
-  }, [blocks, connections, notes, outputs, selectedEvals, tools, uploads, uploadedPlan]);
+
+    setUploadedPlan((prev) =>
+      prev && prev.id === uploadedPlan.id ? { ...prev, triples, workflow } : prev
+    );
+  }, [blocks, connections, selectedEvals, tools, uploadedPlan]);
 
   const togglePlanningView = useCallback(() => {
     setShowPlanningView((prev) => {
@@ -217,7 +190,7 @@ export default function WorkflowEditorPage() {
       if (linkingRef.current) return false;
       const target = event.target as HTMLElement | null;
       return !target?.closest(
-        "[data-note],[data-block],[data-tool],[data-upload],[data-output]"
+        "[data-block],[data-tool]"
       );
     },
     isPanDisabled: () => linkingRef.current,
@@ -257,16 +230,6 @@ export default function WorkflowEditorPage() {
     },
     []
   );
-
-  const handleUploadDragStart = useCallback((e: DragEvent<HTMLDivElement>) => {
-    e.dataTransfer.effectAllowed = "copy";
-    e.dataTransfer.setData("application/json", JSON.stringify({ type: "upload-block" }));
-  }, []);
-
-  const handleOutputDragStart = useCallback((e: DragEvent<HTMLDivElement>) => {
-    e.dataTransfer.effectAllowed = "copy";
-    e.dataTransfer.setData("application/json", JSON.stringify({ type: "output-block" }));
-  }, []);
 
   const handleCanvasDragOver = useCallback((e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -343,122 +306,9 @@ export default function WorkflowEditorPage() {
           { ...paletteItem, id: `tool-${id}`, x: world.x, y: world.y },
         ]);
       }
-
-      if (payload.type === "upload-block") {
-        const id = nextUploadIdRef.current++;
-        setUploads((prev) => [
-          ...prev,
-          { id: `upload-${id}`, x: world.x, y: world.y, name: "Upload data", status: "idle" },
-        ]);
-      }
-
-      if (payload.type === "output-block") {
-        const id = nextOutputIdRef.current++;
-        setOutputs((prev) => [
-          ...prev,
-          { id: `output-${id}`, x: world.x, y: world.y, name: "Output", format: "Describe the format." },
-        ]);
-      }
     },
-    [agentPresets, containerRef, nextBlockIdRef, nextOutputIdRef, nextToolIdRef, nextUploadIdRef, plans.length, setBlocks, setOutputs, setPlans, setTools, setUploads, showPlanningView, toolPalette, transform.x, transform.y, transform.zoom]
+    [agentPresets, containerRef, nextBlockIdRef, nextToolIdRef, plans.length, setBlocks, setPlans, setTools, showPlanningView, toolPalette, transform.x, transform.y, transform.zoom]
   );
-
-  const handleGenerateAgentsFromJson = useCallback(() => {
-    setAgentParseError(null);
-    let parsed: any;
-    try {
-      parsed = JSON.parse(agentJsonInput);
-    } catch {
-      setAgentParseError("Invalid JSON: please check formatting.");
-      return;
-    }
-
-    const agents: any[] | null = Array.isArray(parsed?.agents) ? parsed.agents : null;
-    if (!agents || agents.length === 0) {
-      setAgentParseError("No agents found in JSON (expected an `agents` array).");
-      return;
-    }
-
-    const newBlocks: AgentBlockType[] = [];
-    const newTools: any[] = [];
-    const newConnections: Connection[] = [];
-    const baseX = 140 + blocks.length * 40;
-    const baseY = 200;
-    const blockSpacing = 340;
-    const toolSpacingX = 150;
-    const toolSpacingY = 150;
-
-    agents.forEach((agent, idx) => {
-      const mandatoryInputs = Array.isArray(agent?.input_data_streams?.mandatory)
-        ? agent.input_data_streams.mandatory
-        : [];
-      const optionalInputs = Array.isArray(agent?.input_data_streams?.optional)
-        ? agent.input_data_streams.optional
-        : [];
-      const mandatoryOutputs = Array.isArray(agent?.output_data_streams?.mandatory)
-        ? agent.output_data_streams.mandatory
-        : [];
-      const optionalOutputs = Array.isArray(agent?.output_data_streams?.optional)
-        ? agent.output_data_streams.optional
-        : [];
-
-      const inputCount = mandatoryInputs.length + optionalInputs.length || 1;
-      const outputCount = mandatoryOutputs.length + optionalOutputs.length || 1;
-      const blockId = `block-${nextBlockIdRef.current++}`;
-      const blockX = baseX + idx * blockSpacing;
-      const blockY = baseY;
-
-      newBlocks.push({
-        id: blockId,
-        x: blockX,
-        y: blockY,
-        name: agent?.name ?? agent?.id ?? `Agent ${idx + 1}`,
-        description: agent?.description ?? "Generated from JSON",
-        inputCount: Math.max(1, inputCount),
-        outputCount: Math.max(1, outputCount),
-        inputRequired: [
-          ...Array(mandatoryInputs.length).fill(true),
-          ...Array(Math.max(0, inputCount - mandatoryInputs.length)).fill(false),
-        ].slice(0, Math.max(1, inputCount)),
-        outputRequired: [
-          ...Array(mandatoryOutputs.length).fill(true),
-          ...Array(Math.max(0, outputCount - mandatoryOutputs.length)).fill(false),
-        ].slice(0, Math.max(1, outputCount)),
-        inputNames: [...mandatoryInputs, ...optionalInputs].slice(0, Math.max(1, inputCount)),
-        outputNames: [...mandatoryOutputs, ...optionalOutputs].slice(0, Math.max(1, outputCount)),
-        mandatoryInputCount: mandatoryInputs.length,
-        mandatoryOutputCount: mandatoryOutputs.length,
-      });
-
-      const capabilities: string[] = Array.isArray(agent?.capabilities)
-        ? agent.capabilities
-        : [];
-      capabilities.forEach((cap, capIdx) => {
-        const palette = toolPalette[capIdx % toolPalette.length];
-        const toolId = `tool-${nextToolIdRef.current++}`;
-        const toolX = blockX + (capIdx % 2) * toolSpacingX - 40;
-        const toolY = blockY + 220 + Math.floor(capIdx / 2) * toolSpacingY;
-        newTools.push({
-          ...palette,
-          id: toolId,
-          x: toolX,
-          y: toolY,
-          name: typeof cap === "string" ? cap : `Capability ${capIdx + 1}`,
-          tagline: "Capability tool",
-        });
-        const connId = `conn-${nextConnectionIdRef.current++}`;
-        newConnections.push({
-          id: connId,
-          from: { type: "tool", id: toolId, port: 0 },
-          to: { type: "block", id: blockId, inputIndex: TOOL_PORT_OFFSET },
-        });
-      });
-    });
-
-    setBlocks((prev) => [...prev, ...newBlocks]);
-    setTools((prev) => [...prev, ...newTools]);
-    setConnections((prev) => [...prev, ...newConnections]);
-  }, [agentJsonInput, blocks.length, nextBlockIdRef, nextConnectionIdRef, nextToolIdRef, setAgentParseError, setBlocks, setConnections, setTools, toolPalette]);
 
   const getBlockHandles = useCallback(
     (block: AgentBlockType): BlockHandles => {
@@ -550,34 +400,6 @@ export default function WorkflowEditorPage() {
         dir: "up",
       };
       return { width, height, output, input: output };
-    },
-    []
-  );
-
-  const getUploadHandles = useCallback(
-    (upload: any): UploadHandles => {
-      const width = 240;
-      const height = 210;
-      const output: AnchorPoint = {
-        x: upload.x + width,
-        y: upload.y + height / 2,
-        dir: "right",
-      };
-      return { width, height, output };
-    },
-    []
-  );
-
-  const getOutputHandles = useCallback(
-    (output: any): OutputHandles => {
-      const width = 240;
-      const height = 240;
-      const input: AnchorPoint = {
-        x: output.x,
-        y: output.y + height / 2,
-        dir: "left",
-      };
-      return { width, height, input };
     },
     []
   );
@@ -684,13 +506,9 @@ export default function WorkflowEditorPage() {
         const tool = tools.find((t) => t.id === endpoint.id);
         return tool ? getToolHandles(tool).output : null;
       }
-      if (endpoint.type === "upload") {
-        const upload = uploads.find((u) => u.id === endpoint.id);
-        return upload ? getUploadHandles(upload).output : null;
-      }
       return null;
     },
-    [blocks, getBlockHandles, getToolHandles, getUploadHandles, tools, uploads]
+    [blocks, getBlockHandles, getToolHandles, tools]
   );
 
   const getInputAnchor = useCallback(
@@ -709,13 +527,9 @@ export default function WorkflowEditorPage() {
         const tool = tools.find((t) => t.id === target.id);
         return tool ? getToolHandles(tool).input : null;
       }
-      if (target.type === "output") {
-        const output = outputs.find((o) => o.id === target.id);
-        return output ? getOutputHandles(output).input : null;
-      }
       return null;
     },
-    [blocks, getBlockHandles, getOutputHandles, getToolHandles, outputs, tools]
+    [blocks, getBlockHandles, getToolHandles, tools]
   );
 
   const handleConnectionPointerDown = useCallback(
@@ -930,9 +744,7 @@ export default function WorkflowEditorPage() {
     (e: ReactPointerEvent<HTMLDivElement>) => {
       const target = e.target as HTMLElement | null;
       if (
-        target?.closest(
-          "[data-note],[data-block],[data-tool],[data-upload],[data-output],[data-connector]"
-        )
+        target?.closest("[data-block],[data-tool],[data-connector]")
       )
         return;
       setSelected(null);
@@ -940,61 +752,10 @@ export default function WorkflowEditorPage() {
       setHoveredOutput(null);
       setHoveredBlockId(null);
       setHoveredToolId(null);
-      setHoveredUploadId(null);
-      setHoveredOutputId(null);
       setLinking(null);
       linkingRef.current = false;
     },
-    [linkingRef, setHoveredBlockId, setHoveredInput, setHoveredOutput, setHoveredOutputId, setHoveredToolId, setHoveredUploadId, setLinking, setSelected]
-  );
-
-  const handleNotePointerDown = useCallback(
-    (noteId: string) => (e: ReactPointerEvent<HTMLDivElement>) => {
-      e.stopPropagation();
-      e.preventDefault();
-      setSelected({ type: "note", id: noteId });
-      const note = notes.find((n) => n.id === noteId);
-      const world = toWorldPoint(e.clientX, e.clientY);
-      if (!note || !world) return;
-      dragOffsetRef.current = { x: world.x - note.x, y: world.y - note.y };
-      setDraggingNoteId(noteId);
-      e.currentTarget.setPointerCapture?.(e.pointerId);
-    },
-    [notes, setSelected, toWorldPoint, dragOffsetRef, setDraggingNoteId]
-  );
-
-  const handleNotePointerMove = useCallback(
-    (noteId: string) => (e: ReactPointerEvent<HTMLDivElement>) => {
-      if (draggingNoteId !== noteId) return;
-      const world = toWorldPoint(e.clientX, e.clientY);
-      if (!world) return;
-      setNotes((prev) =>
-        prev.map((n) =>
-          n.id === noteId
-            ? { ...n, x: world.x - dragOffsetRef.current.x, y: world.y - dragOffsetRef.current.y }
-            : n
-        )
-      );
-    },
-    [dragOffsetRef, draggingNoteId, setNotes, toWorldPoint]
-  );
-
-  const handleNotePointerUp = useCallback(
-    (noteId: string) => (e: ReactPointerEvent<HTMLDivElement>) => {
-      if (draggingNoteId !== noteId) return;
-      setDraggingNoteId(null);
-      dragOffsetRef.current = { x: 0, y: 0 };
-      e.currentTarget.releasePointerCapture?.(e.pointerId);
-    },
-    [draggingNoteId, dragOffsetRef, setDraggingNoteId]
-  );
-
-  const handleRemoveNote = useCallback(
-    (noteId: string) => {
-      setNotes((prev) => prev.filter((n) => n.id !== noteId));
-      if (selected?.type === "note" && selected.id === noteId) setSelected(null);
-    },
-    [selected, setNotes, setSelected]
+    [linkingRef, setHoveredBlockId, setHoveredInput, setHoveredOutput, setHoveredToolId, setLinking, setSelected]
   );
 
   const makeDragHandlers = useCallback(
@@ -1069,22 +830,6 @@ export default function WorkflowEditorPage() {
     toolDragOffsetRef,
     () => draggingToolId
   );
-  const uploadDrag = makeDragHandlers(
-    "upload",
-    (id) => uploads.find((u) => u.id === id),
-    setUploads,
-    setDraggingUploadId,
-    uploadDragOffsetRef,
-    () => draggingUploadId
-  );
-  const outputDrag = makeDragHandlers(
-    "output",
-    (id) => outputs.find((o) => o.id === id),
-    setOutputs,
-    setDraggingOutputId,
-    outputDragOffsetRef,
-    () => draggingOutputId
-  );
 
   const handleRemoveBlock = useCallback(
     (id: string) => {
@@ -1102,77 +847,6 @@ export default function WorkflowEditorPage() {
       if (selected?.type === "tool" && selected.id === id) setSelected(null);
     },
     [selected, setConnections, setSelected, setTools]
-  );
-
-  const handleRemoveUpload = useCallback(
-    (id: string) => {
-      setUploads((prev) => prev.filter((u) => u.id !== id));
-      setConnections((prev) => prev.filter((c) => !(c.from.type === "upload" && c.from.id === id)));
-      if (selected?.type === "upload" && selected.id === id) setSelected(null);
-    },
-    [selected, setConnections, setSelected, setUploads]
-  );
-
-  const handleRemoveOutput = useCallback(
-    (id: string) => {
-      setOutputs((prev) => prev.filter((o) => o.id !== id));
-      setConnections((prev) => prev.filter((c) => !(c.to.type === "output" && c.to.id === id)));
-      if (selected?.type === "output" && selected.id === id) setSelected(null);
-    },
-    [selected, setConnections, setOutputs, setSelected]
-  );
-
-  const handleUploadFileChange = useCallback(
-    (uploadId: string) => (event: ChangeEvent<HTMLInputElement>) => {
-      const file = event.target.files?.[0];
-      setUploads((prev) =>
-        prev.map((upload) =>
-          upload.id === uploadId
-            ? {
-                ...upload,
-                status: file ? "ready" : "idle",
-                fileName: file?.name,
-                fileSize: file?.size,
-                fileType:
-                  file?.type ||
-                  (file?.name ? `.${file.name.split(".").pop() ?? ""}` : undefined),
-              }
-            : upload
-        )
-      );
-      event.target.value = "";
-    },
-    [setUploads]
-  );
-
-  const handleClearFile = useCallback(
-    (uploadId: string) => {
-      setUploads((prev) =>
-        prev.map((upload) =>
-          upload.id === uploadId
-            ? { ...upload, status: "idle", fileName: undefined, fileSize: undefined, fileType: undefined }
-            : upload
-        )
-      );
-    },
-    [setUploads]
-  );
-
-  const handleOutputFormatChange = useCallback(
-    (outputId: string) => (event: ChangeEvent<HTMLTextAreaElement>) => {
-      const value = event.target.value;
-      setOutputs((prev) => prev.map((output) => (output.id === outputId ? { ...output, format: value } : output)));
-    },
-    [setOutputs]
-  );
-
-  const handleOutputFormatBlur = useCallback(
-    (outputId: string) => () => {
-      setTimeout(() => {
-        setSelected((prev) => (prev?.type === "output" && prev.id === outputId ? null : prev));
-      }, 0);
-    },
-    [setSelected]
   );
 
   const toggleInputRequired = useCallback(
@@ -1283,11 +957,8 @@ export default function WorkflowEditorPage() {
           }
 
           if (kind === "agent") {
-            setNotes(src.notes ?? []);
             setBlocks(src.blocks ?? []);
             setTools(src.tools ?? []);
-            setUploads(src.uploads ?? []);
-            setOutputs(src.outputs ?? []);
             setSelectedEvals(src.evals ?? []);
             const loadedConnections = src.connections ?? [];
             setConnections(loadedConnections);
@@ -1304,7 +975,7 @@ export default function WorkflowEditorPage() {
       reader.readAsText(file);
       e.target.value = "";
     },
-    [recalcBlockPorts, setBlocks, setConnections, setNotes, setOutputs, setSelectedEvals, setTools, setUploads, setUploadedPlan]
+    [recalcBlockPorts, setBlocks, setConnections, setSelectedEvals, setTools, setUploadedPlan]
   );
 
   const handleDownload = useCallback(() => {
@@ -1322,14 +993,14 @@ export default function WorkflowEditorPage() {
     downloadWorkflow({
       blocks,
       tools,
-      uploads,
-      outputs,
+      uploads: [],
+      outputs: [],
       connections,
       triples,
       metadata,
       evals: selectedEvals,
     });
-  }, [blocks, connections, outputs, selectedEvals, tools, uploads]);
+  }, [blocks, connections, selectedEvals, tools]);
 
   const handleReset = useCallback(() => {
     // Reset behavior depends on which view you're in.
@@ -1351,7 +1022,11 @@ export default function WorkflowEditorPage() {
 
     if (uploadedPlan) {
       // Agent-view reset while editing a plan: clear the workflow inside that plan.
-      const cleared = { ...uploadedPlan, triples: [], workflow: { notes: [], blocks: [], tools: [], uploads: [], outputs: [], connections: [], evals: [] } };
+      const cleared = {
+        ...uploadedPlan,
+        triples: [],
+        workflow: { notes: [], blocks: [], tools: [], uploads: [], outputs: [], connections: [], evals: [] },
+      };
       setUploadedPlan(cleared);
       setPlans((prev) => {
         const exists = prev.some((p) => p.id === uploadedPlan.id);
@@ -1371,7 +1046,7 @@ export default function WorkflowEditorPage() {
     setPlanConnections([]);
     setLinkingPlanId(null);
     setLinkingPlanPoint(null);
-  }, [reset, resetWorkspace, showPlanningView, uploadedPlan, recalcBlockPorts, setBlocks, setConnections, setNotes, setOutputs, setSelectedEvals, setTools, setUploads]);
+  }, [reset, resetWorkspace, showPlanningView, uploadedPlan, setSelectedEvals]);
 
   const handleKeyDown = useCallback(
     (event: KeyboardEvent) => {
@@ -1420,15 +1095,12 @@ export default function WorkflowEditorPage() {
 
       if (selected && (event.key === "Backspace" || event.key === "Delete")) {
         event.preventDefault();
-        if (selected.type === "note") handleRemoveNote(selected.id);
         if (selected.type === "block") handleRemoveBlock(selected.id);
         if (selected.type === "tool") handleRemoveTool(selected.id);
-        if (selected.type === "upload") handleRemoveUpload(selected.id);
-        if (selected.type === "output") handleRemoveOutput(selected.id);
         if (selected.type === "connection") handleRemoveConnection(selected.id);
       }
     },
-    [blocks, clipboard, handleRemoveBlock, handleRemoveConnection, handleRemoveNote, handleRemoveOutput, handleRemoveTool, handleRemoveUpload, selected, setBlocks, setClipboard, setTools]
+    [blocks, clipboard, handleRemoveBlock, handleRemoveConnection, handleRemoveTool, selected, setBlocks, setClipboard, setTools]
   );
 
   useEffect(() => {
@@ -1442,36 +1114,26 @@ export default function WorkflowEditorPage() {
         linking ||
           hoveredBlockId === id ||
           hoveredToolId === id ||
-          hoveredUploadId === id ||
-          hoveredOutputId === id ||
           draggingBlockId === id ||
           draggingToolId === id ||
-          draggingUploadId === id ||
-          draggingOutputId === id ||
-          (selected?.id === id && selected.type !== "note")
+          Boolean(selected?.id === id)
       ),
-    [draggingBlockId, draggingOutputId, draggingToolId, draggingUploadId, hoveredBlockId, hoveredOutputId, hoveredToolId, hoveredUploadId, linking, selected]
+    [draggingBlockId, draggingToolId, hoveredBlockId, hoveredToolId, linking, selected]
   );
 
   const enterWorkflowFromPlan = useCallback(
     (plan: PlanningBlock) => {
       if (plan.workflow) {
         const wf = plan.workflow;
-        setNotes(wf.notes ?? []);
         setBlocks(wf.blocks ?? []);
         setTools(wf.tools ?? []);
-        setUploads(wf.uploads ?? []);
-        setOutputs(wf.outputs ?? []);
         setSelectedEvals(wf.evals ?? []);
         setConnections(wf.connections ?? []);
         setBlocks((prev) => recalcBlockPorts(wf.connections ?? [], prev));
       } else {
         const hydrated = hydrateWorkflowFromPlan(plan);
-        setNotes([]);
         setBlocks(hydrated.blocks);
         setTools(hydrated.tools);
-        setUploads(hydrated.uploads);
-        setOutputs(hydrated.outputs);
         setSelectedEvals([]);
         setConnections(hydrated.connections);
         setBlocks((prev) => recalcBlockPorts(hydrated.connections, prev));
@@ -1481,7 +1143,7 @@ export default function WorkflowEditorPage() {
       setLinkingPlanPoint(null);
       setUploadedPlan(plan);
     },
-    [recalcBlockPorts, setBlocks, setConnections, setNotes, setOutputs, setSelectedEvals, setTools, setUploads]
+    [recalcBlockPorts, setBlocks, setConnections, setSelectedEvals, setTools]
   );
 
   const appThemeClass = theme === "dark" ? "bg-slate-950 text-slate-100" : "bg-slate-50 text-slate-900";
@@ -1492,15 +1154,11 @@ export default function WorkflowEditorPage() {
         activePanel={activePanel}
         theme={theme}
         toolPalette={toolPalette}
-        agentJsonInput={agentJsonInput}
-        agentParseError={agentParseError}
         onPanelChange={setActivePanel}
         onThemeChange={(value) => {
           setTheme(value);
           setUserThemeLocked(true);
         }}
-        onAgentJsonInputChange={setAgentJsonInput}
-        onGenerateAgentsFromJson={handleGenerateAgentsFromJson}
         onOpenPlanning={togglePlanningView}
         isPlanningView={showPlanningView}
         planningLoaded={Boolean(uploadedPlan)}
@@ -1518,8 +1176,6 @@ export default function WorkflowEditorPage() {
           setPlans((prev) => [...prev, newPlan]);
         }}
         onBlockDragStart={handleBlockDragStart}
-        onUploadDragStart={handleUploadDragStart}
-        onOutputDragStart={handleOutputDragStart}
         onToolDragStart={handleToolDragStart}
       />
 
@@ -1634,72 +1290,6 @@ export default function WorkflowEditorPage() {
                   onStartLinkingFromOutput={startLinkingFromOutput}
                   onFinalizeLinking={finalizeLinking}
                   onMoveLinking={moveLinking}
-                />
-              ))}
-
-              {uploads.map((upload) => (
-                <UploadNode
-                  key={upload.id}
-                  upload={upload}
-                  handles={getUploadHandles(upload)}
-                  isActive={selected?.type === "upload" && selected.id === upload.id}
-                  isDragging={draggingUploadId === upload.id}
-                  showHandles={showHandlesForId(upload.id)}
-                  onPointerDown={uploadDrag.onPointerDown}
-                  onPointerMove={uploadDrag.onPointerMove}
-                  onPointerUp={uploadDrag.onPointerUp}
-                  onRemove={handleRemoveUpload}
-                  onHoverEnter={setHoveredUploadId}
-                  onHoverLeave={() => setHoveredUploadId(null)}
-                  onFileChange={handleUploadFileChange}
-                  onClearFile={handleClearFile}
-                  onOutputEnter={(source) => () => setHoveredOutput(source)}
-                  onOutputLeave={(source) => () => {
-                    void source;
-                    setHoveredOutput(null);
-                  }}
-                  onStartLinkingFromOutput={startLinkingFromOutput}
-                  onFinalizeLinking={finalizeLinking}
-                  onMoveLinking={moveLinking}
-                />
-              ))}
-
-              {outputs.map((output) => (
-                <OutputNode
-                  key={output.id}
-                  output={output}
-                  handles={getOutputHandles(output)}
-                  isActive={selected?.type === "output" && selected.id === output.id}
-                  isDragging={draggingOutputId === output.id}
-                  showHandles={showHandlesForId(output.id)}
-                  onPointerDown={outputDrag.onPointerDown}
-                  onPointerMove={outputDrag.onPointerMove}
-                  onPointerUp={outputDrag.onPointerUp}
-                  onRemove={handleRemoveOutput}
-                  onHoverEnter={setHoveredOutputId}
-                  onHoverLeave={() => setHoveredOutputId(null)}
-                  onFormatChange={handleOutputFormatChange}
-                  onFormatBlur={handleOutputFormatBlur}
-                  onInputEnter={(target) => () => setHoveredInput(target)}
-                  onInputLeave={(target) => () => {
-                    void target;
-                    setHoveredInput(null);
-                  }}
-                  onStartLinkingFromInput={startLinkingFromInput}
-                  onFinalizeLinking={finalizeLinking}
-                />
-              ))}
-
-              {notes.map((note) => (
-                <StickyNote
-                  key={note.id}
-                  note={note}
-                  isActive={selected?.type === "note" && selected.id === note.id}
-                  isDragging={draggingNoteId === note.id}
-                  onPointerDown={handleNotePointerDown}
-                  onPointerMove={handleNotePointerMove}
-                  onPointerUp={handleNotePointerUp}
-                  onRemove={handleRemoveNote}
                 />
               ))}
             </div>

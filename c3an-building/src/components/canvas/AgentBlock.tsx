@@ -9,6 +9,7 @@ import type {
   LinkSource,
   LinkTarget,
 } from "../../types";
+import { iconPaths } from "../../assets";
 import HandleDot from "./HandleDot";
 
 type Props = {
@@ -99,7 +100,12 @@ export default function AgentBlock({
           onClick={() => onRemove(block.id)}
           aria-label="Remove block"
         >
-          ×
+          <img
+            src={iconPaths.close}
+            alt=""
+            className="h-3.5 w-3.5 invert"
+            draggable={false}
+          />
         </button>
 
         {/* Header */}

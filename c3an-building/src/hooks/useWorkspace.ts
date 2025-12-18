@@ -105,8 +105,10 @@ export function useWorkspace() {
       setNotes(safeArray(parsed?.notes));
       setBlocks(safeArray(parsed?.blocks));
       setTools(safeArray(parsed?.tools));
-      setUploads(safeArray(parsed?.uploads));
-      setOutputs(safeArray(parsed?.outputs));
+      // Upload/Output nodes are no longer supported in the UI.
+      // Clear them even if they exist in a saved snapshot.
+      setUploads([]);
+      setOutputs([]);
       setConnections(safeArray(parsed?.connections));
       setTheme(safeTheme);
 

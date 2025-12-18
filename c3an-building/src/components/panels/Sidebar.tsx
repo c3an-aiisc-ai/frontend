@@ -5,6 +5,7 @@
 import type { DragEvent } from "react";
 import type { PanelKey, Theme, ToolPreset } from "../../types";
 import { PANEL_TABS, PANEL_TITLES } from "../../constants";
+import { iconPaths } from "../../assets";
 import BlocksPanel from "./BlocksPanel";
 import ToolsPanel from "./ToolsPanel";
 import SettingsPanel from "./SettingsPanel";
@@ -14,19 +15,13 @@ type Props = {
   theme: Theme;
   isPlanningView?: boolean;
   toolPalette: ToolPreset[];
-  agentJsonInput: string;
-  agentParseError: string | null;
   onPanelChange: (panel: PanelKey | null) => void;
   onThemeChange: (theme: Theme) => void;
-  onAgentJsonInputChange: (value: string) => void;
-  onGenerateAgentsFromJson: () => void;
   onOpenPlanning: () => void;
   planningLoaded: boolean;
   planningName?: string;
   onAddPlanBlock?: () => void;
   onBlockDragStart: (e: DragEvent<HTMLDivElement>) => void;
-  onUploadDragStart: (e: DragEvent<HTMLDivElement>) => void;
-  onOutputDragStart: (e: DragEvent<HTMLDivElement>) => void;
   onToolDragStart: (toolName: string) => (e: DragEvent<HTMLDivElement>) => void;
 };
 
@@ -35,19 +30,13 @@ export default function Sidebar({
   theme,
   isPlanningView = false,
   toolPalette,
-  agentJsonInput,
-  agentParseError,
   onPanelChange,
   onThemeChange,
-  onAgentJsonInputChange,
-  onGenerateAgentsFromJson,
   onOpenPlanning,
   planningLoaded,
   planningName,
   onAddPlanBlock,
   onBlockDragStart,
-  onUploadDragStart,
-  onOutputDragStart,
   onToolDragStart,
 }: Props) {
   return (
@@ -105,22 +94,23 @@ export default function Sidebar({
             <button
               className="rounded border border-slate-200 px-2 py-1 text-xs text-slate-700 hover:bg-slate-100"
               onClick={() => onPanelChange(null)}
+              aria-label="Close"
+              title="Close"
             >
-              Close
+              <img
+                src={iconPaths.close}
+                alt=""
+                className="h-4 w-4"
+                draggable={false}
+              />
             </button>
           </div>
 
           {activePanel === "blocks" && (
             <BlocksPanel
               isPlanningView={isPlanningView}
-              agentJsonInput={agentJsonInput}
-              agentParseError={agentParseError}
-              onAgentJsonInputChange={onAgentJsonInputChange}
-              onGenerateAgentsFromJson={onGenerateAgentsFromJson}
               onAddPlanBlock={onAddPlanBlock}
               onBlockDragStart={onBlockDragStart}
-              onUploadDragStart={onUploadDragStart}
-              onOutputDragStart={onOutputDragStart}
             />
           )}
 
