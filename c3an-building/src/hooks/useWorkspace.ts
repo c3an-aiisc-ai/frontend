@@ -2,13 +2,10 @@
 // useWorkspace Hook - Manages workspace state and persistence
 // =============================================================================
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
-  Note,
   AgentBlock,
   ToolNode,
-  UploadNode,
-  OutputNode,
   Connection,
   Selection,
   ClipboardItem,
@@ -23,25 +20,66 @@ import {
   MAX_IO,
   TOOL_PORT_OFFSET,
 } from "../constants";
-import { clamp, resizeRequired, clampNames } from "../utils";
+
+type WorkspaceSnapshot = {
+  blocks: AgentBlock[];
+  tools: ToolNode[];
+  connections: Connection[];
+  theme: Theme;
+  nextBlockId: number;
+  nextToolId: number;
+  nextConnectionId: number;
+};
+
+function readWorkspaceSnapshot(): WorkspaceSnapshot | null {
+  const saved = localStorage.getItem(STORAGE_KEY);
+  if (!saved) return null;
+  try {
+    const parsed: unknown = JSON.parse(saved);
+    if (typeof parsed !== "object" || parsed === null) return null;
+    const obj = parsed as Record<string, unknown>;
+
+    const blocks = Array.isArray(obj["blocks"]) ? (obj["blocks"] as AgentBlock[]) : [];
+    const tools = Array.isArray(obj["tools"]) ? (obj["tools"] as ToolNode[]) : [];
+    const connections = Array.isArray(obj["connections"]) ? (obj["connections"] as Connection[]) : [];
+    const theme = obj["theme"] === "light" || obj["theme"] === "dark" ? (obj["theme"] as Theme) : "dark";
+
+    const nextBlockId = typeof obj["nextBlockId"] === "number" ? (obj["nextBlockId"] as number) : 1;
+    const nextToolId = typeof obj["nextToolId"] === "number" ? (obj["nextToolId"] as number) : 1;
+    const nextConnectionId = typeof obj["nextConnectionId"] === "number" ? (obj["nextConnectionId"] as number) : 1;
+
+    return { blocks, tools, connections, theme, nextBlockId, nextToolId, nextConnectionId };
+  } catch {
+    return null;
+  }
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function resizeRequired(existing: boolean[] | undefined, desired: number) {
+  return Array.from({ length: desired }, (_, i) => Boolean(existing?.[i]));
+}
+
+function clampNames(existing: string[] | undefined, desired: number) {
+  return Array.from({ length: desired }, (_, i) => existing?.[i] ?? "");
+}
 
 export function useWorkspace() {
+  const initialSnapshot = useMemo(() => readWorkspaceSnapshot(), []);
+
   // Refs for ID counters
   const nextIdRef = useRef(1);
-  const nextBlockIdRef = useRef(1);
-  const nextToolIdRef = useRef(1);
-  const nextUploadIdRef = useRef(1);
-  const nextOutputIdRef = useRef(1);
-  const nextConnectionIdRef = useRef(1);
+  const nextBlockIdRef = useRef(initialSnapshot?.nextBlockId ?? 1);
+  const nextToolIdRef = useRef(initialSnapshot?.nextToolId ?? 1);
+  const nextConnectionIdRef = useRef(initialSnapshot?.nextConnectionId ?? 1);
 
   // Main state
-  const [notes, setNotes] = useState<Note[]>([]);
-  const [blocks, setBlocks] = useState<AgentBlock[]>([]);
-  const [tools, setTools] = useState<ToolNode[]>([]);
-  const [uploads, setUploads] = useState<UploadNode[]>([]);
-  const [outputs, setOutputs] = useState<OutputNode[]>([]);
-  const [connections, setConnections] = useState<Connection[]>([]);
-  const [theme, setTheme] = useState<Theme>("dark");
+  const [blocks, setBlocks] = useState<AgentBlock[]>(() => initialSnapshot?.blocks ?? []);
+  const [tools, setTools] = useState<ToolNode[]>(() => initialSnapshot?.tools ?? []);
+  const [connections, setConnections] = useState<Connection[]>(() => initialSnapshot?.connections ?? []);
+  const [theme, setTheme] = useState<Theme>(() => initialSnapshot?.theme ?? "dark");
   const [userThemeLocked, setUserThemeLocked] = useState(false);
   const [selectedEvals, setSelectedEvals] = useState<string[]>([]);
   const [clipboard, setClipboard] = useState<ClipboardItem | null>(null);
@@ -52,7 +90,7 @@ export function useWorkspace() {
   const [linking, setLinking] = useState<LinkingState>(null);
   const linkingRef = useRef(false);
   const [hoveredInput, setHoveredInput] = useState<{
-    type: "block" | "tool" | "output";
+    type: "block" | "tool";
     id: string;
     inputIndex?: number;
   } | null>(null);
@@ -61,22 +99,15 @@ export function useWorkspace() {
   // Hover state
   const [hoveredBlockId, setHoveredBlockId] = useState<string | null>(null);
   const [hoveredToolId, setHoveredToolId] = useState<string | null>(null);
-  const [hoveredUploadId, setHoveredUploadId] = useState<string | null>(null);
-  const [hoveredOutputId, setHoveredOutputId] = useState<string | null>(null);
 
   // Dragging state
-  const [draggingNoteId, setDraggingNoteId] = useState<string | null>(null);
   const [draggingBlockId, setDraggingBlockId] = useState<string | null>(null);
   const [draggingToolId, setDraggingToolId] = useState<string | null>(null);
-  const [draggingUploadId, setDraggingUploadId] = useState<string | null>(null);
-  const [draggingOutputId, setDraggingOutputId] = useState<string | null>(null);
 
   // Drag offset refs
   const dragOffsetRef = useRef({ x: 0, y: 0 });
   const blockDragOffsetRef = useRef({ x: 0, y: 0 });
   const toolDragOffsetRef = useRef({ x: 0, y: 0 });
-  const uploadDragOffsetRef = useRef({ x: 0, y: 0 });
-  const outputDragOffsetRef = useRef({ x: 0, y: 0 });
 
   // Modal state
   const [modalBlockId, setModalBlockId] = useState<string | null>(null);
@@ -93,56 +124,19 @@ export function useWorkspace() {
     linkingRef.current = Boolean(linking);
   }, [linking]);
 
-  // Load from localStorage with defensive shape checks to avoid runtime crashes
-  useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (!saved) return;
-    try {
-      const parsed = JSON.parse(saved);
-      const safeArray = (value: unknown) => (Array.isArray(value) ? value : []);
-      const safeTheme = parsed?.theme === "light" || parsed?.theme === "dark" ? parsed.theme : "dark";
-
-      setNotes(safeArray(parsed?.notes));
-      setBlocks(safeArray(parsed?.blocks));
-      setTools(safeArray(parsed?.tools));
-      // Upload/Output nodes are no longer supported in the UI.
-      // Clear them even if they exist in a saved snapshot.
-      setUploads([]);
-      setOutputs([]);
-      setConnections(safeArray(parsed?.connections));
-      setTheme(safeTheme);
-
-      nextBlockIdRef.current = typeof parsed?.nextBlockId === "number" ? parsed.nextBlockId : nextBlockIdRef.current;
-      nextToolIdRef.current = typeof parsed?.nextToolId === "number" ? parsed.nextToolId : nextToolIdRef.current;
-      nextUploadIdRef.current = typeof parsed?.nextUploadId === "number" ? parsed.nextUploadId : nextUploadIdRef.current;
-      nextOutputIdRef.current = typeof parsed?.nextOutputId === "number" ? parsed.nextOutputId : nextOutputIdRef.current;
-      nextConnectionIdRef.current =
-        typeof parsed?.nextConnectionId === "number" ? parsed.nextConnectionId : nextConnectionIdRef.current;
-      nextIdRef.current = typeof parsed?.nextNoteId === "number" ? parsed.nextNoteId : nextIdRef.current;
-    } catch {
-      localStorage.removeItem(STORAGE_KEY);
-    }
-  }, []);
-
   // Save to localStorage
   useEffect(() => {
     const snapshot = {
-      notes,
       blocks,
       tools,
-      uploads,
-      outputs,
       connections,
       theme,
       nextBlockId: nextBlockIdRef.current,
       nextToolId: nextToolIdRef.current,
-      nextUploadId: nextUploadIdRef.current,
-      nextOutputId: nextOutputIdRef.current,
       nextConnectionId: nextConnectionIdRef.current,
-      nextNoteId: nextIdRef.current,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
-  }, [notes, blocks, tools, uploads, outputs, connections, theme]);
+  }, [blocks, tools, connections, theme]);
 
   // System theme detection
   useEffect(() => {
@@ -167,36 +161,24 @@ export function useWorkspace() {
   // Reset workspace
   const resetWorkspace = useCallback((resetZoom?: () => void) => {
     resetZoom?.();
-    setNotes([]);
     setBlocks([]);
     setTools([]);
-    setUploads([]);
-    setOutputs([]);
     setConnections([]);
     setLinking(null);
     setHoveredInput(null);
     setHoveredOutput(null);
     setSelected(null);
-    setDraggingNoteId(null);
     setDraggingBlockId(null);
     setDraggingToolId(null);
-    setDraggingUploadId(null);
-    setDraggingOutputId(null);
     setHoveredBlockId(null);
     setHoveredToolId(null);
-    setHoveredUploadId(null);
-    setHoveredOutputId(null);
     dragOffsetRef.current = { x: 0, y: 0 };
     blockDragOffsetRef.current = { x: 0, y: 0 };
     toolDragOffsetRef.current = { x: 0, y: 0 };
-    uploadDragOffsetRef.current = { x: 0, y: 0 };
-    outputDragOffsetRef.current = { x: 0, y: 0 };
     linkingRef.current = false;
     nextIdRef.current = 1;
     nextBlockIdRef.current = 1;
     nextToolIdRef.current = 1;
-    nextUploadIdRef.current = 1;
-    nextOutputIdRef.current = 1;
     nextConnectionIdRef.current = 1;
     localStorage.removeItem(STORAGE_KEY);
   }, []);
@@ -275,16 +257,10 @@ export function useWorkspace() {
 
   return {
     // State
-    notes,
-    setNotes,
     blocks,
     setBlocks,
     tools,
     setTools,
-    uploads,
-    setUploads,
-    outputs,
-    setOutputs,
     connections,
     setConnections,
     theme,
@@ -310,25 +286,13 @@ export function useWorkspace() {
     setHoveredBlockId,
     hoveredToolId,
     setHoveredToolId,
-    hoveredUploadId,
-    setHoveredUploadId,
-    hoveredOutputId,
-    setHoveredOutputId,
-    draggingNoteId,
-    setDraggingNoteId,
     draggingBlockId,
     setDraggingBlockId,
     draggingToolId,
     setDraggingToolId,
-    draggingUploadId,
-    setDraggingUploadId,
-    draggingOutputId,
-    setDraggingOutputId,
     dragOffsetRef,
     blockDragOffsetRef,
     toolDragOffsetRef,
-    uploadDragOffsetRef,
-    outputDragOffsetRef,
     modalBlockId,
     setModalBlockId,
     modalToolId,
@@ -344,8 +308,6 @@ export function useWorkspace() {
     nextIdRef,
     nextBlockIdRef,
     nextToolIdRef,
-    nextUploadIdRef,
-    nextOutputIdRef,
     nextConnectionIdRef,
 
     // Methods

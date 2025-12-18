@@ -3,7 +3,7 @@
 // =============================================================================
 
 import type { DragEvent } from "react";
-import type { ToolPreset } from "../../types";
+import type { ToolPreset } from "../../../types";
 
 type Props = {
   toolPalette: ToolPreset[];

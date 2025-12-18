@@ -6,13 +6,6 @@
 // Core Node Types
 // -----------------------------------------------------------------------------
 
-export type Note = {
-  id: string;
-  x: number;
-  y: number;
-  text: string;
-};
-
 export type AgentBlock = {
   id: string;
   x: number;
@@ -51,35 +44,13 @@ export type ToolNode = {
 
 export type ToolPreset = Omit<ToolNode, "id" | "x" | "y">;
 
-export type UploadNode = {
-  id: string;
-  x: number;
-  y: number;
-  name: string;
-  status: "idle" | "ready";
-  fileName?: string;
-  fileSize?: number;
-  fileType?: string;
-};
-
-export type OutputNode = {
-  id: string;
-  x: number;
-  y: number;
-  name: string;
-  format: string;
-};
-
 // -----------------------------------------------------------------------------
 // Clipboard Types
 // -----------------------------------------------------------------------------
 
 export type ClipboardItem =
   | { type: "block"; data: AgentBlock }
-  | { type: "tool"; data: ToolNode }
-  | { type: "upload"; data: UploadNode }
-  | { type: "output"; data: OutputNode }
-  | { type: "note"; data: Note };
+  | { type: "tool"; data: ToolNode };
 
 // -----------------------------------------------------------------------------
 // Connection Types
@@ -89,9 +60,8 @@ export type Connection = {
   id: string;
   from:
     | { type: "block"; id: string; port: number }
-    | { type: "tool"; id: string; port: number }
-    | { type: "upload"; id: string; port: number };
-  to: { type: "block" | "tool" | "output"; id: string; inputIndex?: number };
+    | { type: "tool"; id: string; port: number };
+  to: { type: "block" | "tool"; id: string; inputIndex?: number };
 };
 
 export type LinkSource = Connection["from"];
@@ -108,11 +78,8 @@ export type AnchorPoint = {
 // -----------------------------------------------------------------------------
 
 export type Selection =
-  | { type: "note"; id: string }
   | { type: "block"; id: string }
   | { type: "tool"; id: string }
-  | { type: "upload"; id: string }
-  | { type: "output"; id: string }
   | { type: "connection"; id: string }
   | null;
 
@@ -179,37 +146,19 @@ export type ToolHandles = {
   input: AnchorPoint;
 };
 
-export type UploadHandles = {
-  width: number;
-  height: number;
-  output: AnchorPoint;
-};
-
-export type OutputHandles = {
-  width: number;
-  height: number;
-  input: AnchorPoint;
-};
-
 // -----------------------------------------------------------------------------
 // Workflow Snapshot Types (for save/load)
 // -----------------------------------------------------------------------------
 
 export type WorkspaceSnapshot = {
-  notes: Note[];
   blocks: AgentBlock[];
   tools: ToolNode[];
-  uploads: UploadNode[];
-  outputs: OutputNode[];
   connections: Connection[];
   theme: Theme;
   evals?: string[];
   nextBlockId?: number;
   nextToolId?: number;
-  nextUploadId?: number;
-  nextOutputId?: number;
   nextConnectionId?: number;
-  nextNoteId?: number;
 };
 
 export type WorkflowExport = {

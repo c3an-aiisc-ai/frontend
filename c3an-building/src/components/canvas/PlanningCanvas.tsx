@@ -3,11 +3,27 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePanZoom } from "../../hooks";
 import { Background } from "../";
-import { PlanningBlockNode } from "./index";
-import { buildConnectionPath } from "../../utils";
+import PlanningBlockNode from "./PlanningBlockNode";
 import type { CSSProperties } from "react";
 import type { PlanningBlock } from "../../types";
 import type { AnchorPoint } from "../../types";
+
+function buildConnectionPath(start: AnchorPoint, end: AnchorPoint) {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const dist = Math.hypot(dx, dy);
+  const curve = Math.max(40, Math.min(200, dist * 0.35));
+
+  const startDir = start.dir ?? "right";
+  const endDir = end.dir ?? "left";
+
+  const c1x = start.x + (startDir === "right" ? curve : startDir === "left" ? -curve : 0);
+  const c1y = start.y + (startDir === "down" ? curve : startDir === "up" ? -curve : 0);
+  const c2x = end.x + (endDir === "left" ? curve : endDir === "right" ? -curve : 0);
+  const c2y = end.y + (endDir === "up" ? curve : endDir === "down" ? -curve : 0);
+
+  return `M ${start.x} ${start.y} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${end.x} ${end.y}`;
+}
 
 
 type Props = {
@@ -69,7 +85,10 @@ export default function PlanningCanvas({ onEnterWorkflow, plans, onPlanMove, con
     strokeLinecap: "round",
   };
 
-  const getSize = (plan: PlanningBlock) => planSizes[plan.id] ?? { width: 240, height: 150 };
+  const getSize = useCallback(
+    (plan: PlanningBlock) => planSizes[plan.id] ?? { width: 240, height: 150 },
+    [planSizes]
+  );
 
   const getPlanMode = useCallback(
     (planId: string): "sequential" | "branch" | "aggregate" | null => {
@@ -91,18 +110,23 @@ export default function PlanningCanvas({ onEnterWorkflow, plans, onPlanMove, con
     };
   };
 
-  const findPlanAtPoint = useCallback((point: { x: number; y: number } | null) => {
-    if (!point) return null;
-    return plans.find((plan) => {
-      const size = getSize(plan);
+  const findPlanAtPoint = useCallback(
+    (point: { x: number; y: number } | null) => {
+      if (!point) return null;
       return (
-        point.x >= plan.x &&
-        point.x <= plan.x + size.width &&
-        point.y >= plan.y &&
-        point.y <= plan.y + size.height
+        plans.find((plan) => {
+          const size = getSize(plan);
+          return (
+            point.x >= plan.x &&
+            point.x <= plan.x + size.width &&
+            point.y >= plan.y &&
+            point.y <= plan.y + size.height
+          );
+        }) ?? null
       );
-    }) ?? null;
-  }, [plans, planSizes]);
+    },
+    [getSize, plans]
+  );
 
   // ensure linking preview follows pointer even outside the canvas
   useEffect(() => {

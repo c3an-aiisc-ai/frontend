@@ -1,17 +1,19 @@
-// src/planning/planOps.ts
+// src/components/canvas/planOps.ts
 
-export type PlanOp = "seq" | "brn" | "agg";
+import type { PlanOp } from "../../types/planning";
 
 export function normalizePlanOp(op: unknown): PlanOp {
   const raw = String(op ?? "").toLowerCase().trim();
   if (raw === "seq" || raw === "sequential") return "seq";
-  if (raw === "brn" || raw === "branch" || raw === "bran" || raw === "branching") return "brn";
-  if (raw === "agg" || raw === "aggregate" || raw === "aggregator" || raw === "merge") return "agg";
+  if (raw === "brn" || raw === "branch" || raw === "bran" || raw === "branching")
+    return "brn";
+  if (raw === "agg" || raw === "aggregate" || raw === "aggregator" || raw === "merge")
+    return "agg";
   return "seq";
 }
 
 export function computePlanModeFromTriples(
-  triples: Array<{ from: string; op?: unknown; to: string }> | undefined
+  triples: Array<{ from: string; op?: unknown; to: string }> | undefined,
 ): "sequential" | "branch" | "aggregate" | null {
   const list = (triples ?? []).filter((t) => t?.from && t?.to);
   if (list.length === 0) return null;
@@ -20,7 +22,6 @@ export function computePlanModeFromTriples(
   if (ops.includes("agg")) return "aggregate";
   if (ops.includes("brn")) return "branch";
 
-  // fallback inference (in case ops omitted)
   const out: Record<string, number> = {};
   const inc: Record<string, number> = {};
   for (const t of list) {
@@ -33,7 +34,7 @@ export function computePlanModeFromTriples(
 }
 
 export function inferTripleOpsByDegree<T extends { from: string; to: string }>(
-  triples: T[]
+  triples: T[],
 ): Array<T & { op: PlanOp }> {
   const out: Record<string, number> = {};
   const inc: Record<string, number> = {};
@@ -43,7 +44,8 @@ export function inferTripleOpsByDegree<T extends { from: string; to: string }>(
   }
 
   return triples.map((t) => {
-    const op: PlanOp = (inc[t.to] ?? 0) > 1 ? "agg" : (out[t.from] ?? 0) > 1 ? "brn" : "seq";
+    const op: PlanOp =
+      (inc[t.to] ?? 0) > 1 ? "agg" : (out[t.from] ?? 0) > 1 ? "brn" : "seq";
     return { ...t, op };
   });
 }

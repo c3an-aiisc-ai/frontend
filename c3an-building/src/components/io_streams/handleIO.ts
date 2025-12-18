@@ -5,9 +5,9 @@
 // =============================================================================
 
 import type { PlanningBlock } from "../../types/planning";
-import type { AgentBlock, Connection, ToolNode, UploadNode, OutputNode } from "../../types";
-import { parsePlanningJSON } from "../../planning/parsePlan";
-import { inferTripleOpsByDegree } from "../../planning/planOps";
+import type { AgentBlock, Connection, ToolNode } from "../../types";
+import { parsePlanningJSON } from "./parsePlan";
+import { inferTripleOpsByDegree } from "../canvas/planOps";
 
 export type AgentViewHydration = {
 	blocks: AgentBlock[];
@@ -17,8 +17,6 @@ export type AgentViewHydration = {
 export type HydratedWorkflow = {
 	blocks: AgentBlock[];
 	tools: ToolNode[];
-	uploads: UploadNode[];
-	outputs: OutputNode[];
 	connections: Connection[];
 };
 
@@ -132,8 +130,6 @@ export function hydrateWorkflowFromPlan(plan: PlanningBlock): HydratedWorkflow {
 	return {
 		blocks: hydrated.blocks,
 		tools: [],
-		uploads: [],
-		outputs: [],
 		connections: hydrated.connections,
 	};
 }
@@ -152,7 +148,7 @@ function cloneJson<T>(value: T): T {
 }
 
 export function importAgentViewPlanJson(raw: unknown): { template: PlanJson; workflow: HydratedWorkflow } {
-	if (!isRecord(raw) || !Array.isArray((raw as any).triples)) {
+	if (!isRecord(raw) || !Array.isArray(raw["triples"])) {
 		throw new Error("Invalid plan JSON (missing triples)");
 	}
 
@@ -179,7 +175,7 @@ export function exportAgentViewPlanJson(args: {
 }): PlanJson {
 	const { blocks, connections, base, defaults } = args;
 
-	const baseObj: PlanJson = (isRecord(base) ? (cloneJson(base) as any) : {}) as any;
+	const baseObj: Record<string, unknown> = isRecord(base) ? (cloneJson(base) as Record<string, unknown>) : {};
 
 	// Determine label mapping (prefer names when unique)
 	const blockById = new Map(blocks.map((b) => [b.id, b] as const));
@@ -201,22 +197,22 @@ export function exportAgentViewPlanJson(args: {
 
 	// Fill required top-level fields without changing existing key order when possible.
 	const planId =
-		String((baseObj as any).plan_id ?? (baseObj as any).id ?? defaults?.plan_id ?? crypto.randomUUID?.() ?? `plan-${Date.now()}`);
-	(baseObj as any).plan_id = planId;
+		String(baseObj["plan_id"] ?? baseObj["id"] ?? defaults?.plan_id ?? crypto.randomUUID?.() ?? `plan-${Date.now()}`);
+	baseObj["plan_id"] = planId;
 
-	if ((baseObj as any).query === undefined && defaults?.query !== undefined) (baseObj as any).query = defaults.query;
-	if ((baseObj as any).intent === undefined && defaults?.intent !== undefined) (baseObj as any).intent = defaults.intent;
-	(baseObj as any).triples = triples;
+	if (baseObj["query"] === undefined && defaults?.query !== undefined) baseObj["query"] = defaults.query;
+	if (baseObj["intent"] === undefined && defaults?.intent !== undefined) baseObj["intent"] = defaults.intent;
+	baseObj["triples"] = triples;
 
-	const meta: Record<string, unknown> = isRecord((baseObj as any).metadata)
-		? ((baseObj as any).metadata as Record<string, unknown>)
+	const meta: Record<string, unknown> = isRecord(baseObj["metadata"])
+		? (baseObj["metadata"] as Record<string, unknown>)
 		: {};
 	meta.total_agents = blocks.length;
 	meta.total_triples = triples.length;
 	meta.operator_counts = countOps(triples);
-	(baseObj as any).metadata = meta;
+	baseObj["metadata"] = meta;
 
-	return baseObj;
+	return baseObj as unknown as PlanJson;
 }
 
 // -----------------------------------------------------------------------------

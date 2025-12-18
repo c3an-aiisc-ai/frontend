@@ -1,11 +1,11 @@
 // src/types/planning.ts
 
-import type { PlanOp } from "../planning/planOps";
+export type PlanOp = "seq" | "brn" | "agg";
 import type { WorkspaceSnapshot } from "./index";
 
 export type PlanningWorkflowSnapshot = Pick<
   WorkspaceSnapshot,
-  "notes" | "blocks" | "tools" | "uploads" | "outputs" | "connections" | "evals"
+  "blocks" | "tools" | "connections" | "evals"
 >;
 
 export type PlanningBlock = {

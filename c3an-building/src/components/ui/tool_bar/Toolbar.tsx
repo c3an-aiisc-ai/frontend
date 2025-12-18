@@ -3,7 +3,7 @@
 // =============================================================================
 
 import type { RefObject } from "react";
-import type { Theme } from "../../types";
+import type { Theme } from "../../../types";
 
 type Props = {
   theme: Theme;

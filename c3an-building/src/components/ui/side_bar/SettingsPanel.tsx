@@ -2,7 +2,7 @@
 // Settings Panel Component - Theme and settings panel
 // =============================================================================
 
-import type { Theme } from "../../types";
+import type { Theme } from "../../../types";
 
 type Props = {
   theme: Theme;

@@ -3,9 +3,9 @@
 // =============================================================================
 
 import type { DragEvent } from "react";
-import type { PanelKey, Theme, ToolPreset } from "../../types";
-import { PANEL_TABS, PANEL_TITLES } from "../../constants";
-import { iconPaths } from "../../assets";
+import type { PanelKey, Theme, ToolPreset } from "../../../types";
+import { PANEL_TABS, PANEL_TITLES } from "../../../constants";
+import { iconPaths } from "../../../assets";
 import BlocksPanel from "./BlocksPanel";
 import ToolsPanel from "./ToolsPanel";
 import SettingsPanel from "./SettingsPanel";
@@ -13,14 +13,9 @@ import SettingsPanel from "./SettingsPanel";
 type Props = {
   activePanel: PanelKey | null;
   theme: Theme;
-  isPlanningView?: boolean;
   toolPalette: ToolPreset[];
   onPanelChange: (panel: PanelKey | null) => void;
   onThemeChange: (theme: Theme) => void;
-  onOpenPlanning: () => void;
-  planningLoaded: boolean;
-  planningName?: string;
-  onAddPlanBlock?: () => void;
   onBlockDragStart: (e: DragEvent<HTMLDivElement>) => void;
   onToolDragStart: (toolName: string) => (e: DragEvent<HTMLDivElement>) => void;
 };
@@ -28,35 +23,15 @@ type Props = {
 export default function Sidebar({
   activePanel,
   theme,
-  isPlanningView = false,
   toolPalette,
   onPanelChange,
   onThemeChange,
-  onOpenPlanning,
-  planningLoaded,
-  planningName,
-  onAddPlanBlock,
   onBlockDragStart,
   onToolDragStart,
 }: Props) {
   return (
     <div className="absolute left-0 top-0 bottom-0 z-30 flex">
-      {/* Tab buttons */}
       <div className="flex flex-col items-center gap-2 bg-slate-900/95 px-2 py-3 text-white shadow-xl">
-        <button
-          className="h-12 w-12 rounded-md border border-slate-700 bg-slate-800/70 text-sm font-semibold text-white transition hover:bg-slate-800"
-          onClick={onOpenPlanning}
-          aria-label="Planning"
-          title={
-            isPlanningView
-              ? "Workflow view"
-              : planningLoaded
-                ? `Plan ready${planningName ? `: ${planningName}` : ""}`
-                : "Plan view"
-          }
-        >
-          {isPlanningView ? "PL" : "WL"}
-        </button>
         {PANEL_TABS.map((item) => (
           <button
             key={item.id}
@@ -76,7 +51,6 @@ export default function Sidebar({
         ))}
       </div>
 
-      {/* Panel content */}
       {activePanel && (
         <div
           className={`w-72 backdrop-blur px-4 py-5 shadow-xl transition-all flex flex-col overflow-hidden ${
@@ -97,28 +71,18 @@ export default function Sidebar({
               aria-label="Close"
               title="Close"
             >
-              <img
-                src={iconPaths.close}
-                alt=""
-                className="h-4 w-4"
-                draggable={false}
-              />
+              <img src={iconPaths.close} alt="" className="h-4 w-4" draggable={false} />
             </button>
           </div>
 
           {activePanel === "blocks" && (
             <BlocksPanel
-              isPlanningView={isPlanningView}
-              onAddPlanBlock={onAddPlanBlock}
               onBlockDragStart={onBlockDragStart}
             />
           )}
 
           {activePanel === "tools" && (
-            <ToolsPanel
-              toolPalette={toolPalette}
-              onToolDragStart={onToolDragStart}
-            />
+            <ToolsPanel toolPalette={toolPalette} onToolDragStart={onToolDragStart} />
           )}
 
           {activePanel === "settings" && (

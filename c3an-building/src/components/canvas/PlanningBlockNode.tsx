@@ -1,6 +1,6 @@
 // src/components/canvas/PlanningBlockNode.tsx
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import HandleDot from "./HandleDot";
 import type { PlanningBlock } from "../../types/planning";
 import { iconPaths } from "../../assets";
@@ -48,6 +48,7 @@ export default function PlanningBlockNode({
   showHandles = false,
 }: Props) {
   const cardRef = useRef<HTMLDivElement | null>(null);
+  const [measuredSize, setMeasuredSize] = useState<{ width: number; height: number }>({ width: 220, height: 140 });
   const effectiveMode = modeOverride ?? null;
 
   // Touching props to satisfy usage and keep lints clean
@@ -58,16 +59,18 @@ export default function PlanningBlockNode({
     if (!cardRef.current || !onSize) return;
     const observer = new ResizeObserver(([entry]) => {
       const { width, height } = entry.contentRect;
+      setMeasuredSize({ width, height });
       onSize({ width, height });
     });
     observer.observe(cardRef.current);
-    onSize({ width: cardRef.current.offsetWidth, height: cardRef.current.offsetHeight });
+    const initialWidth = cardRef.current.offsetWidth;
+    const initialHeight = cardRef.current.offsetHeight;
+    setMeasuredSize({ width: initialWidth, height: initialHeight });
+    onSize({ width: initialWidth, height: initialHeight });
     return () => observer.disconnect();
   }, [onSize]);
 
-  const measuredWidth = cardRef.current?.offsetWidth ?? 220;
-  const measuredHeight = cardRef.current?.offsetHeight ?? 140;
-  const outputAnchor = { x: plan.x + measuredWidth, y: plan.y + measuredHeight / 2 };
+  const outputAnchor = { x: plan.x + measuredSize.width, y: plan.y + measuredSize.height / 2 };
 
   return (
     <div

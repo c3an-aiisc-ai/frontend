@@ -10,15 +10,13 @@ import {
   useEffect,
   useMemo,
   useRef,
-  useState,
 } from "react";
 import { Background } from "../components";
-import { Sidebar } from "../components/side_panel";
-import { Toolbar, ConnectionLines } from "../components/ui";
+import { Sidebar, Toolbar } from "../components/ui";
 import {
   AgentBlock,
+  ConnectionLines,
   ToolNode,
-  PlanningCanvas,
 } from "../components/canvas";
 import {
   BlockDetailsModal,
@@ -34,18 +32,7 @@ import {
   MAX_IO,
   TOOL_PORT_OFFSET,
 } from "../constants";
-import {
-  clamp,
-  clampNames,
-  countOperators,
-  downloadWorkflow,
-  resizeRequired,
-} from "../utils";
-import { detectWorkflowType } from "../utils/detectWorkflowType";
-import { exportAgentViewPlanJson, hydrateWorkflowFromPlan, importAgentViewPlanJson } from "../components/io_streams/handleIO";
-import { parsePlanningJSON } from "../planning/parsePlan";
-import { inferTripleOpsByDegree } from "../planning/planOps";
-import type { PlanningBlock } from "../types/planning";
+import { exportAgentViewPlanJson, importAgentViewPlanJson } from "../components/io_streams/handleIO";
 import type {
   AgentBlock as AgentBlockType,
   AnchorPoint,
@@ -54,8 +41,51 @@ import type {
   LinkSource,
   LinkTarget,
   Selection,
+  ToolNode as ToolNodeType,
   ToolHandles,
 } from "../types";
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function resizeRequired(existing: boolean[] | undefined, desired: number) {
+  return Array.from({ length: desired }, (_, i) => Boolean(existing?.[i]));
+}
+
+function clampNames(existing: string[] | undefined, desired: number) {
+  return Array.from({ length: desired }, (_, i) => existing?.[i] ?? "");
+}
+
+function downloadWorkflow(data: unknown, filename = "workflow.json") {
+  const blob = new Blob([JSON.stringify(data, null, 2)], {
+    type: "application/json",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function detectWorkflowType(src: unknown): "planning" | "agent" | "unknown" {
+  if (!isRecord(src)) return "unknown";
+
+  // Plan JSON schema: { plan_id, triples, ... }
+  if (typeof src.plan_id === "string" || Array.isArray(src.triples)) return "planning";
+
+  // Agent workflow snapshot: { blocks, tools, connections, ... }
+  if (Array.isArray(src.blocks) && Array.isArray(src.connections)) return "agent";
+
+  return "unknown";
+}
 
 export default function WorkflowEditorPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -63,20 +93,6 @@ export default function WorkflowEditorPage() {
   // Agent-view-only IO: when the user uploads a plan JSON while in agent view,
   // we keep the original payload as a template so download keeps the same schema.
   const agentPlanTemplateRef = useRef<unknown | null>(null);
-
-  const [uploadedPlan, setUploadedPlan] = useState<PlanningBlock | null>(null);
-  const [showPlanningView, setShowPlanningView] = useState(false);
-  const [plans, setPlans] = useState<PlanningBlock[]>([]);
-  const [planConnections, setPlanConnections] = useState<{ from: string; to: string }[]>([]);
-  const [linkingPlanId, setLinkingPlanId] = useState<string | null>(null);
-  const [linkingPlanPoint, setLinkingPlanPoint] = useState<{ x: number; y: number } | null>(null);
-
-  const handleRemovePlan = useCallback((id: string) => {
-    setPlans((prev) => prev.filter((p) => p.id !== id));
-    setPlanConnections((prev) => prev.filter((c) => c.from !== id && c.to !== id));
-    if (linkingPlanId === id) setLinkingPlanId(null);
-    if (linkingPlanPoint) setLinkingPlanPoint(null);
-  }, [linkingPlanId]);
 
   const {
     blocks,
@@ -129,64 +145,26 @@ export default function WorkflowEditorPage() {
     getBlockMode,
   } = useWorkspace();
 
-  const persistWorkflowIntoUploadedPlan = useCallback(() => {
-    if (!uploadedPlan) return;
-
-    const blockById = new Map(blocks.map((b) => [b.id, b] as const));
-
-    const nameCounts = new Map<string, number>();
-    for (const b of blocks) {
-      nameCounts.set(b.name, (nameCounts.get(b.name) ?? 0) + 1);
-    }
-    const hasDuplicateNames = Array.from(nameCounts.values()).some((c) => c > 1);
-    const labelFor = (blockId: string) => {
-      const b = blockById.get(blockId);
-      if (!b) return blockId;
-      return hasDuplicateNames ? b.id : b.name;
-    };
-
-    const rawTriples = connections
-      .filter((conn) => conn.from.type === "block" && conn.to.type === "block")
-      .map((conn) => ({
-        from: labelFor(conn.from.id),
-        to: labelFor(conn.to.id),
-      }));
-
-    const triples = inferTripleOpsByDegree(rawTriples);
-
-    const workflow = {
-      notes: [],
-      blocks,
-      tools,
-      uploads: [],
-      outputs: [],
-      connections,
-      evals: selectedEvals,
-    };
-
-    setPlans((prev) => {
-      const exists = prev.some((p) => p.id === uploadedPlan.id);
-      const next = exists
-        ? prev.map((p) => (p.id === uploadedPlan.id ? { ...p, triples, workflow } : p))
-        : [...prev, { ...uploadedPlan, triples, workflow }];
-      return next;
-    });
-
-    setUploadedPlan((prev) =>
-      prev && prev.id === uploadedPlan.id ? { ...prev, triples, workflow } : prev
-    );
-  }, [blocks, connections, selectedEvals, tools, uploadedPlan]);
-
-  const togglePlanningView = useCallback(() => {
-    setShowPlanningView((prev) => {
-      if (!prev) persistWorkflowIntoUploadedPlan();
-      return !prev;
-    });
-  }, [persistWorkflowIntoUploadedPlan]);
+  const agentPresets = useMemo(() => AGENT_PRESETS, []);
+  const toolPalette = useMemo(() => TOOL_PALETTE, []);
+  const evalOptions = useMemo(() => EVAL_OPTIONS, []);
 
   const handleC3ANClick = useCallback(() => {
     window.open("https://c3an.aiisc.ai/", "_blank", "noopener,noreferrer");
   }, []);
+
+  const handleBlockDragStart = useCallback((e: DragEvent<HTMLDivElement>) => {
+    e.dataTransfer.effectAllowed = "copy";
+    e.dataTransfer.setData("application/json", JSON.stringify({ type: "agent-block" }));
+  }, []);
+
+  const handleToolDragStart = useCallback(
+    (toolName: string) => (e: DragEvent<HTMLDivElement>) => {
+      e.dataTransfer.effectAllowed = "copy";
+      e.dataTransfer.setData("application/json", JSON.stringify({ type: "tool", name: toolName }));
+    },
+    []
+  );
 
 
   const { containerRef, transform, reset } = usePanZoom({
@@ -216,69 +194,28 @@ export default function WorkflowEditorPage() {
     [containerRef, transform.x, transform.y, transform.zoom]
   );
 
-  const toolPalette = useMemo(() => TOOL_PALETTE, []);
-  const agentPresets = useMemo(() => AGENT_PRESETS, []);
-  const evalOptions = useMemo(() => EVAL_OPTIONS, []);
-
-  const handleBlockDragStart = useCallback((e: DragEvent<HTMLDivElement>) => {
-    e.dataTransfer.effectAllowed = "copy";
-    e.dataTransfer.setData("application/json", JSON.stringify({ type: "agent-block" }));
-  }, []);
-
-  const handleToolDragStart = useCallback(
-    (toolName: string) => (e: DragEvent<HTMLDivElement>) => {
-      e.dataTransfer.effectAllowed = "copy";
-      e.dataTransfer.setData(
-        "application/json",
-        JSON.stringify({ type: "tool", name: toolName })
-      );
-    },
-    []
-  );
-
-  const handleCanvasDragOver = useCallback((e: DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "copy";
+  const handleCanvasDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
   }, []);
 
   const handleCanvasDrop = useCallback(
-    (e: DragEvent<HTMLDivElement>) => {
-      e.preventDefault();
-      const el = containerRef.current;
-      if (!el) return;
+    (event: DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      const raw = event.dataTransfer.getData("application/json");
+      if (!raw) return;
 
-      const payloadRaw =
-        e.dataTransfer.getData("application/json") ||
-        e.dataTransfer.getData("text/plain");
-
-      let payload: { type?: string; name?: string } = {};
+      let payload: unknown;
       try {
-        payload = payloadRaw ? JSON.parse(payloadRaw) : {};
+        payload = JSON.parse(raw);
       } catch {
-        // ignore
-      }
-
-      const rect = el.getBoundingClientRect();
-      const world = {
-        x: (e.clientX - rect.left - transform.x) / transform.zoom,
-        y: (e.clientY - rect.top - transform.y) / transform.zoom,
-      };
-
-      if (showPlanningView && payload.type === "planning-block") {
-        const id = `plan-${plans.length + 1}`;
-        setPlans((prev) => [
-          ...prev,
-          {
-            id,
-            x: world.x,
-            y: world.y,
-            name: id,
-            query: "Describe this plan",
-            triples: [],
-          },
-        ]);
         return;
       }
+
+      if (!isRecord(payload)) return;
+
+      const world = toWorldPoint(event.clientX, event.clientY);
+      if (!world) return;
 
       if (payload.type === "agent-block") {
         const preset = agentPresets[0];
@@ -300,19 +237,18 @@ export default function WorkflowEditorPage() {
             presetId: preset?.id,
           },
         ]);
+        return;
       }
 
       if (payload.type === "tool") {
-        const paletteItem = toolPalette.find((t) => t.name === payload.name);
+        const name = typeof payload.name === "string" ? payload.name : "";
+        const paletteItem = toolPalette.find((t) => t.name === name);
         if (!paletteItem) return;
         const id = nextToolIdRef.current++;
-        setTools((prev) => [
-          ...prev,
-          { ...paletteItem, id: `tool-${id}`, x: world.x, y: world.y },
-        ]);
+        setTools((prev) => [...prev, { ...paletteItem, id: `tool-${id}`, x: world.x, y: world.y }]);
       }
     },
-    [agentPresets, containerRef, nextBlockIdRef, nextToolIdRef, plans.length, setBlocks, setPlans, setTools, showPlanningView, toolPalette, transform.x, transform.y, transform.zoom]
+    [agentPresets, nextBlockIdRef, nextToolIdRef, setBlocks, setTools, toWorldPoint, toolPalette]
   );
 
   const getBlockHandles = useCallback(
@@ -396,7 +332,7 @@ export default function WorkflowEditorPage() {
   );
 
   const getToolHandles = useCallback(
-    (tool: any): ToolHandles => {
+    (tool: ToolNodeType): ToolHandles => {
       const width = 180;
       const height = 110;
       const output: AnchorPoint = {
@@ -763,11 +699,13 @@ export default function WorkflowEditorPage() {
     [linkingRef, setHoveredBlockId, setHoveredInput, setHoveredOutput, setHoveredToolId, setLinking, setSelected]
   );
 
+  type DraggableItem = { id: string; x: number; y: number };
+
   const makeDragHandlers = useCallback(
-    (
+    <T extends DraggableItem>(
       type: NonNullable<Selection>["type"],
-      getItem: (id: string) => { x: number; y: number } | undefined,
-      setItem: (updater: (prev: any[]) => any[]) => void,
+      getItem: (id: string) => DraggableItem | undefined,
+      setItem: React.Dispatch<React.SetStateAction<T[]>>,
       setDragging: React.Dispatch<React.SetStateAction<string | null>>,
       offsetRef: React.MutableRefObject<{ x: number; y: number }>,
       getDraggingId: () => string | null
@@ -802,7 +740,7 @@ export default function WorkflowEditorPage() {
           const world = toWorldPoint(e.clientX, e.clientY);
           if (!world) return;
           setItem((prev) =>
-            prev.map((item: any) =>
+            prev.map((item) =>
               item.id === id
                 ? { ...item, x: world.x - offsetRef.current.x, y: world.y - offsetRef.current.y }
                 : item
@@ -975,45 +913,30 @@ export default function WorkflowEditorPage() {
           };
 
           if (kind === "planning") {
-            // Agent-view-only behavior: if we're currently in agent view, treat this as an
-            // agent-view import of a plan JSON and hydrate blocks/connections.
-            if (!showPlanningView) {
-              const imported = importAgentViewPlanJson(src);
-              agentPlanTemplateRef.current = imported.template;
+            const imported = importAgentViewPlanJson(src);
+            agentPlanTemplateRef.current = imported.template;
 
-              // Clear transient UI/linking state so we don't carry over stale hover/selection.
-              setSelected(null);
-              setHoveredInput(null);
-              setHoveredOutput(null);
-              setHoveredBlockId(null);
-              setHoveredToolId(null);
-              setLinking(null);
-              linkingRef.current = false;
+            // Clear transient UI/linking state so we don't carry over stale hover/selection.
+            setSelected(null);
+            setHoveredInput(null);
+            setHoveredOutput(null);
+            setHoveredBlockId(null);
+            setHoveredToolId(null);
+            setLinking(null);
+            linkingRef.current = false;
 
-              setBlocks(imported.workflow.blocks);
-              setTools([]);
-              setSelectedEvals([]);
-              setConnections(imported.workflow.connections);
-              setBlocks((prev) => recalcBlockPorts(imported.workflow.connections, prev));
+            setBlocks(imported.workflow.blocks);
+            setTools([]);
+            setSelectedEvals([]);
+            setConnections(imported.workflow.connections);
+            setBlocks((prev) => recalcBlockPorts(imported.workflow.connections, prev));
 
-              // Ensure newly added blocks/connections get fresh IDs (avoid collisions like block-1).
-              bumpIdCounters({
-                blocks: imported.workflow.blocks,
-                connections: imported.workflow.connections,
-                tools: [],
-              });
-              return;
-            }
-
-            // Plan view behavior (will be reworked later)
-            const plan = parsePlanningJSON(src);
-            setUploadedPlan(plan);
-            setPlans((prev) => {
-              const exists = prev.some((p) => p.id === plan.id);
-              if (exists) return prev;
-              return [...prev, plan];
+            // Ensure newly added blocks/connections get fresh IDs (avoid collisions like block-1).
+            bumpIdCounters({
+              blocks: imported.workflow.blocks,
+              connections: imported.workflow.connections,
+              tools: [],
             });
-            setShowPlanningView(true);
             return;
           }
 
@@ -1052,91 +975,25 @@ export default function WorkflowEditorPage() {
       reader.readAsText(file);
       e.target.value = "";
     },
-    [recalcBlockPorts, setBlocks, setConnections, setSelectedEvals, setTools, setUploadedPlan, showPlanningView]
+    [recalcBlockPorts, setBlocks, setConnections, setSelectedEvals, setTools]
   );
 
   const handleDownload = useCallback(() => {
-    // Agent view: export *plan JSON schema* (round-trippable with importAgentViewPlanJson).
-    if (!showPlanningView) {
-      const planJson = exportAgentViewPlanJson({
-        blocks,
-        connections,
-        base: agentPlanTemplateRef.current,
-      });
-      const filename = `${String((planJson as any).plan_id ?? "plan")}.json`;
-      downloadWorkflow(planJson, filename);
-      return;
-    }
-
-    // Plan view download behavior will be reworked later.
-    const rawTriples = connections
-      .filter((conn) => conn.from.type === "block" && conn.to.type === "block")
-      .map((conn) => ({ from: conn.from.id, to: conn.to.id }));
-
-    const triples = inferTripleOpsByDegree(rawTriples);
-
-    const metadata = {
-      total_agents: blocks.length,
-      operator_counts: countOperators(connections),
-    };
-
-    downloadWorkflow({
+    const planJson = exportAgentViewPlanJson({
       blocks,
-      tools,
-      uploads: [],
-      outputs: [],
       connections,
-      triples,
-      metadata,
-      evals: selectedEvals,
+      base: agentPlanTemplateRef.current,
     });
-  }, [blocks, connections, selectedEvals, showPlanningView, tools]);
+    const filename = `${String(planJson.plan_id ?? "plan")}.json`;
+    downloadWorkflow(planJson, filename);
+  }, [blocks, connections]);
 
   const handleReset = useCallback(() => {
-    // Reset behavior depends on which view you're in.
-    // - Plan view: clear all plan blocks/connections.
-    // - Agent view (when editing a workflow hydrated from a plan): reset the workflow back to the plan.
     reset();
-
-    if (showPlanningView) {
-      resetWorkspace();
-      setUploadedPlan(null);
-      setPlans([]);
-      setPlanConnections([]);
-      setLinkingPlanId(null);
-      setLinkingPlanPoint(null);
-      return;
-    }
-
     resetWorkspace();
-
-    if (uploadedPlan) {
-      // Agent-view reset while editing a plan: clear the workflow inside that plan.
-      const cleared = {
-        ...uploadedPlan,
-        triples: [],
-        workflow: { notes: [], blocks: [], tools: [], uploads: [], outputs: [], connections: [], evals: [] },
-      };
-      setUploadedPlan(cleared);
-      setPlans((prev) => {
-        const exists = prev.some((p) => p.id === uploadedPlan.id);
-        return exists
-          ? prev.map((p) => (p.id === uploadedPlan.id ? cleared : p))
-          : [...prev, cleared];
-      });
-      setSelectedEvals([]);
-      // Keep plan blocks/plan connections intact; agent canvas stays empty after resetWorkspace().
-      return;
-    }
-
-    // No uploaded plan: full reset to a blank agent workspace.
-    setShowPlanningView(false);
-    setUploadedPlan(null);
-    setPlans([]);
-    setPlanConnections([]);
-    setLinkingPlanId(null);
-    setLinkingPlanPoint(null);
-  }, [reset, resetWorkspace, showPlanningView, uploadedPlan, setSelectedEvals]);
+    agentPlanTemplateRef.current = null;
+    setSelectedEvals([]);
+  }, [reset, resetWorkspace, setSelectedEvals]);
 
   const handleKeyDown = useCallback(
     (event: KeyboardEvent) => {
@@ -1211,31 +1068,6 @@ export default function WorkflowEditorPage() {
     [draggingBlockId, draggingToolId, hoveredBlockId, hoveredToolId, linking, selected]
   );
 
-  const enterWorkflowFromPlan = useCallback(
-    (plan: PlanningBlock) => {
-      if (plan.workflow) {
-        const wf = plan.workflow;
-        setBlocks(wf.blocks ?? []);
-        setTools(wf.tools ?? []);
-        setSelectedEvals(wf.evals ?? []);
-        setConnections(wf.connections ?? []);
-        setBlocks((prev) => recalcBlockPorts(wf.connections ?? [], prev));
-      } else {
-        const hydrated = hydrateWorkflowFromPlan(plan);
-        setBlocks(hydrated.blocks);
-        setTools(hydrated.tools);
-        setSelectedEvals([]);
-        setConnections(hydrated.connections);
-        setBlocks((prev) => recalcBlockPorts(hydrated.connections, prev));
-      }
-      setShowPlanningView(false);
-      setLinkingPlanId(null);
-      setLinkingPlanPoint(null);
-      setUploadedPlan(plan);
-    },
-    [recalcBlockPorts, setBlocks, setConnections, setSelectedEvals, setTools]
-  );
-
   const appThemeClass = theme === "dark" ? "bg-slate-950 text-slate-100" : "bg-slate-50 text-slate-900";
 
   return (
@@ -1248,22 +1080,6 @@ export default function WorkflowEditorPage() {
         onThemeChange={(value) => {
           setTheme(value);
           setUserThemeLocked(true);
-        }}
-        onOpenPlanning={togglePlanningView}
-        isPlanningView={showPlanningView}
-        planningLoaded={Boolean(uploadedPlan)}
-        planningName={uploadedPlan?.name}
-        onAddPlanBlock={() => {
-          const idx = plans.length + 1;
-          const newPlan: PlanningBlock = {
-            id: `plan-${idx}`,
-            x: 160 + idx * 60,
-            y: 160 + idx * 40,
-            name: `Plan ${idx}`,
-            query: "Describe this plan",
-            triples: [],
-          };
-          setPlans((prev) => [...prev, newPlan]);
         }}
         onBlockDragStart={handleBlockDragStart}
         onToolDragStart={handleToolDragStart}
@@ -1293,134 +1109,95 @@ export default function WorkflowEditorPage() {
         >
           <Background transform={transform} theme={theme} />
 
-          {!showPlanningView && (
-            <div
-              style={{
-                position: "absolute",
-                left: 0,
-                top: 0,
-                transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.zoom})`,
-                transformOrigin: "0 0",
-                width: "100%",
-                height: "100%",
-                overflow: "visible",
-                pointerEvents: "auto",
-              }}
-              onPointerMove={moveLinking}
-              onPointerUp={() => linking && finalizeLinking()}
-            >
-              <ConnectionLines
-                connections={connections}
-                linking={linking}
-                selected={selected}
-                getOutputAnchor={getOutputAnchor}
-                getInputAnchor={getInputAnchor}
-                onConnectionPointerDown={handleConnectionPointerDown}
-              />
+          <div
+            style={{
+              position: "absolute",
+              left: 0,
+              top: 0,
+              transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.zoom})`,
+              transformOrigin: "0 0",
+              width: "100%",
+              height: "100%",
+              overflow: "visible",
+              pointerEvents: "auto",
+            }}
+            onPointerMove={moveLinking}
+            onPointerUp={() => linking && finalizeLinking()}
+          >
+            <ConnectionLines
+              connections={connections}
+              linking={linking}
+              selected={selected}
+              getOutputAnchor={getOutputAnchor}
+              getInputAnchor={getInputAnchor}
+              onConnectionPointerDown={handleConnectionPointerDown}
+            />
 
-              {blocks.map((block) => {
-                const handles = getBlockHandles(block);
-                return (
-                  <AgentBlock
-                    key={block.id}
-                    block={block}
-                    handles={handles}
-                    isActive={selected?.type === "block" && selected.id === block.id}
-                    isDragging={draggingBlockId === block.id}
-                    showConnections={showHandlesForId(block.id)}
-                    toolCount={connections.filter((c) => c.to.type === "block" && c.to.id === block.id && (c.to.inputIndex ?? 0) >= TOOL_PORT_OFFSET).length}
-                    mode={getBlockMode(block)}
-                    onPointerDown={blockDrag.onPointerDown}
-                    onPointerMove={blockDrag.onPointerMove}
-                    onPointerUp={blockDrag.onPointerUp}
-                    onRemove={handleRemoveBlock}
-                    onDetailsClick={setModalBlockId}
-                    onHoverEnter={setHoveredBlockId}
-                    onHoverLeave={() => setHoveredBlockId(null)}
-                    onInputEnter={(target) => () => setHoveredInput(target)}
-                    onInputLeave={(target) => () => {
-                      void target;
-                      setHoveredInput(null);
-                    }}
-                    onOutputEnter={(source) => () => setHoveredOutput(source)}
-                    onOutputLeave={(source) => () => {
-                      void source;
-                      setHoveredOutput(null);
-                    }}
-                    onStartLinkingFromInput={startLinkingFromInput}
-                    onStartLinkingFromOutput={startLinkingFromOutput}
-                    onFinalizeLinking={finalizeLinking}
-                    onMoveLinking={moveLinking}
-                    onChangeInputs={changeBlockInputs}
-                    onChangeOutputs={changeBlockOutputs}
-                  />
-                );
-              })}
-
-              {tools.map((tool) => (
-                <ToolNode
-                  key={tool.id}
-                  tool={tool}
-                  handles={getToolHandles(tool)}
-                  isActive={selected?.type === "tool" && selected.id === tool.id}
-                  isDragging={draggingToolId === tool.id}
-                  showHandles={showHandlesForId(tool.id)}
-                  onPointerDown={toolDrag.onPointerDown}
-                  onPointerMove={toolDrag.onPointerMove}
-                  onPointerUp={toolDrag.onPointerUp}
-                  onRemove={handleRemoveTool}
-                  onDetailsClick={setModalToolId}
-                  onHoverEnter={setHoveredToolId}
-                  onHoverLeave={() => setHoveredToolId(null)}
+            {blocks.map((block) => {
+              const handles = getBlockHandles(block);
+              return (
+                <AgentBlock
+                  key={block.id}
+                  block={block}
+                  handles={handles}
+                  isActive={selected?.type === "block" && selected.id === block.id}
+                  isDragging={draggingBlockId === block.id}
+                  showConnections={showHandlesForId(block.id)}
+                  toolCount={connections.filter((c) => c.to.type === "block" && c.to.id === block.id && (c.to.inputIndex ?? 0) >= TOOL_PORT_OFFSET).length}
+                  mode={getBlockMode(block)}
+                  onPointerDown={blockDrag.onPointerDown}
+                  onPointerMove={blockDrag.onPointerMove}
+                  onPointerUp={blockDrag.onPointerUp}
+                  onRemove={handleRemoveBlock}
+                  onDetailsClick={setModalBlockId}
+                  onHoverEnter={setHoveredBlockId}
+                  onHoverLeave={() => setHoveredBlockId(null)}
+                  onInputEnter={(target) => () => setHoveredInput(target)}
+                  onInputLeave={(target) => () => {
+                    void target;
+                    setHoveredInput(null);
+                  }}
                   onOutputEnter={(source) => () => setHoveredOutput(source)}
                   onOutputLeave={(source) => () => {
                     void source;
                     setHoveredOutput(null);
                   }}
+                  onStartLinkingFromInput={startLinkingFromInput}
                   onStartLinkingFromOutput={startLinkingFromOutput}
                   onFinalizeLinking={finalizeLinking}
                   onMoveLinking={moveLinking}
+                  onChangeInputs={changeBlockInputs}
+                  onChangeOutputs={changeBlockOutputs}
                 />
-              ))}
-            </div>
-          )}
+              );
+            })}
 
-          {showPlanningView && (
-            <PlanningCanvas
-              theme={theme}
-              plans={plans}
-              connections={planConnections}
-              linking={linkingPlanId && linkingPlanPoint ? { from: linkingPlanId, current: linkingPlanPoint } : null}
-              onStartLink={(id: string, anchor) => {
-                setLinkingPlanId(id);
-                setLinkingPlanPoint(anchor);
-              }}
-              onMoveLink={(point) => setLinkingPlanPoint(point)}
-              onCompleteLink={(id: string) => {
-                if (linkingPlanId && linkingPlanId !== id) {
-                  setPlanConnections((prev) => {
-                    const exists = prev.some((c) => c.from === linkingPlanId && c.to === id);
-                    return exists ? prev : [...prev, { from: linkingPlanId, to: id }];
-                  });
-                }
-                setLinkingPlanId(null);
-                setLinkingPlanPoint(null);
-              }}
-              onCancelLink={() => {
-                setLinkingPlanId(null);
-                setLinkingPlanPoint(null);
-              }}
-              onPlanMove={(id: string, x: number, y: number) =>
-                setPlans((prev) => prev.map((p) => (p.id === id ? { ...p, x, y } : p)))
-              }
-              onRemovePlan={handleRemovePlan}
-              onEnterWorkflow={(plan: PlanningBlock) => {
-                setUploadedPlan(plan);
-                enterWorkflowFromPlan(plan);
-                setShowPlanningView(false);
-              }}
-            />
-          )}
+            {tools.map((tool) => (
+              <ToolNode
+                key={tool.id}
+                tool={tool}
+                handles={getToolHandles(tool)}
+                isActive={selected?.type === "tool" && selected.id === tool.id}
+                isDragging={draggingToolId === tool.id}
+                showHandles={showHandlesForId(tool.id)}
+                onPointerDown={toolDrag.onPointerDown}
+                onPointerMove={toolDrag.onPointerMove}
+                onPointerUp={toolDrag.onPointerUp}
+                onRemove={handleRemoveTool}
+                onDetailsClick={setModalToolId}
+                onHoverEnter={setHoveredToolId}
+                onHoverLeave={() => setHoveredToolId(null)}
+                onOutputEnter={(source) => () => setHoveredOutput(source)}
+                onOutputLeave={(source) => () => {
+                  void source;
+                  setHoveredOutput(null);
+                }}
+                onStartLinkingFromOutput={startLinkingFromOutput}
+                onFinalizeLinking={finalizeLinking}
+                onMoveLinking={moveLinking}
+              />
+            ))}
+          </div>
         </div>
       </main>
 
