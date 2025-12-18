@@ -1,0 +1,44 @@
+{
+  "agent_id": "LLM-auditor",
+  "path": "Code.Assets.Tools.llm.client",
+  "type": "tensor",
+  "resources": [
+    {
+      "input": "tokenized words",
+      "op": "seq",
+      "output": "sentiment score",
+      "path": "Code/Assets/Tools/auditing/relevance.py"
+    },
+    {
+      "input": "question",
+      "op": "brn",
+      "output": "quality score",
+      "path": "Code/Assets/Tools/auditing/quality.py"
+    },
+    {
+      "input": "answer",
+      "op": "brn",
+      "output": "safety score",
+      "path": "Code/Assets/Tools/auditing/safety.py"
+    },
+    {
+      "input": "relvant weights",
+      "op": "agg",
+      "output": "aggergate scores",
+      "path" : "Code/Assets/Tools/auditing/aggregation.py"
+    }
+  ],
+  "metadata": {
+    "data_streams": 4,
+    "total_triples": 12,
+    "operator_counts": {
+      "brn": 2,
+      "agg": 1,
+      "seq": 1
+    },
+    "py_dantic": 2.4,
+    "typing-extensions": 4.7,
+    "python-version": 3.11,
+    "tomil": 2.0
+  }
+}
