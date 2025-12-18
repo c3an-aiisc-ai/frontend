@@ -42,7 +42,7 @@ import {
   resizeRequired,
 } from "../utils";
 import { detectWorkflowType } from "../utils/detectWorkflowType";
-import { hydrateWorkflowFromPlan } from "../workflow/hydrateFromPlan";
+import { hydrateWorkflowFromPlan } from "../components/io_streams/handleIO";
 import { parsePlanningJSON } from "../planning/parsePlan";
 import { inferTripleOpsByDegree } from "../planning/planOps";
 import type { PlanningBlock } from "../types/planning";
