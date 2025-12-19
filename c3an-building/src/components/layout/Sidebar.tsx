@@ -8,6 +8,7 @@ type Props = {
   theme: ThemeMode;
   onTogglePanel: (panel: PanelKey) => void;
   onClosePanel: () => void;
+  onOpenPlanning?: () => void;
   children?: ReactNode;
 };
 
@@ -18,11 +19,22 @@ export default function Sidebar({
   theme,
   onTogglePanel,
   onClosePanel,
+  onOpenPlanning,
   children,
 }: Props) {
   return (
     <div className="absolute left-0 top-0 bottom-0 z-30 flex">
       <div className="flex flex-col items-center gap-2 bg-slate-900/95 px-2 py-3 text-white shadow-xl">
+        {onOpenPlanning && (
+          <button
+            className="h-12 w-12 rounded-md border border-slate-700 text-sm font-semibold transition bg-slate-800/70 text-white hover:bg-slate-800"
+            onClick={onOpenPlanning}
+            aria-label="Planning"
+            title="Planning"
+          >
+            PL
+          </button>
+        )}
         {panelTabs.map((item) => (
           <button
             key={item.id}

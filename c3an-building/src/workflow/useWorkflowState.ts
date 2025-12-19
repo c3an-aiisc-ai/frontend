@@ -108,7 +108,7 @@ export function useWorkflowState(): WorkflowState {
   const [draggingUploadId, setDraggingUploadId] = useState<string | null>(null);
   const [draggingOutputId, setDraggingOutputId] = useState<string | null>(null);
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const nextIdRef = useRef(1);
   const nextBlockIdRef = useRef(1);
   const nextToolIdRef = useRef(1);

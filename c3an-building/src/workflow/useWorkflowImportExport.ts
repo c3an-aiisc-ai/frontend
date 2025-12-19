@@ -243,6 +243,11 @@ export function useWorkflowImportExport({
                 .filter((item): item is PlanTriple => Boolean(item))
             : null;
           if (!triples || triples.length === 0) {
+            if (template) {
+              setAgentSpecTemplate(template);
+              setAgentParseError(null);
+              return;
+            }
             alert("Unrecognised JSON format");
             return;
           }
@@ -348,7 +353,7 @@ export function useWorkflowImportExport({
       reader.readAsText(file);
       e.target.value = "";
     },
-    [applyImportedWorkspace, buildAgents],
+    [applyImportedWorkspace, buildAgents, setAgentParseError, setAgentSpecTemplate],
   );
 
   const handleDownloadJson = useCallback(() => {

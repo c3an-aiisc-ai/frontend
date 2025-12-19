@@ -2,6 +2,7 @@ import type { DragEvent } from "react";
 import BlocksPanel from "../components/panels/BlocksPanel";
 import SettingsPanel from "../components/panels/SettingsPanel";
 import ToolsPanel from "../components/panels/ToolsPanel";
+import type { RegistryTemplatePreset } from "../constants/registryTemplates";
 import type { PanelKey, ThemeMode, ToolPreset } from "../types/workflow";
 
 type Props = {
@@ -18,6 +19,12 @@ type Props = {
   onToolDragStart: (toolName: string) => (event: DragEvent<HTMLDivElement>) => void;
   onSelectTheme: (mode: ThemeMode) => void;
   onClearSelection: () => void;
+  registryTemplates?: RegistryTemplatePreset[];
+  activeRegistryTemplateId?: string | null;
+  onApplyRegistryTemplate?: (id: string) => void;
+  onClearRegistryTemplate?: () => void;
+  hasRegistryTemplate?: boolean;
+  activeRegistryLabel?: string | null;
 };
 
 export default function WorkflowSidebarPanels({
@@ -34,6 +41,12 @@ export default function WorkflowSidebarPanels({
   onToolDragStart,
   onSelectTheme,
   onClearSelection,
+  registryTemplates,
+  activeRegistryTemplateId,
+  onApplyRegistryTemplate,
+  onClearRegistryTemplate,
+  hasRegistryTemplate,
+  activeRegistryLabel,
 }: Props) {
   return (
     <>
@@ -50,7 +63,17 @@ export default function WorkflowSidebarPanels({
       )}
       {activePanel === "tools" && <ToolsPanel toolPalette={toolPalette} onToolDragStart={onToolDragStart} />}
       {activePanel === "settings" && (
-        <SettingsPanel theme={theme} onSelectTheme={onSelectTheme} onClearSelection={onClearSelection} />
+        <SettingsPanel
+          theme={theme}
+          onSelectTheme={onSelectTheme}
+          onClearSelection={onClearSelection}
+          registryTemplates={registryTemplates}
+          activeRegistryTemplateId={activeRegistryTemplateId}
+          onApplyRegistryTemplate={onApplyRegistryTemplate}
+          onClearRegistryTemplate={onClearRegistryTemplate}
+          hasRegistryTemplate={hasRegistryTemplate}
+          activeRegistryLabel={activeRegistryLabel}
+        />
       )}
     </>
   );
