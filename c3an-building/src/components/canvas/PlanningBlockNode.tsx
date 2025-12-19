@@ -83,8 +83,8 @@ export default function PlanningBlockNode({
     >
       <div
         ref={cardRef}
-        className={`group relative min-w-[220px] max-w-[340px] w-fit min-h-[120px] rounded-lg border border-slate-200 bg-white/90 px-3 pt-2 pb-3 shadow-md backdrop-blur-sm transition-all duration-150 cursor-grab active:cursor-grabbing select-none ${
-          linkingFrom || linkingTarget ? "ring-2 ring-sky-300" : ""
+        className={`plan-card group min-w-[220px] max-w-[340px] min-h-[120px] ${
+          linkingFrom || linkingTarget ? "plan-card-active" : ""
         }`}
       >
         <div className="flex items-start justify-between">

@@ -120,10 +120,10 @@ function normalizePlanPayload(value: unknown, index: number): Record<string, unk
   };
 }
 
-function queuePlanForWorkflow(plan: Record<string, unknown>) {
+function queuePlansForBench(plans: Record<string, unknown>[]) {
   if (typeof window === "undefined" || typeof localStorage === "undefined") return;
   try {
-    localStorage.setItem(PENDING_PLAN_STORAGE_KEY, JSON.stringify(plan));
+    localStorage.setItem(PENDING_PLAN_STORAGE_KEY, JSON.stringify({ mode: "plan", plans }));
   } catch {
     // Ignore storage failures (e.g., quota or private mode).
   }
@@ -178,7 +178,7 @@ export default function PlanningPage() {
       writeCustomPlans(nextPlans);
       setLastAdded(normalized);
       setParseError(null);
-      queuePlanForWorkflow(payloads[0]);
+      queuePlansForBench(payloads);
       window.location.hash = "#/workflow";
     } catch (error) {
       setParseError(error instanceof Error ? `Invalid JSON: ${error.message}` : "Invalid JSON.");
@@ -244,7 +244,7 @@ export default function PlanningPage() {
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <button
-              className="rounded-full border border-slate-200 bg-white/90 px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-white"
+              className="btn-pill btn-pill-light"
               onClick={() => {
                 window.location.hash = "#/workflow";
               }}
@@ -252,7 +252,7 @@ export default function PlanningPage() {
               Workflow builder
             </button>
             <button
-              className="rounded-full border border-slate-200 bg-white/90 px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-white"
+              className="btn-pill btn-pill-light"
               onClick={() => {
                 window.location.hash = "#/evaluation";
               }}
@@ -260,7 +260,7 @@ export default function PlanningPage() {
               Evaluation
             </button>
             <button
-              className="rounded-full border border-slate-200 bg-white/90 px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-white"
+              className="btn-pill btn-pill-light"
               onClick={() => {
                 window.location.hash = "#/agentgen";
               }}
@@ -268,7 +268,7 @@ export default function PlanningPage() {
               AgentGen
             </button>
             <button
-              className="rounded-full border border-amber-200 bg-amber-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-amber-500"
+              className="btn-pill btn-pill-amber"
               onClick={handleGenerate}
             >
               Generate plan
@@ -277,7 +277,7 @@ export default function PlanningPage() {
         </header>
 
         <div className="mt-10 grid gap-6 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
-          <section className="rounded-2xl border border-slate-200 bg-white/80 p-5 shadow-sm">
+          <section className="panel bg-white/80">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h2 className="text-lg font-semibold text-slate-900">JSON intake</h2>
@@ -285,7 +285,7 @@ export default function PlanningPage() {
                   Accepts {`{ plans: [...] }`}, an array, or a single plan object with triples.
                 </p>
               </div>
-              <span className="rounded-full bg-amber-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-amber-700">
+              <span className="pill-tag pill-tag-amber">
                 JSON
               </span>
             </div>
@@ -307,19 +307,19 @@ export default function PlanningPage() {
 
             <div className="mt-4 flex flex-wrap items-center gap-2">
               <button
-                className="rounded-md bg-amber-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-amber-500"
+                className="btn-sm btn-sm-solid-amber px-4"
                 onClick={handleGenerate}
               >
                 Generate plan
               </button>
               <button
-                className="rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                className="btn-sm btn-sm-outline"
                 onClick={handleUseSample}
               >
                 Use sample
               </button>
               <button
-                className="rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                className="btn-sm btn-sm-outline"
                 onClick={handleClearInput}
               >
                 Clear
@@ -327,7 +327,7 @@ export default function PlanningPage() {
             </div>
           </section>
 
-          <section className="rounded-2xl border border-slate-200 bg-white/80 p-5 shadow-sm">
+          <section className="panel bg-white/80">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
                 <h2 className="text-lg font-semibold text-slate-900">Custom plan templates</h2>
@@ -336,14 +336,14 @@ export default function PlanningPage() {
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold text-slate-600">
-                <span className="rounded-full bg-slate-100 px-3 py-1">Plans: {customPlans.length}</span>
-                <span className="rounded-full bg-slate-100 px-3 py-1">Triples: {planStats.totalTriples}</span>
-                <span className="rounded-full bg-slate-100 px-3 py-1">Nodes: {planStats.nodeCount}</span>
+                <span className="badge">Plans: {customPlans.length}</span>
+                <span className="badge">Triples: {planStats.totalTriples}</span>
+                <span className="badge">Nodes: {planStats.nodeCount}</span>
               </div>
             </div>
 
             {customPlans.length === 0 ? (
-              <div className="mt-6 rounded-xl border border-dashed border-slate-200 bg-white/70 p-6 text-center text-sm text-slate-500">
+              <div className="mt-6 empty-state p-6 text-center text-sm text-slate-500">
                 No custom plans yet. Generate some from JSON to populate the palette.
               </div>
             ) : (
@@ -351,7 +351,7 @@ export default function PlanningPage() {
                 {customPlans.map((plan, index) => (
                   <div
                     key={`${plan.id}-${index}`}
-                    className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+                    className="card"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div>
@@ -369,10 +369,10 @@ export default function PlanningPage() {
                     </div>
 
                     <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] font-semibold text-slate-600">
-                      <span className="rounded-full bg-amber-50 px-2 py-1 text-amber-700">
+                      <span className="badge-tight bg-amber-50 text-amber-700">
                         {plan.triples.length} triples
                       </span>
-                      <span className="rounded-full bg-slate-100 px-2 py-1 text-slate-700">
+                      <span className="badge-tight text-slate-700">
                         ID: {plan.id}
                       </span>
                     </div>
@@ -399,7 +399,7 @@ export default function PlanningPage() {
             {customPlans.length > 0 && (
               <div className="mt-4 flex justify-end">
                 <button
-                  className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-100"
+                  className="btn-sm btn-sm-rose"
                   onClick={handleClearPlans}
                 >
                   Clear custom plans

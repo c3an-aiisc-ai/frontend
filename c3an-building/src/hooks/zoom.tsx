@@ -15,7 +15,7 @@ type Options = {
 export function usePanZoom({
   initial = { x: 0, y: 0, zoom: 1 },
   minZoom = 0.1,
-  maxZoom = 1,
+  maxZoom = 3,
   zoomStep = 0.02,
   shouldAllowPan,
   isPanDisabled,

@@ -61,9 +61,9 @@ export default function ToolNode({
       onPointerLeave={() => onHoverLeave(tool.id)}
     >
       <div
-        className={`relative overflow-visible ${
-          isActive ? "ring-2 ring-offset-2 ring-offset-white shadow-lg" : ""
-        } ${isDragging ? "scale-[1.01]" : ""} cursor-grab active:cursor-grabbing select-none`}
+        className={`canvas-tool-shell ${
+          isActive ? "canvas-tool-shell-active" : ""
+        } ${isDragging ? "scale-[1.01]" : ""}`}
         data-tool
         style={{ width, height }}
         onPointerDown={onPointerDown(tool.id)}
@@ -72,17 +72,15 @@ export default function ToolNode({
       >
         {/* Background gradient */}
         <div
-          className={`absolute inset-0 rounded-lg bg-gradient-to-br ${tool.gradient} ring-1 ring-inset ${tool.ring} shadow-sm transition-all duration-150 pointer-events-none`}
+          className={`canvas-tool-bg ${tool.gradient} ${tool.ring}`}
         />
 
         {/* Content */}
-        <div className="relative h-full w-full flex flex-col items-center justify-center px-4 text-center gap-2">
+        <div className="canvas-tool-content">
           {/* Remove button */}
           <button
-            className={`absolute -right-3 -top-3 flex h-6 w-6 items-center justify-center rounded-full bg-slate-900 text-white text-xs shadow-md transition-all duration-150 ${
-              isActive
-                ? "scale-100 opacity-100"
-                : "scale-75 opacity-0 pointer-events-none"
+            className={`canvas-remove-btn canvas-remove-btn-sm ${
+              isActive ? "canvas-remove-btn-visible" : "canvas-remove-btn-hidden"
             }`}
             onPointerDown={(e) => {
               e.stopPropagation();

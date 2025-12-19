@@ -232,7 +232,7 @@ export default function EvaluationPage() {
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <button
-              className="rounded-full border border-slate-200 bg-white/90 px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-white"
+              className="btn-pill btn-pill-light"
               onClick={() => {
                 window.location.hash = "#/workflow";
               }}
@@ -240,7 +240,7 @@ export default function EvaluationPage() {
               Workflow builder
             </button>
             <button
-              className="rounded-full border border-slate-200 bg-white/90 px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-white"
+              className="btn-pill btn-pill-light"
               onClick={() => {
                 window.location.hash = "#/agentgen";
               }}
@@ -248,7 +248,7 @@ export default function EvaluationPage() {
               AgentGen
             </button>
             <button
-              className="rounded-full border border-slate-200 bg-white/90 px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-white"
+              className="btn-pill btn-pill-light"
               onClick={() => {
                 window.location.hash = "#/planning";
               }}
@@ -256,7 +256,7 @@ export default function EvaluationPage() {
               Planning
             </button>
             <button
-              className="rounded-full border border-sky-200 bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-sky-500"
+              className="btn-pill btn-pill-sky"
               onClick={handleAddMapping}
             >
               Add mapping
@@ -264,7 +264,7 @@ export default function EvaluationPage() {
           </div>
         </header>
 
-        <section className="mt-10 rounded-2xl border border-slate-200 bg-white/80 p-5 shadow-sm">
+        <section className="mt-10 panel bg-white/80">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
@@ -273,13 +273,13 @@ export default function EvaluationPage() {
               <h2 className="mt-2 text-lg font-semibold text-slate-900">Evaluation blueprint</h2>
             </div>
             <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600">
-              <span className="rounded-full bg-slate-100 px-3 py-1 font-semibold text-slate-700">
+              <span className="badge font-semibold text-slate-700">
                 Inputs: {inputs.length}
               </span>
-              <span className="rounded-full bg-slate-100 px-3 py-1 font-semibold text-slate-700">
+              <span className="badge font-semibold text-slate-700">
                 Outputs: {outputs.length}
               </span>
-              <span className="rounded-full bg-slate-100 px-3 py-1 font-semibold text-slate-700">
+              <span className="badge font-semibold text-slate-700">
                 Mappings: {summary.mappingCount}
               </span>
             </div>
@@ -315,12 +315,12 @@ export default function EvaluationPage() {
         </section>
 
         <section className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]">
-          <div className="rounded-2xl border border-slate-200 bg-white/85 p-5 shadow-sm">
+          <div className="panel bg-white/85">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-600">
                 Inputs
               </h3>
-              <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold text-slate-600">
+              <span className="badge text-[11px] font-semibold text-slate-600">
                 {inputs.length} streams
               </span>
             </div>
@@ -329,12 +329,12 @@ export default function EvaluationPage() {
                 inputs.map((input) => (
                   <span
                     key={input}
-                    className="group inline-flex items-center gap-2 rounded-full bg-white px-3 py-1 text-[11px] font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200"
+                    className="group chip"
                   >
                     {input}
                     <button
                       type="button"
-                      className="rounded-full bg-slate-200 px-2 text-[10px] text-slate-600 opacity-70 transition group-hover:opacity-100"
+                      className="chip-close"
                       onClick={() => handleRemoveInput(input)}
                       aria-label={`Remove ${input}`}
                     >
@@ -368,12 +368,12 @@ export default function EvaluationPage() {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-white/85 p-5 shadow-sm">
+          <div className="panel bg-white/85">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-600">
                 Metrics library
               </h3>
-              <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold text-slate-600">
+              <span className="badge text-[11px] font-semibold text-slate-600">
                 {evalOptions.length} metrics
               </span>
             </div>
@@ -404,12 +404,12 @@ export default function EvaluationPage() {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-white/85 p-5 shadow-sm">
+          <div className="panel bg-white/85">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-600">
                 Outputs
               </h3>
-              <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold text-slate-600">
+              <span className="badge text-[11px] font-semibold text-slate-600">
                 {outputs.length} channels
               </span>
             </div>
@@ -418,12 +418,12 @@ export default function EvaluationPage() {
                 outputs.map((output) => (
                   <span
                     key={output}
-                    className="group inline-flex items-center gap-2 rounded-full bg-white px-3 py-1 text-[11px] font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200"
+                    className="group chip"
                   >
                     {output}
                     <button
                       type="button"
-                      className="rounded-full bg-slate-200 px-2 text-[10px] text-slate-600 opacity-70 transition group-hover:opacity-100"
+                      className="chip-close"
                       onClick={() => handleRemoveOutput(output)}
                       aria-label={`Remove ${output}`}
                     >

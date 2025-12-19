@@ -41,6 +41,7 @@ import {
 import { readCustomAgents } from "../utils/customAgents";
 import { readCustomPlans } from "../utils/customPlans";
 import { exportAgentViewPlanJson, importAgentViewPlanJson } from "../components/io_streams/handleIO";
+import { parsePlanningJSON } from "../components/io_streams/parsePlan";
 import type {
   AgentBlock as AgentBlockType,
   AnchorPoint,
@@ -439,15 +440,18 @@ export default function WorkflowEditorPage() {
           connections: loadedConnections,
         });
       } else {
-        setBlocks([]);
-        setTools([]);
-        setConnections([]);
-        setSelectedEvals([]);
+        applyPlanJson({
+          plan_id: plan.id,
+          query: plan.query,
+          triples: plan.triples,
+        });
+        return;
       }
 
       setViewMode("agent");
     },
     [
+      applyPlanJson,
       bumpIdCounters,
       clearWorkspaceUIState,
       recalcBlockPorts,
@@ -460,6 +464,62 @@ export default function WorkflowEditorPage() {
     ]
   );
 
+  const buildPlanBlocksFromPayload = useCallback((entries: unknown[]) => {
+    const colCount = 2;
+    const startX = 220;
+    const startY = 180;
+    const gapX = 320;
+    const gapY = 240;
+    const usedIds = new Set<string>();
+
+    return entries
+      .map((entry, index) => {
+        if (!isRecord(entry)) return null;
+        let parsed: PlanningBlock;
+        try {
+          parsed = parsePlanningJSON(entry);
+        } catch {
+          return null;
+        }
+
+        const record = entry as Record<string, unknown>;
+        const rawId =
+          typeof record.plan_id === "string"
+            ? record.plan_id.trim()
+            : typeof record.id === "string"
+              ? record.id.trim()
+              : "";
+        const baseId = rawId || parsed.id;
+        let id = baseId;
+        if (usedIds.has(id)) {
+          let counter = 1;
+          while (usedIds.has(`${baseId}-${counter}`)) counter += 1;
+          id = `${baseId}-${counter}`;
+        }
+        usedIds.add(id);
+
+        const name = typeof record.name === "string" ? record.name.trim() : baseId;
+        const query =
+          typeof record.query === "string"
+            ? record.query.trim()
+            : typeof record.intent === "string"
+              ? record.intent.trim()
+              : parsed.query;
+
+        const col = index % colCount;
+        const row = Math.floor(index / colCount);
+        return {
+          id: String(id),
+          x: startX + col * gapX,
+          y: startY + row * gapY,
+          name: name || String(id),
+          query: query ?? "",
+          triples: parsed.triples,
+        } satisfies PlanningBlock;
+      })
+      .filter((plan): plan is PlanningBlock => Boolean(plan));
+  }, []);
+
   useEffect(() => {
     if (typeof window === "undefined" || typeof localStorage === "undefined") return;
     const raw = localStorage.getItem(PENDING_PLAN_STORAGE_KEY);
@@ -467,11 +527,42 @@ export default function WorkflowEditorPage() {
     localStorage.removeItem(PENDING_PLAN_STORAGE_KEY);
     try {
       const payload = JSON.parse(raw) as unknown;
+      if (isRecord(payload) && payload.mode === "plan" && Array.isArray(payload.plans)) {
+        const nextPlans = buildPlanBlocksFromPayload(payload.plans);
+        if (nextPlans.length) {
+          const maxPlan = nextPlans.reduce((max, plan) => {
+            if (!plan.id.startsWith("plan-")) return max;
+            const n = Number.parseInt(plan.id.slice(5), 10);
+            return Number.isFinite(n) ? Math.max(max, n) : max;
+          }, 0);
+          if (maxPlan > 0) nextPlanIdRef.current = Math.max(nextPlanIdRef.current, maxPlan + 1);
+          setPlans(nextPlans);
+          setPlanConnections([]);
+          planLinkFromRef.current = null;
+          setActivePlanId(null);
+          setViewMode("plan");
+          setActivePanel((prev) => (prev === "tools" ? "blocks" : prev));
+          return;
+        }
+      }
+      if (isRecord(payload) && payload.mode === "agent" && payload.plan) {
+        applyPlanJson(payload.plan);
+        return;
+      }
       applyPlanJson(payload);
     } catch {
       // Ignore invalid pending plan payloads.
     }
-  }, [applyPlanJson]);
+  }, [
+    applyPlanJson,
+    buildPlanBlocksFromPayload,
+    nextPlanIdRef,
+    setActivePlanId,
+    setActivePanel,
+    setPlanConnections,
+    setPlans,
+    setViewMode,
+  ]);
 
   const handleC3ANClick = useCallback(() => {
     window.open("https://c3an.aiisc.ai/", "_blank", "noopener,noreferrer");
@@ -893,7 +984,6 @@ export default function WorkflowEditorPage() {
       setHoveredInput(null);
       setHoveredOutput(null);
 
-      let effectiveFrom = from;
       if (from.type === "block") {
         const sourceBlock = blocks.find((b) => b.id === from.id);
         if (!sourceBlock) return;
@@ -904,30 +994,15 @@ export default function WorkflowEditorPage() {
 
         // If the user hasn't enabled any outputs (shouldn't happen), do nothing.
         if (enabledPorts.length === 0) return;
-
-        const usedPorts = new Set(
-          connections
-            .filter((c) => c.from.type === "block" && c.from.id === from.id)
-            .map((c) => c.from.port)
-        );
-
-        // If this port is already used, advance to the next enabled free port.
-        if (usedPorts.has(from.port)) {
-          const nextFree = enabledPorts.find((p) => !usedPorts.has(p));
-          if (typeof nextFree !== "number") return;
-          effectiveFrom = { ...from, port: nextFree };
-        } else if (!enabledPorts.includes(from.port)) {
-          // Shouldn't happen because hidden ports don't render handles, but keep safe.
-          return;
-        }
+        if (!enabledPorts.includes(from.port)) return;
       }
 
-      const anchor = getOutputAnchor(effectiveFrom);
+      const anchor = getOutputAnchor(from);
       if (!anchor) return;
       linkingRef.current = true;
-      setLinking({ origin: "output", from: effectiveFrom, current: anchor });
+      setLinking({ origin: "output", from, current: anchor });
     },
-    [blocks, connections, getOutputAnchor, linkingRef, setHoveredInput, setHoveredOutput, setLinking]
+    [blocks, getOutputAnchor, linkingRef, setHoveredInput, setHoveredOutput, setLinking]
   );
 
   const moveLinking = useCallback(
@@ -961,9 +1036,6 @@ export default function WorkflowEditorPage() {
       const from = linking.origin === "output" ? linking.from : hoveredOutput;
 
       if (target && from && !(target.type === from.type && target.id === from.id)) {
-        // First inbound defaults to slot 0. Additional inbound connections will
-        // auto-allocate the next free input slot (0..MAX_IO-1) so you can
-        // connect multiple agents into the same target block.
         const normalizedTarget: LinkTarget =
           target.type === "block" && (target.inputIndex ?? 0) < TOOL_PORT_OFFSET
             ? { ...target, inputIndex: target.inputIndex ?? 0 }
@@ -976,7 +1048,6 @@ export default function WorkflowEditorPage() {
           linkingRef.current = false;
           return;
         }
-
         if (
           from.type === "tool" &&
           normalizedTarget.type === "block" &&
@@ -995,55 +1066,7 @@ export default function WorkflowEditorPage() {
               ? prev.filter((c) => !(c.from.type === "tool" && c.from.id === from.id))
               : prev;
 
-          let targetSlot = normalizedTarget.inputIndex ?? 0;
-          let finalTarget: LinkTarget = normalizedTarget;
-
-          if (normalizedTarget.type === "block" && targetSlot < TOOL_PORT_OFFSET) {
-            const targetBlock = blocks.find((b) => b.id === normalizedTarget.id);
-            const enabledInputs = (targetBlock?.inputRequired ?? [])
-              .map((enabled, idx) => (enabled ? idx : null))
-              .filter((idx): idx is number => typeof idx === "number");
-
-            if (enabledInputs.length === 0) return prev;
-
-            const inbound = base.filter(
-              (c) =>
-                c.to.type === "block" &&
-                c.to.id === normalizedTarget.id &&
-                (c.to.inputIndex ?? 0) < TOOL_PORT_OFFSET
-            );
-            const occupied = new Set(inbound.map((c) => c.to.inputIndex ?? 0));
-
-            // First inbound always uses slot 0.
-            if (inbound.length === 0) {
-              targetSlot = enabledInputs.includes(targetSlot) ? targetSlot : enabledInputs[0];
-            } else if (occupied.has(targetSlot) || !enabledInputs.includes(targetSlot)) {
-              // Additional inbound: pick the next free *enabled* slot.
-              const free = enabledInputs.find((i) => !occupied.has(i));
-              if (typeof free === "number") targetSlot = free;
-              else return prev;
-            }
-
-            finalTarget = { ...normalizedTarget, inputIndex: targetSlot };
-          }
-
-          // Enforce: a single source agent cannot feed multiple inputs of the same target agent.
-          // This ensures multi-input targets are driven by multiple *different* agents.
-          if (
-            from.type === "block" &&
-            finalTarget.type === "block" &&
-            (finalTarget.inputIndex ?? 0) < TOOL_PORT_OFFSET
-          ) {
-            const alreadyConnectedFromSameSource = base.some(
-              (c) =>
-                c.from.type === "block" &&
-                c.from.id === from.id &&
-                c.to.type === "block" &&
-                c.to.id === finalTarget.id &&
-                (c.to.inputIndex ?? 0) < TOOL_PORT_OFFSET
-            );
-            if (alreadyConnectedFromSameSource) return prev;
-          }
+          const finalTarget = normalizedTarget;
 
           const isDuplicate = base.some(
             (conn) =>
@@ -1056,17 +1079,7 @@ export default function WorkflowEditorPage() {
           );
           if (isDuplicate) return prev;
 
-          // Enforce a single connection per *slot* (but allow multiple slots).
-          const withoutExistingTargetSlot = base.filter(
-            (c) =>
-              !(
-                c.to.type === finalTarget.type &&
-                c.to.id === finalTarget.id &&
-                (c.to.inputIndex ?? 0) === (finalTarget.inputIndex ?? 0)
-              )
-          );
-
-          const next = [...withoutExistingTargetSlot, { id: `conn-${id}`, from, to: finalTarget }];
+          const next = [...base, { id: `conn-${id}`, from, to: finalTarget }];
           setBlocks((state) => recalcBlockPorts(next, state));
           return next;
         });
@@ -1077,7 +1090,7 @@ export default function WorkflowEditorPage() {
       setHoveredInput(null);
       setHoveredOutput(null);
     },
-    [blocks, hoveredBlockId, hoveredInput, hoveredOutput, linking, nextConnectionIdRef, recalcBlockPorts, setBlocks, setConnections, setHoveredInput, setHoveredOutput, setLinking, linkingRef]
+    [hoveredBlockId, hoveredInput, hoveredOutput, linking, nextConnectionIdRef, recalcBlockPorts, setBlocks, setConnections, setHoveredInput, setHoveredOutput, setLinking, linkingRef]
   );
 
   const handleCanvasPointerDown = useCallback(

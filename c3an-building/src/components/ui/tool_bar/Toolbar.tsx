@@ -43,18 +43,18 @@ export default function Toolbar({
 
   const actionButtonClass =
     theme === "dark"
-      ? "rounded-full border border-slate-700 bg-slate-800/90 px-4 py-2 text-sm font-semibold text-slate-100 shadow-sm hover:bg-slate-700"
-      : "rounded-full border border-slate-200 bg-white/90 px-4 py-2 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-100";
+      ? "toolbar-btn toolbar-btn-dark"
+      : "toolbar-btn toolbar-btn-light";
 
   const menuPanelClass =
     theme === "dark"
-      ? "absolute right-0 mt-2 w-48 rounded-xl border border-slate-700 bg-slate-900/95 p-2 shadow-lg"
-      : "absolute right-0 mt-2 w-48 rounded-xl border border-slate-200 bg-white p-2 shadow-lg";
+      ? "toolbar-menu toolbar-menu-dark"
+      : "toolbar-menu toolbar-menu-light";
 
   const menuItemClass =
     theme === "dark"
-      ? "flex w-full items-center rounded-lg px-3 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-800"
-      : "flex w-full items-center rounded-lg px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100";
+      ? "toolbar-menu-item toolbar-menu-item-dark"
+      : "toolbar-menu-item toolbar-menu-item-light";
 
   useEffect(() => {
     if (!isMenuOpen) return;

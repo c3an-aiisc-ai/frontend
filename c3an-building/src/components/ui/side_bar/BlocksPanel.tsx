@@ -30,7 +30,7 @@ export default function BlocksPanel({
         <div className="space-y-4">
           <p className="text-xs uppercase tracking-wide text-slate-500">Plan Blocks</p>
           <div
-            className="cursor-grab rounded-xl border border-slate-200 bg-gradient-to-br from-white via-white to-slate-50 p-4 shadow-sm active:cursor-grabbing"
+            className="draggable-card"
             draggable
             onDragStart={onPlanDragStart()}
           >
@@ -64,7 +64,7 @@ export default function BlocksPanel({
             </button>
           </div>
           {planTemplates.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-slate-200 bg-white/70 p-4 text-xs text-slate-500">
+            <div className="empty-state p-4 text-xs text-slate-500">
               No plan templates yet. Add some from the planning page.
             </div>
           ) : (
@@ -72,7 +72,7 @@ export default function BlocksPanel({
               {planTemplates.map((plan, index) => (
                 <div
                   key={`${plan.id}-${index}`}
-                  className="cursor-grab rounded-xl border border-slate-200 bg-gradient-to-br from-white via-white to-slate-50 p-4 shadow-sm active:cursor-grabbing"
+                  className="draggable-card"
                   draggable
                   onDragStart={onPlanDragStart(plan)}
                 >
@@ -118,7 +118,7 @@ export default function BlocksPanel({
     return (
       <div
         key={`${agent.id}${keySuffix}`}
-        className="cursor-grab rounded-xl border border-slate-200 bg-gradient-to-br from-white via-white to-slate-50 p-4 shadow-sm active:cursor-grabbing"
+        className="draggable-card"
         draggable
         onDragStart={onAgentDragStart(agent.id)}
         title={agent.id}
@@ -177,7 +177,7 @@ export default function BlocksPanel({
           </button>
         </div>
         {customAgents.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-slate-200 bg-white/70 p-4 text-xs text-slate-500">
+          <div className="empty-state p-4 text-xs text-slate-500">
             No custom agents yet. Generate some in AgentGen to add them here.
           </div>
         ) : (

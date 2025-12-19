@@ -60,17 +60,17 @@ export default function EvalsModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+      className="modal-backdrop"
       onClick={onClose}
     >
       <div
-        className="relative w-[680px] max-h-[85vh] overflow-visible rounded-xl bg-white shadow-2xl border border-slate-200"
+        className="modal-card w-[680px] max-h-[85vh]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Close button */}
-        <div className="absolute -right-5 -top-5 z-50">
+        <div className="modal-close-wrap">
           <button
-            className="h-9 w-9 rounded-full bg-slate-900 text-white text-sm font-semibold shadow-lg"
+            className="modal-close-btn"
             onClick={onClose}
             aria-label="Close"
           >
@@ -95,7 +95,7 @@ export default function EvalsModal({
                   Select metrics to monitor agent performance and quality
                 </p>
               </div>
-              <span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-indigo-700">
+              <span className="pill-tag text-xs bg-indigo-50 text-indigo-700">
                 {selectedEvals.length} Selected
               </span>
             </div>

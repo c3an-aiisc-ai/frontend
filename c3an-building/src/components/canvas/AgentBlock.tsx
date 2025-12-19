@@ -73,9 +73,9 @@ export default function AgentBlock({
       onPointerLeave={() => onHoverLeave(block.id)}
     >
       <div
-        className={`relative rounded-lg border border-slate-200 bg-white/90 shadow-md backdrop-blur-sm transition-all duration-150 w-[220px] px-3 pt-2 pb-3 scale-[0.97] min-h-[120px] ${
-          showConnections ? "ring-2 ring-emerald-300" : ""
-        } ${isDragging ? "scale-[1.01]" : ""} cursor-grab active:cursor-grabbing select-none`}
+        className={`canvas-agent-card min-h-[120px] scale-[0.97] ${
+          showConnections ? "canvas-agent-card-active" : ""
+        } ${isDragging ? "scale-[1.01]" : ""}`}
         data-block
         style={{ width: 220, height: handles.height }}
         onPointerDown={onPointerDown(block.id)}
@@ -88,10 +88,8 @@ export default function AgentBlock({
       >
         {/* Remove button */}
         <button
-          className={`absolute -right-3 -top-3 flex h-7 w-7 items-center justify-center rounded-full bg-slate-900 text-white text-xs shadow-md transition-all duration-150 ${
-            isActive
-              ? "scale-100 opacity-100"
-              : "scale-75 opacity-0 pointer-events-none"
+          className={`canvas-remove-btn canvas-remove-btn-lg ${
+            isActive ? "canvas-remove-btn-visible" : "canvas-remove-btn-hidden"
           }`}
           onPointerDown={(e) => {
             e.stopPropagation();

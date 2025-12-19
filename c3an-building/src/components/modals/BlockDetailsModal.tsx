@@ -35,17 +35,17 @@ export default function BlockDetailsModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+      className="modal-backdrop"
       onClick={onClose}
     >
       <div
-        className="relative w-[680px] max-h-[80vh] overflow-visible rounded-xl bg-white shadow-2xl border border-slate-200 p-5"
+        className="modal-card w-[680px] max-h-[80vh] p-5"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Close button */}
-        <div className="absolute -right-5 -top-5 z-[9999]">
+        <div className="modal-close-wrap">
           <button
-            className="h-9 w-9 rounded-full bg-slate-900 text-white text-sm font-semibold shadow-lg"
+            className="modal-close-btn"
             onClick={onClose}
             aria-label="Close"
           >
@@ -68,14 +68,14 @@ export default function BlockDetailsModal({
               </p>
             )}
           </div>
-          <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-700">
+          <span className="pill-tag text-xs bg-emerald-50 text-emerald-700">
             Agent
           </span>
         </div>
 
         {/* Agent Registry Details */}
-        <div className="mt-4 rounded-lg border border-slate-200 p-3">
-          <p className="text-xs font-semibold uppercase text-slate-500 mb-2">Details</p>
+        <div className="mt-4 panel-sm">
+          <p className="label-xs mb-2">Details</p>
           <div className="space-y-2 text-sm text-slate-800">
             <div className="grid grid-cols-[140px_1fr] gap-x-3 gap-y-1">
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">id</p>
@@ -98,8 +98,8 @@ export default function BlockDetailsModal({
         {/* Inputs/Outputs Grid */}
         <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
           {/* Inputs */}
-          <div className="rounded-lg border border-slate-200 p-3">
-            <p className="text-xs font-semibold uppercase text-slate-500">
+          <div className="panel-sm">
+            <p className="label-xs">
               Inputs
             </p>
             <div className="mt-2 space-y-1.5">
@@ -149,8 +149,8 @@ export default function BlockDetailsModal({
           </div>
 
           {/* Outputs */}
-          <div className="rounded-lg border border-slate-200 p-3">
-            <p className="text-xs font-semibold uppercase text-slate-500">
+          <div className="panel-sm">
+            <p className="label-xs">
               Outputs
             </p>
             <div className="mt-2 space-y-1.5">
@@ -201,8 +201,8 @@ export default function BlockDetailsModal({
         </div>
 
         {/* Add Tool Section */}
-        <div className="mt-4 rounded-lg border border-slate-200 p-3">
-          <p className="text-xs font-semibold uppercase text-slate-500 mb-2">
+        <div className="mt-4 panel-sm">
+          <p className="label-xs mb-2">
             Attach tool
           </p>
           <div className="flex items-center gap-2">
