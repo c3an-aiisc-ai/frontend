@@ -66,7 +66,7 @@ type WorkflowState = {
   setDraggingUploadId: Dispatch<SetStateAction<string | null>>;
   draggingOutputId: string | null;
   setDraggingOutputId: Dispatch<SetStateAction<string | null>>;
-  fileInputRef: RefObject<HTMLInputElement>;
+  fileInputRef: RefObject<HTMLInputElement | null>;
   nextIdRef: MutableRefObject<number>;
   nextBlockIdRef: MutableRefObject<number>;
   nextToolIdRef: MutableRefObject<number>;

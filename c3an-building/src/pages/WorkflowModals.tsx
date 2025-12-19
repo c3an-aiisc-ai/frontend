@@ -18,15 +18,15 @@ type Props = {
   connections: Connection[];
   toolPalette: ToolPreset[];
   modalToolChoice: string;
-  onChangeToolChoice: (value: string) => void;
+  onToolChoiceChange: (value: string) => void;
   onAddTool: (blockId: string, toolName: string) => void;
   onCloseBlock: () => void;
   onCloseTool: () => void;
   getBlockMode: (block: AgentBlock) => string | null;
-  toggleInputRequired: (blockId: string, index: number) => void;
-  toggleOutputRequired: (blockId: string, index: number) => void;
-  toggleToolInputRequired: (toolId: string, index: number) => void;
-  toggleToolOutputRequired: (toolId: string, index: number) => void;
+  onToggleInputRequired: (blockId: string, index: number) => void;
+  onToggleOutputRequired: (blockId: string, index: number) => void;
+  onToggleToolInputRequired: (toolId: string, index: number) => void;
+  onToggleToolOutputRequired: (toolId: string, index: number) => void;
   evalOptions: EvalOption[];
   selectedEvals: string[];
   onToggleEval: (evalId: string) => void;
@@ -43,15 +43,15 @@ export default function WorkflowModals({
   connections,
   toolPalette,
   modalToolChoice,
-  onChangeToolChoice,
+  onToolChoiceChange,
   onAddTool,
   onCloseBlock,
   onCloseTool,
   getBlockMode,
-  toggleInputRequired,
-  toggleOutputRequired,
-  toggleToolInputRequired,
-  toggleToolOutputRequired,
+  onToggleInputRequired,
+  onToggleOutputRequired,
+  onToggleToolInputRequired,
+  onToggleToolOutputRequired,
   evalOptions,
   selectedEvals,
   onToggleEval,
@@ -66,15 +66,14 @@ export default function WorkflowModals({
       {modalBlockId && activeBlock && (
         <BlockDetailsModal
           block={activeBlock}
-          connections={connections}
           toolPalette={toolPalette}
           modalToolChoice={modalToolChoice}
-          onChangeToolChoice={onChangeToolChoice}
+          onToolChoiceChange={onToolChoiceChange}
           onAddTool={onAddTool}
           onClose={onCloseBlock}
           getBlockMode={getBlockMode}
-          toggleInputRequired={toggleInputRequired}
-          toggleOutputRequired={toggleOutputRequired}
+          onToggleInputRequired={onToggleInputRequired}
+          onToggleOutputRequired={onToggleOutputRequired}
         />
       )}
 
@@ -83,8 +82,8 @@ export default function WorkflowModals({
           tool={activeTool}
           connections={connections}
           onClose={onCloseTool}
-          toggleToolInputRequired={toggleToolInputRequired}
-          toggleToolOutputRequired={toggleToolOutputRequired}
+          onToggleInputRequired={onToggleToolInputRequired}
+          onToggleOutputRequired={onToggleToolOutputRequired}
         />
       )}
 

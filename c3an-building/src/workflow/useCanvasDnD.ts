@@ -4,7 +4,7 @@ import type { AgentBlock, Note, ToolNode, UploadNode, OutputNode, ToolPreset } f
 import { agentPresets } from "./constants";
 
 type Params = {
-  containerRef: RefObject<HTMLDivElement>;
+  containerRef: RefObject<HTMLDivElement | null>;
   transform: { x: number; y: number; zoom: number };
   toolPalette: ToolPreset[];
   setNotes: Dispatch<SetStateAction<Note[]>>;

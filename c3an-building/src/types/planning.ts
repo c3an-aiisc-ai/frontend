@@ -5,7 +5,7 @@ import type { WorkspaceSnapshot } from "./index";
 
 export type PlanningWorkflowSnapshot = Pick<
   WorkspaceSnapshot,
-  "blocks" | "tools" | "connections" | "evals"
+  "blocks" | "tools" | "connections" | "evals" | "notes" | "uploads" | "outputs"
 >;
 
 export type PlanningBlock = {
@@ -21,5 +21,6 @@ export type PlanningBlock = {
 export type PlanTriple = {
   from: string;
   op: PlanOp;
+  label?: string;
   to: string;
 };

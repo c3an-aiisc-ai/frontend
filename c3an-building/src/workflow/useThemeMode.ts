@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import type { ThemeMode } from "../types/workflow";
 
 type ThemeResult = {
   theme: ThemeMode;
-  setTheme: (theme: ThemeMode) => void;
+  setTheme: Dispatch<SetStateAction<ThemeMode>>;
   userThemeLocked: boolean;
-  setUserThemeLocked: (locked: boolean) => void;
+  setUserThemeLocked: Dispatch<SetStateAction<boolean>>;
   appThemeClass: string;
   actionButtonClass: string;
 };

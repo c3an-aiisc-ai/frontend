@@ -223,6 +223,9 @@ export default function WorkflowEditorPage() {
         tools,
         connections,
         evals: selectedEvals,
+        notes: [],
+        uploads: [],
+        outputs: [],
       },
     };
 
@@ -1645,4 +1648,3 @@ export default function WorkflowEditorPage() {
     </div>
   );
 }
-

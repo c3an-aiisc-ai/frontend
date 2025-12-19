@@ -103,7 +103,7 @@ type CanvasHelpers = {
 };
 
 type Props = {
-  containerRef: RefObject<HTMLDivElement>;
+  containerRef: RefObject<HTMLDivElement | null>;
   transform: Transform;
   theme: ThemeMode;
   state: CanvasState;

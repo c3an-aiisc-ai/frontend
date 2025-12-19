@@ -1,15 +1,19 @@
 import { useCallback } from "react";
 import type { ChangeEvent, Dispatch, MutableRefObject, SetStateAction } from "react";
-import type { AgentBlock, AgentSpecTemplate, Connection, Note, OutputNode, ToolNode, ToolPreset, UploadNode } from "../types/workflow";
+import type {
+  AgentBlock,
+  AgentSpecTemplate,
+  Connection,
+  Note,
+  OutputNode,
+  ToolNode,
+  ToolPreset,
+  UploadNode,
+} from "../types/workflow";
+import type { PlanOp, PlanTriple } from "../types/planning";
 import { buildAgentsFromDefinition, type AgentDefinition } from "./agentBuilders";
 import { TOOL_PORT_OFFSET } from "./constants";
 import { buildAgentRegistrySpec, captureAgentSpecTemplate, downloadWorkflow } from "./utils";
-
-type PlanTriple = {
-  from: string;
-  to: string;
-  label?: string;
-};
 
 type Params = {
   agentJsonInput: string;
@@ -42,7 +46,7 @@ type Params = {
   resetInteractionState: () => void;
 };
 
-type ImportPayload = {
+export type ImportPayload = {
   notes?: Note[];
   blocks?: AgentBlock[];
   tools?: ToolNode[];
@@ -231,16 +235,17 @@ export function useWorkflowImportExport({
               : null;
           const triples = Array.isArray(rawTriples)
             ? rawTriples
-                .map((item) => {
+                .map((item): PlanTriple | null => {
                   if (!item || typeof item !== "object") return null;
                   const record = item as Record<string, unknown>;
                   const from = record.from;
                   const to = record.to;
                   if (typeof from !== "string" || typeof to !== "string") return null;
                   const label = typeof record.label === "string" ? record.label : undefined;
-                  return { from, to, label } satisfies PlanTriple;
+                  const op: PlanOp = record.op === "brn" || record.op === "agg" || record.op === "seq" ? (record.op as PlanOp) : "seq";
+                  return { from, to, op, label };
                 })
-                .filter((item): item is PlanTriple => Boolean(item))
+                .filter((item): item is PlanTriple => item !== null)
             : null;
           if (!triples || triples.length === 0) {
             if (template) {

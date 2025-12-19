@@ -3,7 +3,7 @@ import type { RefObject } from "react";
 import type { Transform } from "../hooks/zoom";
 
 type Params = {
-  containerRef: RefObject<HTMLDivElement>;
+  containerRef: RefObject<HTMLDivElement | null>;
   transform: Transform;
 };
 

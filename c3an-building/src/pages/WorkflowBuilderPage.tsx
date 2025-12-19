@@ -474,15 +474,15 @@ export default function WorkflowBuilderPage() {
         connections={connections}
         toolPalette={toolPalette}
         modalToolChoice={modalToolChoice}
-        onChangeToolChoice={setModalToolChoice}
+        onToolChoiceChange={setModalToolChoice}
         onAddTool={addToolToBlock}
         onCloseBlock={() => setModalBlockId(null)}
         onCloseTool={() => setModalToolId(null)}
         getBlockMode={geometry.getBlockMode}
-        toggleInputRequired={io.toggleInputRequired}
-        toggleOutputRequired={io.toggleOutputRequired}
-        toggleToolInputRequired={io.toggleToolInputRequired}
-        toggleToolOutputRequired={io.toggleToolOutputRequired}
+        onToggleInputRequired={io.toggleInputRequired}
+        onToggleOutputRequired={io.toggleOutputRequired}
+        onToggleToolInputRequired={io.toggleToolInputRequired}
+        onToggleToolOutputRequired={io.toggleToolOutputRequired}
         evalOptions={evalOptions}
         selectedEvals={selectedEvals}
         onToggleEval={toggleEval}

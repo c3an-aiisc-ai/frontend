@@ -14,6 +14,7 @@ type Props = {
   onEnterWorkflow: (plan: PlanningBlock) => void;
   onSelectPlan?: (plan: PlanningBlock) => void;
   plans: PlanningBlock[];
+  onDropPlanBlock?: (point: { x: number; y: number }) => void;
   onPlanMove?: (id: string, x: number, y: number) => void;
   connections?: { from: string; to: string }[];
   linking?: PlanLinkState;
@@ -25,7 +26,21 @@ type Props = {
   theme?: "light" | "dark";
 };
 
-export default function PlanningCanvas({ onEnterWorkflow, onSelectPlan, plans, onPlanMove, connections = [], linking, onStartLink, onMoveLink, onCompleteLink, onCancelLink, onRemovePlan, theme = "dark" }: Props) {
+export default function PlanningCanvas({
+  onEnterWorkflow,
+  onSelectPlan,
+  plans,
+  onDropPlanBlock,
+  onPlanMove,
+  connections = [],
+  linking,
+  onStartLink,
+  onMoveLink,
+  onCompleteLink,
+  onCancelLink,
+  onRemovePlan,
+  theme = "dark",
+}: Props) {
   const [hoveredPlanId, setHoveredPlanId] = useState<string | null>(null);
   const [planSizes, setPlanSizes] = useState<Record<string, { width: number; height: number }>>({});
   const [draggingPlanId, setDraggingPlanId] = useState<string | null>(null);
@@ -216,6 +231,16 @@ export default function PlanningCanvas({ onEnterWorkflow, onSelectPlan, plans, o
     <div
       ref={containerRef}
       className="absolute inset-0 overflow-hidden"
+      onDragOver={(event) => {
+        if (!onDropPlanBlock) return;
+        event.preventDefault();
+      }}
+      onDrop={(event) => {
+        if (!onDropPlanBlock) return;
+        event.preventDefault();
+        const world = toWorldPoint(event.clientX, event.clientY);
+        if (world) onDropPlanBlock(world);
+      }}
       onPointerMove={(e) => {
         if (!activeLink) return;
         const world = toWorldPoint(e.clientX, e.clientY);

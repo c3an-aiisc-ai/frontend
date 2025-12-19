@@ -11,6 +11,7 @@ export type AgentBlock = {
   y: number;
   name: string;
   description: string;
+  agentId?: string;
   sourceAgentId?: string;
   inputCount: number;
   outputCount: number;
@@ -43,6 +44,13 @@ export type ToolNode = {
 };
 
 export type ToolPreset = Omit<ToolNode, "id" | "x" | "y">;
+export type AgentPreset = {
+  id: string;
+  name: string;
+  description: string;
+  inputCount: number;
+  outputCount: number;
+};
 
 export type UploadNode = {
   id: string;
@@ -136,6 +144,11 @@ export type AgentSpecTemplate = {
   compatible_protocols?: unknown;
   global_protocols?: unknown;
   description?: unknown;
+  agent_id?: string;
+  query?: string;
+  intent?: string;
+  triples?: unknown;
+  [key: string]: unknown;
 };
 
 export type LinkingState =
@@ -148,6 +161,25 @@ export type LinkingState =
       origin: "input";
       target: LinkTarget;
       current: { x: number; y: number };
-    };
+    }
+  | null;
 
 export type ThemeMode = "light" | "dark";
+export type Theme = ThemeMode;
+export type ViewMode = "agent" | "plan";
+
+export type WorkspaceSnapshot = {
+  notes: Note[];
+  blocks: AgentBlock[];
+  tools: ToolNode[];
+  uploads: UploadNode[];
+  outputs: OutputNode[];
+  connections: Connection[];
+  evals?: string[];
+  theme?: ThemeMode;
+  nextBlockId?: number;
+  nextToolId?: number;
+  nextUploadId?: number;
+  nextOutputId?: number;
+  nextConnectionId?: number;
+};

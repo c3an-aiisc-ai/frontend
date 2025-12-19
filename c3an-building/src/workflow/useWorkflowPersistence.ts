@@ -1,17 +1,6 @@
 import { useEffect } from "react";
 import type { MutableRefObject } from "react";
-
-type ImportPayload = {
-  notes?: unknown[];
-  blocks?: unknown[];
-  tools?: unknown[];
-  uploads?: unknown[];
-  outputs?: unknown[];
-  connections?: unknown[];
-  evals?: unknown[];
-  theme?: "light" | "dark";
-  agentSpecTemplate?: unknown;
-};
+import type { ImportPayload } from "./useWorkflowImportExport";
 
 type Params = {
   applyImportedWorkspace: (payload: ImportPayload) => void;
