@@ -398,6 +398,14 @@ export default function PlanningPage() {
     buildExpandedState(INITIAL_PLAN.tasks),
   );
 
+  const constraintChips = (plan?.context.constraints ?? []).length
+    ? (plan?.context.constraints ?? [])
+    : ["None listed"];
+
+  const deliverableChips = (plan?.context.deliverables ?? []).length
+    ? (plan?.context.deliverables ?? [])
+    : ["None listed"];
+
   const handleGenerate = () => {
     if (!jsonInput.trim()) {
       setParseError("Paste JSON to generate a plan.");
@@ -614,10 +622,7 @@ export default function PlanningPage() {
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Constraints</p>
                   <div className="mt-2 flex flex-wrap gap-2">
-                    {(plan?.context.constraints.length
-                      ? plan?.context.constraints
-                      : ["None listed"]
-                    ).map((item) => (
+                    {constraintChips.map((item) => (
                       <span
                         key={item}
                         className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold text-slate-600"
@@ -630,10 +635,7 @@ export default function PlanningPage() {
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Deliverables</p>
                   <div className="mt-2 flex flex-wrap gap-2">
-                    {(plan?.context.deliverables.length
-                      ? plan?.context.deliverables
-                      : ["None listed"]
-                    ).map((item) => (
+                    {deliverableChips.map((item) => (
                       <span
                         key={item}
                         className="rounded-full bg-emerald-100 px-3 py-1 text-[11px] font-semibold text-emerald-700"

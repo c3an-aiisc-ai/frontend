@@ -76,7 +76,10 @@ export default function PlanningCanvas({
     return { x: (localX - transform.x) / transform.zoom, y: (localY - transform.y) / transform.zoom };
   }, [containerRef, transform.x, transform.y, transform.zoom]);
 
-  const getSize = (plan: PlanningBlock) => planSizes[plan.id] ?? { width: 240, height: 150 };
+  const getSize = useCallback(
+    (plan: PlanningBlock) => planSizes[plan.id] ?? { width: 240, height: 150 },
+    [planSizes]
+  );
 
   const getPlanMode = useCallback(
     (planId: string): "sequential" | "branch" | "aggregate" | null => {
@@ -90,13 +93,16 @@ export default function PlanningCanvas({
     },
     [connections]
   );
-  const getAnchors = (plan: PlanningBlock) => {
-    const size = getSize(plan);
-    return {
-      output: { x: plan.x + size.width, y: plan.y + size.height / 2, dir: "right" as const },
-      input: { x: plan.x, y: plan.y + size.height / 2, dir: "left" as const },
-    };
-  };
+  const getAnchors = useCallback(
+    (plan: PlanningBlock) => {
+      const size = getSize(plan);
+      return {
+        output: { x: plan.x + size.width, y: plan.y + size.height / 2, dir: "right" as const },
+        input: { x: plan.x, y: plan.y + size.height / 2, dir: "left" as const },
+      };
+    },
+    [getSize]
+  );
 
   const benchConnections = useMemo<Connection[]>(
     () =>
@@ -147,7 +153,7 @@ export default function PlanningCanvas({
         point.y <= plan.y + size.height
       );
     }) ?? null;
-  }, [plans, planSizes]);
+  }, [getSize, plans]);
 
   // ensure linking preview follows pointer even outside the canvas
   useEffect(() => {

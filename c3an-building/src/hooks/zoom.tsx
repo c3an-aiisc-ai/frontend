@@ -87,7 +87,7 @@ export function usePanZoom({
       window.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("pointerup", onPointerUp);
     };
-  }, [applyTransform, shouldAllowPan]);
+  }, [applyTransform, isPanDisabled, shouldAllowPan]);
 
   // wheel to zoom (centered on the cursor)
   useEffect(() => {

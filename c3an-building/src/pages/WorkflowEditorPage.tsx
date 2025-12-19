@@ -197,26 +197,30 @@ export default function WorkflowEditorPage() {
   }, []);
 
   const syncWorkflowToPlanView = useCallback(() => {
-    const planJson = exportAgentViewPlanJson({
+    const planJson: unknown = exportAgentViewPlanJson({
       blocks,
       connections,
       base: agentPlanTemplateRef.current,
     });
 
-    const planId = String(planJson.plan_id ?? planJson.id ?? `plan-${Date.now()}`);
-    const triplesRaw = Array.isArray(planJson.triples) ? planJson.triples : [];
-    const triples = triplesRaw.map((t) => ({
-      from: String((t as any).from ?? ""),
-      op: normalizePlanOp(String((t as any).op ?? "seq")),
-      to: String((t as any).to ?? ""),
-    }));
+    const planRecord = isRecord(planJson) ? planJson : {};
+    const planId = String(planRecord.plan_id ?? planRecord.id ?? `plan-${Date.now()}`);
+    const triplesRaw = Array.isArray(planRecord.triples) ? planRecord.triples : [];
+    const triples = triplesRaw.map((triple) => {
+      const t = isRecord(triple) ? triple : {};
+      return {
+        from: String(t.from ?? ""),
+        op: normalizePlanOp(String(t.op ?? "seq")),
+        to: String(t.to ?? ""),
+      };
+    });
 
     const nextPlan: PlanningBlock = {
       id: planId,
       x: 220,
       y: 200,
       name: planId,
-      query: String((planJson as any).query ?? ""),
+      query: String(planRecord.query ?? ""),
       triples,
       workflow: {
         blocks,
@@ -450,7 +454,7 @@ export default function WorkflowEditorPage() {
         toolAnchors: buildBottomAnchors(toolSlots),
       };
     },
-    [MAX_IO, TOOL_PORT_OFFSET, connections, hoveredBlockId, hoveredInput, linking]
+    [connections, hoveredBlockId, linking]
   );
 
   const getToolHandles = useCallback(
@@ -535,7 +539,7 @@ export default function WorkflowEditorPage() {
         return next;
       });
     },
-    [MAX_IO, MIN_IO, TOOL_PORT_OFFSET, clamp, clampNames, resizeRequired, setBlocks, setConnections]
+    [setBlocks, setConnections]
   );
 
   const changeBlockInputs = useCallback(
@@ -676,7 +680,7 @@ export default function WorkflowEditorPage() {
       linkingRef.current = true;
       setLinking({ origin: "output", from: effectiveFrom, current: anchor });
     },
-    [MAX_IO, connections, getOutputAnchor, setHoveredInput, setHoveredOutput, setLinking, linkingRef]
+    [blocks, connections, getOutputAnchor, linkingRef, setHoveredInput, setHoveredOutput, setLinking]
   );
 
   const moveLinking = useCallback(
@@ -826,7 +830,7 @@ export default function WorkflowEditorPage() {
       setHoveredInput(null);
       setHoveredOutput(null);
     },
-    [MAX_IO, TOOL_PORT_OFFSET, hoveredBlockId, hoveredInput, hoveredOutput, linking, nextConnectionIdRef, recalcBlockPorts, setBlocks, setConnections, setHoveredInput, setHoveredOutput, setLinking, linkingRef]
+    [blocks, hoveredBlockId, hoveredInput, hoveredOutput, linking, nextConnectionIdRef, recalcBlockPorts, setBlocks, setConnections, setHoveredInput, setHoveredOutput, setLinking, linkingRef]
   );
 
   const handleCanvasPointerDown = useCallback(
@@ -1315,7 +1319,23 @@ export default function WorkflowEditorPage() {
       reader.readAsText(file);
       e.target.value = "";
     },
-    [recalcBlockPorts, setBlocks, setConnections, setSelectedEvals, setTools]
+    [
+      linkingRef,
+      nextBlockIdRef,
+      nextConnectionIdRef,
+      nextToolIdRef,
+      recalcBlockPorts,
+      setBlocks,
+      setConnections,
+      setHoveredBlockId,
+      setHoveredInput,
+      setHoveredOutput,
+      setHoveredToolId,
+      setLinking,
+      setSelected,
+      setSelectedEvals,
+      setTools,
+    ]
   );
 
   const handleDownload = useCallback(() => {
@@ -1391,7 +1411,20 @@ export default function WorkflowEditorPage() {
         if (selected.type === "connection") handleRemoveConnection(selected.id);
       }
     },
-    [blocks, clipboard, handleRemoveBlock, handleRemoveConnection, handleRemoveTool, selected, setBlocks, setClipboard, setTools]
+    [
+      blocks,
+      clipboard,
+      handleRemoveBlock,
+      handleRemoveConnection,
+      handleRemoveTool,
+      nextBlockIdRef,
+      nextToolIdRef,
+      selected,
+      setBlocks,
+      setClipboard,
+      setTools,
+      tools,
+    ]
   );
 
   useEffect(() => {
