@@ -1,7 +1,5 @@
 # C3AN Workflow Builder (Frontend)
 
-Vite + React + TypeScript frontend for visually building and inspecting a C3AN-style workflow.
-
 The core UI is a canvas-based editor where you can:
 
 - Place **Agent blocks** and **Tool nodes**
@@ -31,7 +29,7 @@ Open the URL printed by Vite (typically `http://localhost:5173`).
 
 ## Project map
 
-This is a “tour” of the repo, organized top-down.
+This is a overview of the repo, organized top-down.
 
 ## Inside `src/`
 
@@ -200,14 +198,7 @@ TypeScript types for the workflow editor.
 - `/api/agents/:id/capabilities`
 - `/api/agents/:id/streams/input`
 
-It does not implement backend logic. It only standardizes the URLs the frontend would call when/if you add a backend.
 
-Note: this repo does not currently configure a Vite dev proxy in `vite.config.ts`, so `/api/...` requests will only work if an API is served from the same origin, or if you add a proxy.
+Note: this repo does not currently configure a Vite dev proxy in `vite.config.ts`, so `/api/...` requests will only work if an API is served from the same origin, or a proxy is added. 
 
-## Data flow (high level)
 
-- **Static registries** provide default agent/tool metadata (streams, names, descriptions).
-- **Plan JSON** import parses triples (`from`, `op`, `to`) and hydrates blocks + connections.
-- The canvas renders nodes and connections and allows editing.
-
-If you want, tell me where your backend runs (host/port), and I can add a minimal Vite proxy + a small API client module that uses `AGENT_ROUTES`.
