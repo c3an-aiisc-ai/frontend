@@ -4,6 +4,9 @@
 
 import type { AgentPreset, EvalOption, ToolPreset } from "../types";
 
+export * from "./agentRegistry";
+export * from "./routes";
+
 // -----------------------------------------------------------------------------
 // Node Configuration Constants
 // -----------------------------------------------------------------------------

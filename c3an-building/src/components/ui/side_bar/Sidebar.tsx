@@ -3,7 +3,7 @@
 // =============================================================================
 
 import type { DragEvent } from "react";
-import type { PanelKey, Theme, ToolPreset } from "../../../types";
+import type { PanelKey, Theme, ToolPreset, ViewMode } from "../../../types";
 import { PANEL_TABS, PANEL_TITLES } from "../../../constants";
 import { iconPaths } from "../../../assets";
 import BlocksPanel from "./BlocksPanel";
@@ -13,26 +13,47 @@ import SettingsPanel from "./SettingsPanel";
 type Props = {
   activePanel: PanelKey | null;
   theme: Theme;
+  viewMode: ViewMode;
   toolPalette: ToolPreset[];
   onPanelChange: (panel: PanelKey | null) => void;
   onThemeChange: (theme: Theme) => void;
-  onBlockDragStart: (e: DragEvent<HTMLDivElement>) => void;
+  onViewModeChange: (mode: ViewMode) => void;
+  onAgentDragStart: (agentId: string) => (e: DragEvent<HTMLDivElement>) => void;
+  onPlanDragStart: (e: DragEvent<HTMLDivElement>) => void;
   onToolDragStart: (toolName: string) => (e: DragEvent<HTMLDivElement>) => void;
 };
 
 export default function Sidebar({
   activePanel,
   theme,
+  viewMode,
   toolPalette,
   onPanelChange,
   onThemeChange,
-  onBlockDragStart,
+  onViewModeChange,
+  onAgentDragStart,
+  onPlanDragStart,
   onToolDragStart,
 }: Props) {
+  const visibleTabs = viewMode === "plan" ? PANEL_TABS.filter((t) => t.id !== "tools") : PANEL_TABS;
+
   return (
     <div className="absolute left-0 top-0 bottom-0 z-30 flex">
       <div className="flex flex-col items-center gap-2 bg-slate-900/95 px-2 py-3 text-white shadow-xl">
-        {PANEL_TABS.map((item) => (
+        <button
+          className={`h-12 w-12 rounded-md border border-slate-700 text-[11px] font-semibold transition whitespace-pre-line leading-tight ${
+            viewMode === "plan"
+              ? "bg-white text-slate-900 shadow-sm"
+              : "bg-slate-800/70 text-white hover:bg-slate-800"
+          }`}
+          onClick={() => onViewModeChange(viewMode === "plan" ? "agent" : "plan")}
+          aria-label={viewMode === "plan" ? "Switch to agent view" : "Switch to plan view"}
+          title={viewMode === "plan" ? "Plan view" : "Agent view"}
+        >
+          {viewMode === "plan" ? "PLAN" : "AGENT"}
+        </button>
+
+        {visibleTabs.map((item) => (
           <button
             key={item.id}
             className={`h-12 w-12 rounded-md border border-slate-700 text-sm font-semibold transition ${
@@ -77,11 +98,13 @@ export default function Sidebar({
 
           {activePanel === "blocks" && (
             <BlocksPanel
-              onBlockDragStart={onBlockDragStart}
+              viewMode={viewMode}
+              onAgentDragStart={onAgentDragStart}
+              onPlanDragStart={onPlanDragStart}
             />
           )}
 
-          {activePanel === "tools" && (
+          {viewMode !== "plan" && activePanel === "tools" && (
             <ToolsPanel toolPalette={toolPalette} onToolDragStart={onToolDragStart} />
           )}
 

@@ -203,16 +203,42 @@ export function useWorkspace() {
         }
       });
       return blocksState.map((b) => {
-        const desiredInputs = clamp((maxInputs[b.id] ?? -1) + 1, MIN_IO, MAX_IO);
-        const desiredOutputs = clamp((maxOutputs[b.id] ?? -1) + 1, MIN_IO, MAX_IO);
+        const desiredFromConnectionsInputs = clamp((maxInputs[b.id] ?? -1) + 1, MIN_IO, MAX_IO);
+        const desiredFromConnectionsOutputs = clamp((maxOutputs[b.id] ?? -1) + 1, MIN_IO, MAX_IO);
+
+        // IMPORTANT: Do not shrink port counts based purely on current connections.
+        // Registry-backed agents (and optional ports toggled in Details) need their full
+        // IO surface to remain visible/configurable after upload/import.
+        const minInputs = clamp(b.mandatoryInputCount ?? MIN_IO, MIN_IO, MAX_IO);
+        const minOutputs = clamp(b.mandatoryOutputCount ?? MIN_IO, MIN_IO, MAX_IO);
+
+        const desiredInputs = Math.max(
+          desiredFromConnectionsInputs,
+          minInputs,
+          clamp(b.inputCount ?? MIN_IO, MIN_IO, MAX_IO)
+        );
+        const desiredOutputs = Math.max(
+          desiredFromConnectionsOutputs,
+          minOutputs,
+          clamp(b.outputCount ?? MIN_IO, MIN_IO, MAX_IO)
+        );
+
         if (b.inputCount === desiredInputs && b.outputCount === desiredOutputs)
           return b;
+
+        const nextInputRequired = resizeRequired(b.inputRequired, desiredInputs);
+        const nextOutputRequired = resizeRequired(b.outputRequired, desiredOutputs);
+
+        // Ensure mandatory ports remain required after any resize.
+        for (let i = 0; i < Math.min(minInputs, nextInputRequired.length); i++) nextInputRequired[i] = true;
+        for (let i = 0; i < Math.min(minOutputs, nextOutputRequired.length); i++) nextOutputRequired[i] = true;
+
         return {
           ...b,
           inputCount: desiredInputs,
           outputCount: desiredOutputs,
-          inputRequired: resizeRequired(b.inputRequired, desiredInputs),
-          outputRequired: resizeRequired(b.outputRequired, desiredOutputs),
+          inputRequired: nextInputRequired,
+          outputRequired: nextOutputRequired,
           inputNames: clampNames(b.inputNames, desiredInputs),
           outputNames: clampNames(b.outputNames, desiredOutputs),
           presetId: "custom",

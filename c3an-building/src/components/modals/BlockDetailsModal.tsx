@@ -2,12 +2,12 @@
 // Block Details Modal Component
 // =============================================================================
 
-import type { AgentBlock, Connection, ToolPreset } from "../../types";
+import type { AgentBlock, ToolPreset } from "../../types";
 import { iconPaths } from "../../assets";
+import { getRegistryAgentForBlock } from "../../constants";
 
 type Props = {
   block: AgentBlock;
-  connections: Connection[];
   toolPalette: ToolPreset[];
   modalToolChoice: string;
   onClose: () => void;
@@ -20,7 +20,6 @@ type Props = {
 
 export default function BlockDetailsModal({
   block,
-  connections,
   toolPalette,
   modalToolChoice,
   onClose,
@@ -30,12 +29,7 @@ export default function BlockDetailsModal({
   onToggleOutputRequired,
   getBlockMode,
 }: Props) {
-  const inbound = connections.filter(
-    (c) => c.to.type === "block" && c.to.id === block.id
-  );
-  const outbound = connections.filter(
-    (c) => c.from.type === "block" && c.from.id === block.id
-  );
+  const registryAgent = getRegistryAgentForBlock(block);
 
   return (
     <div
@@ -43,7 +37,7 @@ export default function BlockDetailsModal({
       onClick={onClose}
     >
       <div
-        className="relative w-[520px] max-h-[80vh] overflow-visible rounded-xl bg-white shadow-2xl border border-slate-200 p-5"
+        className="relative w-[680px] max-h-[80vh] overflow-visible rounded-xl bg-white shadow-2xl border border-slate-200 p-5"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Close button */}
@@ -77,6 +71,28 @@ export default function BlockDetailsModal({
           </span>
         </div>
 
+        {/* Agent Registry Details */}
+        <div className="mt-4 rounded-lg border border-slate-200 p-3">
+          <p className="text-xs font-semibold uppercase text-slate-500 mb-2">Details</p>
+          <div className="space-y-2 text-sm text-slate-800">
+            <div className="grid grid-cols-[140px_1fr] gap-x-3 gap-y-1">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">id</p>
+              <p className="text-sm text-slate-900 break-words">{registryAgent?.id ?? block.agentId ?? ""}</p>
+
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">name</p>
+              <p className="text-sm text-slate-900 break-words">{registryAgent?.name ?? block.name}</p>
+
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">description</p>
+              <p className="text-sm text-slate-900 break-words">{registryAgent?.description ?? block.description}</p>
+
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">capabilities</p>
+              <p className="text-sm text-slate-900 break-words">
+                {registryAgent?.capabilities?.length ? registryAgent.capabilities.join(", ") : ""}
+              </p>
+            </div>
+          </div>
+        </div>
+
         {/* Inputs/Outputs Grid */}
         <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
           {/* Inputs */}
@@ -104,7 +120,7 @@ export default function BlockDetailsModal({
                         </span>
                       )}
                     </div>
-                    <label className="flex items-center gap-2 cursor-pointer">
+                    <label className="flex items-center gap-2 cursor-pointer flex-shrink-0">
                       <input
                         type="checkbox"
                         checked={isRequired}
@@ -117,7 +133,7 @@ export default function BlockDetailsModal({
                         }`}
                       />
                       <span
-                        className={`text-[11px] font-semibold ${
+                        className={`text-[11px] font-semibold whitespace-nowrap ${
                           isMandatory ? "text-rose-600" : "text-slate-600"
                         }`}
                       >
@@ -155,7 +171,7 @@ export default function BlockDetailsModal({
                         </span>
                       )}
                     </div>
-                    <label className="flex items-center gap-2 cursor-pointer">
+                    <label className="flex items-center gap-2 cursor-pointer flex-shrink-0">
                       <input
                         type="checkbox"
                         checked={isRequired}
@@ -168,7 +184,7 @@ export default function BlockDetailsModal({
                         }`}
                       />
                       <span
-                        className={`text-[11px] font-semibold ${
+                        className={`text-[11px] font-semibold whitespace-nowrap ${
                           isMandatory ? "text-rose-600" : "text-slate-600"
                         }`}
                       >
@@ -178,40 +194,6 @@ export default function BlockDetailsModal({
                   </div>
                 );
               })}
-            </div>
-          </div>
-        </div>
-
-        {/* Connections Grid */}
-        <div className="mt-4 grid grid-cols-2 gap-3">
-          <div className="rounded-lg border border-slate-200 p-3">
-            <p className="text-xs font-semibold uppercase text-slate-500 mb-2">
-              Inbound
-            </p>
-            <div className="space-y-1 text-sm text-slate-700">
-              {inbound.length === 0 && (
-                <p className="text-xs text-slate-500">No incoming links.</p>
-              )}
-              {inbound.map((c) => (
-                <p key={c.id}>
-                  {c.from.type} → input {c.to.inputIndex ?? 0}
-                </p>
-              ))}
-            </div>
-          </div>
-          <div className="rounded-lg border border-slate-200 p-3">
-            <p className="text-xs font-semibold uppercase text-slate-500 mb-2">
-              Outbound
-            </p>
-            <div className="space-y-1 text-sm text-slate-700">
-              {outbound.length === 0 && (
-                <p className="text-xs text-slate-500">No outgoing links.</p>
-              )}
-              {outbound.map((c) => (
-                <p key={c.id}>
-                  port {c.from.port} → {c.to.type}
-                </p>
-              ))}
             </div>
           </div>
         </div>

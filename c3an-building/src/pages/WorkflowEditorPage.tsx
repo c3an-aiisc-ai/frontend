@@ -10,6 +10,7 @@ import {
   useEffect,
   useMemo,
   useRef,
+  useState,
 } from "react";
 import { Background } from "../components";
 import { Sidebar, Toolbar } from "../components/ui";
@@ -18,6 +19,7 @@ import {
   ConnectionLines,
   ToolNode,
 } from "../components/canvas";
+import PlanningCanvas from "../components/canvas/PlanningCanvas";
 import {
   BlockDetailsModal,
   ToolDetailsModal,
@@ -25,14 +27,18 @@ import {
 } from "../components/modals";
 import { usePanZoom, useWorkspace } from "../hooks";
 import {
-  AGENT_PRESETS,
   TOOL_PALETTE,
   EVAL_OPTIONS,
   MIN_IO,
   MAX_IO,
   TOOL_PORT_OFFSET,
+  AGENT_REGISTRY_AGENTS,
+  findAgentRegistryEntryByIdOrName,
+  getAgentRegistryEntryById,
+  listMandatoryOptional,
 } from "../constants";
 import { exportAgentViewPlanJson, importAgentViewPlanJson } from "../components/io_streams/handleIO";
+import { normalizePlanOp } from "../components/canvas/planOps";
 import type {
   AgentBlock as AgentBlockType,
   AnchorPoint,
@@ -43,7 +49,9 @@ import type {
   Selection,
   ToolNode as ToolNodeType,
   ToolHandles,
+  ViewMode,
 } from "../types";
+import type { PlanningBlock } from "../types";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -59,6 +67,37 @@ function resizeRequired(existing: boolean[] | undefined, desired: number) {
 
 function clampNames(existing: string[] | undefined, desired: number) {
   return Array.from({ length: desired }, (_, i) => existing?.[i] ?? "");
+}
+
+function buildIoFromStreams(args: {
+  input: { mandatory: string[]; optional?: string[] };
+  output: { mandatory: string[]; optional?: string[] };
+}) {
+  const input = listMandatoryOptional(args.input);
+  const output = listMandatoryOptional(args.output);
+
+  const desiredInputs = clamp(input.mandatory.length + input.optional.length, MIN_IO, MAX_IO);
+  const desiredOutputs = clamp(output.mandatory.length + output.optional.length, MIN_IO, MAX_IO);
+
+  const mandatoryInputCount = Math.min(input.mandatory.length, desiredInputs);
+  const mandatoryOutputCount = Math.min(output.mandatory.length, desiredOutputs);
+
+  const inputNames = [...input.mandatory, ...input.optional].slice(0, desiredInputs);
+  const outputNames = [...output.mandatory, ...output.optional].slice(0, desiredOutputs);
+
+  const inputRequired = Array.from({ length: desiredInputs }, (_, i) => i < mandatoryInputCount);
+  const outputRequired = Array.from({ length: desiredOutputs }, (_, i) => i < mandatoryOutputCount);
+
+  return {
+    inputCount: desiredInputs,
+    outputCount: desiredOutputs,
+    mandatoryInputCount,
+    mandatoryOutputCount,
+    inputRequired,
+    outputRequired,
+    inputNames,
+    outputNames,
+  };
 }
 
 function downloadWorkflow(data: unknown, filename = "workflow.json") {
@@ -89,6 +128,11 @@ function detectWorkflowType(src: unknown): "planning" | "agent" | "unknown" {
 
 export default function WorkflowEditorPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [viewMode, setViewMode] = useState<ViewMode>("agent");
+  const [plans, setPlans] = useState<PlanningBlock[]>([]);
+  const nextPlanIdRef = useRef(1);
+  const [planCanvasKey, setPlanCanvasKey] = useState(0);
 
   // Agent-view-only IO: when the user uploads a plan JSON while in agent view,
   // we keep the original payload as a template so download keeps the same schema.
@@ -145,7 +189,6 @@ export default function WorkflowEditorPage() {
     getBlockMode,
   } = useWorkspace();
 
-  const agentPresets = useMemo(() => AGENT_PRESETS, []);
   const toolPalette = useMemo(() => TOOL_PALETTE, []);
   const evalOptions = useMemo(() => EVAL_OPTIONS, []);
 
@@ -153,9 +196,53 @@ export default function WorkflowEditorPage() {
     window.open("https://c3an.aiisc.ai/", "_blank", "noopener,noreferrer");
   }, []);
 
-  const handleBlockDragStart = useCallback((e: DragEvent<HTMLDivElement>) => {
+  const syncWorkflowToPlanView = useCallback(() => {
+    const planJson = exportAgentViewPlanJson({
+      blocks,
+      connections,
+      base: agentPlanTemplateRef.current,
+    });
+
+    const planId = String(planJson.plan_id ?? planJson.id ?? `plan-${Date.now()}`);
+    const triplesRaw = Array.isArray(planJson.triples) ? planJson.triples : [];
+    const triples = triplesRaw.map((t) => ({
+      from: String((t as any).from ?? ""),
+      op: normalizePlanOp(String((t as any).op ?? "seq")),
+      to: String((t as any).to ?? ""),
+    }));
+
+    const nextPlan: PlanningBlock = {
+      id: planId,
+      x: 220,
+      y: 200,
+      name: planId,
+      query: String((planJson as any).query ?? ""),
+      triples,
+      workflow: {
+        blocks,
+        tools,
+        connections,
+        evals: selectedEvals,
+      },
+    };
+
+    setPlans([nextPlan]);
+  }, [blocks, connections, selectedEvals, tools]);
+
+  const handleAgentDragStart = useCallback(
+    (agentId: string) => (e: DragEvent<HTMLDivElement>) => {
+      e.dataTransfer.effectAllowed = "copy";
+      e.dataTransfer.setData(
+        "application/json",
+        JSON.stringify({ type: "agent-block", agentId })
+      );
+    },
+    []
+  );
+
+  const handlePlanDragStart = useCallback((e: DragEvent<HTMLDivElement>) => {
     e.dataTransfer.effectAllowed = "copy";
-    e.dataTransfer.setData("application/json", JSON.stringify({ type: "agent-block" }));
+    e.dataTransfer.setData("application/json", JSON.stringify({ type: "plan-block" }));
   }, []);
 
   const handleToolDragStart = useCallback(
@@ -218,7 +305,27 @@ export default function WorkflowEditorPage() {
       if (!world) return;
 
       if (payload.type === "agent-block") {
-        const preset = agentPresets[0];
+        const agentId = typeof payload.agentId === "string" ? payload.agentId : "";
+        const agent =
+          getAgentRegistryEntryById(agentId) ??
+          (AGENT_REGISTRY_AGENTS.length ? AGENT_REGISTRY_AGENTS[0] : null);
+
+        const io = agent
+          ? buildIoFromStreams({
+              input: agent.input_data_streams,
+              output: agent.output_data_streams,
+            })
+          : {
+              inputCount: 1,
+              outputCount: 1,
+              mandatoryInputCount: 0,
+              mandatoryOutputCount: 0,
+              inputRequired: [false],
+              outputRequired: [false],
+              inputNames: [],
+              outputNames: [],
+            };
+
         const id = nextBlockIdRef.current++;
         setBlocks((prev) => [
           ...prev,
@@ -226,15 +333,18 @@ export default function WorkflowEditorPage() {
             id: `block-${id}`,
             x: world.x,
             y: world.y,
-            name: preset?.name ?? "Agent Block",
-            description: preset?.description ?? "Adaptive block",
-            inputCount: preset?.inputCount ?? 1,
-            outputCount: preset?.outputCount ?? 1,
-            inputRequired: Array(preset?.inputCount ?? 1).fill(false),
-            outputRequired: Array(preset?.outputCount ?? 1).fill(false),
-            inputNames: [],
-            outputNames: [],
-            presetId: preset?.id,
+            agentId: agent?.id,
+            name: agent?.name ?? "Agent Block",
+            description: agent?.description ?? "",
+            inputCount: io.inputCount,
+            outputCount: io.outputCount,
+            inputRequired: io.inputRequired,
+            outputRequired: io.outputRequired,
+            inputNames: io.inputNames,
+            outputNames: io.outputNames,
+            presetId: agent?.id ?? "custom",
+            mandatoryInputCount: io.mandatoryInputCount,
+            mandatoryOutputCount: io.mandatoryOutputCount,
           },
         ]);
         return;
@@ -248,15 +358,24 @@ export default function WorkflowEditorPage() {
         setTools((prev) => [...prev, { ...paletteItem, id: `tool-${id}`, x: world.x, y: world.y }]);
       }
     },
-    [agentPresets, nextBlockIdRef, nextToolIdRef, setBlocks, setTools, toWorldPoint, toolPalette]
+    [nextBlockIdRef, nextToolIdRef, setBlocks, setTools, toWorldPoint, toolPalette]
   );
 
   const getBlockHandles = useCallback(
     (block: AgentBlockType): BlockHandles => {
       const width = 220;
       const baseHeight = 120;
-      const baseInputs = Math.max(1, block.inputCount);
-      const baseOutputs = Math.max(1, block.outputCount);
+      const lastRequiredInputIndex = Math.max(
+        block.inputRequired?.lastIndexOf(true) ?? -1,
+        (block.mandatoryInputCount ?? 0) - 1
+      );
+      const lastRequiredOutputIndex = Math.max(
+        block.outputRequired?.lastIndexOf(true) ?? -1,
+        (block.mandatoryOutputCount ?? 0) - 1
+      );
+
+      const baseInputs = Math.max(1, lastRequiredInputIndex + 1);
+      const baseOutputs = Math.max(1, lastRequiredOutputIndex + 1);
 
       const maxConnectedInput = connections
         .filter(
@@ -286,7 +405,7 @@ export default function WorkflowEditorPage() {
 
       const hoverIsOnBottom =
         linking?.origin === "output" && linking.from.type === "tool" && hoveredBlockId === block.id;
-      const toolSlots = hasToolConnection ? 1 : 1 + (hoverIsOnBottom ? 1 : 0);
+      const toolSlots = hasToolConnection ? 1 : hoverIsOnBottom ? 1 : 0;
 
       const maxSlots = Math.max(inputSlots, outputSlots);
       const topPadding = 18;
@@ -315,7 +434,7 @@ export default function WorkflowEditorPage() {
       };
 
       const buildBottomAnchors = (count: number) =>
-        Array.from({ length: Math.max(1, count) }, (_, idx) => ({
+        Array.from({ length: Math.max(0, count) }, (_, idx) => ({
           anchor: { x: block.x + width / 2 + 4, y: block.y + height, dir: "down" as const },
           slot: TOOL_PORT_OFFSET + idx,
         }));
@@ -522,13 +641,31 @@ export default function WorkflowEditorPage() {
 
       let effectiveFrom = from;
       if (from.type === "block") {
-        const ports = connections
-          .filter((c) => c.from.type === "block" && c.from.id === from.id)
-          .map((c) => c.from.port);
-        const hasPort = ports.includes(from.port);
-        const maxPort = ports.reduce((max, p) => Math.max(max, p), -1);
-        const nextPort = Math.min(MAX_IO - 1, Math.max(maxPort + 1, from.port));
-        if (hasPort) effectiveFrom = { ...from, port: nextPort };
+        const sourceBlock = blocks.find((b) => b.id === from.id);
+        if (!sourceBlock) return;
+
+        const enabledPorts = (sourceBlock.outputRequired ?? [])
+          .map((enabled, idx) => (enabled ? idx : null))
+          .filter((idx): idx is number => typeof idx === "number");
+
+        // If the user hasn't enabled any outputs (shouldn't happen), do nothing.
+        if (enabledPorts.length === 0) return;
+
+        const usedPorts = new Set(
+          connections
+            .filter((c) => c.from.type === "block" && c.from.id === from.id)
+            .map((c) => c.from.port)
+        );
+
+        // If this port is already used, advance to the next enabled free port.
+        if (usedPorts.has(from.port)) {
+          const nextFree = enabledPorts.find((p) => !usedPorts.has(p));
+          if (typeof nextFree !== "number") return;
+          effectiveFrom = { ...from, port: nextFree };
+        } else if (!enabledPorts.includes(from.port)) {
+          // Shouldn't happen because hidden ports don't render handles, but keep safe.
+          return;
+        }
       }
 
       const anchor = getOutputAnchor(effectiveFrom);
@@ -608,6 +745,13 @@ export default function WorkflowEditorPage() {
           let finalTarget: LinkTarget = normalizedTarget;
 
           if (normalizedTarget.type === "block" && targetSlot < TOOL_PORT_OFFSET) {
+            const targetBlock = blocks.find((b) => b.id === normalizedTarget.id);
+            const enabledInputs = (targetBlock?.inputRequired ?? [])
+              .map((enabled, idx) => (enabled ? idx : null))
+              .filter((idx): idx is number => typeof idx === "number");
+
+            if (enabledInputs.length === 0) return prev;
+
             const inbound = base.filter(
               (c) =>
                 c.to.type === "block" &&
@@ -618,11 +762,12 @@ export default function WorkflowEditorPage() {
 
             // First inbound always uses slot 0.
             if (inbound.length === 0) {
-              targetSlot = 0;
-            } else if (occupied.has(targetSlot)) {
-              // Additional inbound: pick the next free slot.
-              const free = Array.from({ length: MAX_IO }, (_, i) => i).find((i) => !occupied.has(i));
+              targetSlot = enabledInputs.includes(targetSlot) ? targetSlot : enabledInputs[0];
+            } else if (occupied.has(targetSlot) || !enabledInputs.includes(targetSlot)) {
+              // Additional inbound: pick the next free *enabled* slot.
+              const free = enabledInputs.find((i) => !occupied.has(i));
               if (typeof free === "number") targetSlot = free;
+              else return prev;
             }
 
             finalTarget = { ...normalizedTarget, inputIndex: targetSlot };
@@ -925,16 +1070,105 @@ export default function WorkflowEditorPage() {
             setLinking(null);
             linkingRef.current = false;
 
-            setBlocks(imported.workflow.blocks);
+            const loadedBlocks = imported.workflow.blocks;
+            const loadedConnections = imported.workflow.connections;
+
+            const normalizedBlocks = loadedBlocks.map((b) => {
+              const maybeAgent =
+                getAgentRegistryEntryById((b as AgentBlockType).agentId) ??
+                findAgentRegistryEntryByIdOrName((b as AgentBlockType).name);
+
+              if (!maybeAgent) return b;
+
+              const io = buildIoFromStreams({
+                input: maybeAgent.input_data_streams,
+                output: maybeAgent.output_data_streams,
+              });
+
+              const rawInputCount = Number((b as AgentBlockType).inputCount);
+              const rawOutputCount = Number((b as AgentBlockType).outputCount);
+              const inputCount = Math.max(1, Number.isFinite(rawInputCount) ? rawInputCount : 1, io.inputCount);
+              const outputCount = Math.max(1, Number.isFinite(rawOutputCount) ? rawOutputCount : 1, io.outputCount);
+
+              const mergeNames = (existing: unknown, fallback: string[], length: number) => {
+                const ex = Array.isArray(existing) ? (existing as unknown[]).map((v) => String(v)) : [];
+                return Array.from({ length }, (_, i) => ex[i] ?? fallback[i] ?? "");
+              };
+
+              const ensureRequired = (existing: unknown, length: number, mandatoryCount: number) => {
+                const ex = Array.isArray(existing) ? (existing as unknown[]).map((v) => Boolean(v)) : [];
+                return Array.from({ length }, (_, i) => (i < mandatoryCount ? true : ex[i] ?? false));
+              };
+
+              return {
+                ...b,
+                agentId: (b as AgentBlockType).agentId ?? maybeAgent.id,
+                name: maybeAgent.name ?? (b as AgentBlockType).name,
+                description: maybeAgent.description ?? (b as AgentBlockType).description,
+                inputCount,
+                outputCount,
+                mandatoryInputCount: io.mandatoryInputCount,
+                mandatoryOutputCount: io.mandatoryOutputCount,
+                inputNames: mergeNames((b as AgentBlockType).inputNames, io.inputNames, inputCount),
+                outputNames: mergeNames((b as AgentBlockType).outputNames, io.outputNames, outputCount),
+                inputRequired: ensureRequired((b as AgentBlockType).inputRequired, inputCount, io.mandatoryInputCount),
+                outputRequired: ensureRequired((b as AgentBlockType).outputRequired, outputCount, io.mandatoryOutputCount),
+              } satisfies AgentBlockType;
+            });
+
+            const byId = new Map(normalizedBlocks.map((b) => [b.id, b] as const));
+
+            const normalizedConnections = loadedConnections.map((c: Connection) => {
+              const next = { ...c } as Connection;
+              if (next.from.type === "block") {
+                const fromBlock = byId.get(next.from.id);
+                const maxPort = Math.max(0, (fromBlock?.outputCount ?? 1) - 1);
+                next.from = { ...next.from, port: Math.max(0, Math.min(maxPort, next.from.port)) };
+              }
+              if (next.to.type === "block") {
+                const toBlock = byId.get(next.to.id);
+                const idx = next.to.inputIndex ?? 0;
+                if (idx < TOOL_PORT_OFFSET) {
+                  const maxIdx = Math.max(0, (toBlock?.inputCount ?? 1) - 1);
+                  next.to = { ...next.to, inputIndex: Math.max(0, Math.min(maxIdx, idx)) };
+                }
+              }
+              return next;
+            });
+
+            // Auto-enable any ports referenced by uploaded connections so anchors/lines align.
+            const blocksWithUsedPorts: AgentBlockType[] = normalizedBlocks.map((b) => ({
+              ...b,
+              inputRequired: [...(b.inputRequired ?? [])],
+              outputRequired: [...(b.outputRequired ?? [])],
+            }));
+            const mutableById = new Map(blocksWithUsedPorts.map((b) => [b.id, b] as const));
+            for (const conn of normalizedConnections) {
+              if (conn.from.type === "block") {
+                const b = mutableById.get(conn.from.id);
+                if (b && conn.from.port >= 0 && conn.from.port < b.outputRequired.length) {
+                  b.outputRequired[conn.from.port] = true;
+                }
+              }
+              if (conn.to.type === "block") {
+                const idx = conn.to.inputIndex ?? 0;
+                if (idx >= 0 && idx < TOOL_PORT_OFFSET) {
+                  const b = mutableById.get(conn.to.id);
+                  if (b && idx < b.inputRequired.length) b.inputRequired[idx] = true;
+                }
+              }
+            }
+
+            setBlocks(blocksWithUsedPorts);
             setTools([]);
             setSelectedEvals([]);
-            setConnections(imported.workflow.connections);
-            setBlocks((prev) => recalcBlockPorts(imported.workflow.connections, prev));
+            setConnections(normalizedConnections);
+            setBlocks((prev) => recalcBlockPorts(normalizedConnections, prev));
 
             // Ensure newly added blocks/connections get fresh IDs (avoid collisions like block-1).
             bumpIdCounters({
-              blocks: imported.workflow.blocks,
-              connections: imported.workflow.connections,
+              blocks: blocksWithUsedPorts,
+              connections: normalizedConnections,
               tools: [],
             });
             return;
@@ -950,16 +1184,119 @@ export default function WorkflowEditorPage() {
             setLinking(null);
             linkingRef.current = false;
 
-            setBlocks(src.blocks ?? []);
+            const loadedBlocks = Array.isArray(src.blocks) ? (src.blocks as AgentBlockType[]) : [];
+
+            // Try to attach/validate agentId from the local registry on upload.
+            const normalizedBlocks = loadedBlocks.map((b) => {
+              const maybeAgent =
+                getAgentRegistryEntryById((b as AgentBlockType).agentId) ??
+                findAgentRegistryEntryByIdOrName((b as AgentBlockType).name);
+
+              if (!maybeAgent) return b;
+
+              const io = buildIoFromStreams({
+                input: maybeAgent.input_data_streams,
+                output: maybeAgent.output_data_streams,
+              });
+
+              const rawInputCount = Number((b as AgentBlockType).inputCount);
+              const rawOutputCount = Number((b as AgentBlockType).outputCount);
+              // Match "freshly placed" behavior: expose full registry IO (mandatory + optional),
+              // while still preserving any user-expanded sizing from the uploaded JSON.
+              const inputCount = Math.max(
+                1,
+                Number.isFinite(rawInputCount) ? rawInputCount : 1,
+                io.inputCount
+              );
+              const outputCount = Math.max(
+                1,
+                Number.isFinite(rawOutputCount) ? rawOutputCount : 1,
+                io.outputCount
+              );
+
+              const mergeNames = (existing: unknown, fallback: string[], length: number) => {
+                const ex = Array.isArray(existing) ? (existing as unknown[]).map((v) => String(v)) : [];
+                return Array.from({ length }, (_, i) => ex[i] ?? fallback[i] ?? "");
+              };
+
+              const ensureRequired = (existing: unknown, length: number, mandatoryCount: number) => {
+                const ex = Array.isArray(existing) ? (existing as unknown[]).map((v) => Boolean(v)) : [];
+                return Array.from({ length }, (_, i) => (i < mandatoryCount ? true : ex[i] ?? false));
+              };
+
+              // Preserve user-edited IO sizing; only fill in missing registry linkage + missing labels.
+              const next: AgentBlockType = {
+                ...b,
+                agentId: (b as AgentBlockType).agentId ?? maybeAgent.id,
+                name: maybeAgent.name ?? (b as AgentBlockType).name,
+                description: maybeAgent.description ?? (b as AgentBlockType).description,
+
+                // Ensure mandatory IO is always present/marked required, even if upload omitted it.
+                inputCount,
+                outputCount,
+                mandatoryInputCount: io.mandatoryInputCount,
+                mandatoryOutputCount: io.mandatoryOutputCount,
+                inputNames: mergeNames((b as AgentBlockType).inputNames, io.inputNames, inputCount),
+                outputNames: mergeNames((b as AgentBlockType).outputNames, io.outputNames, outputCount),
+                inputRequired: ensureRequired((b as AgentBlockType).inputRequired, inputCount, io.mandatoryInputCount),
+                outputRequired: ensureRequired((b as AgentBlockType).outputRequired, outputCount, io.mandatoryOutputCount),
+              };
+              return next;
+            });
+
+            const normalizedBlockById = new Map(normalizedBlocks.map((b) => [b.id, b] as const));
+
+            // Normalize uploaded connections so they reference valid port indices after IO rehydration.
+            const loadedConnections = (src.connections ?? []).map((c: Connection) => {
+              const next = { ...c } as Connection;
+              if (next.from.type === "block") {
+                const fromBlock = normalizedBlockById.get(next.from.id);
+                const maxPort = Math.max(0, (fromBlock?.outputCount ?? 1) - 1);
+                next.from = { ...next.from, port: Math.max(0, Math.min(maxPort, next.from.port)) };
+              }
+              if (next.to.type === "block") {
+                const toBlock = normalizedBlockById.get(next.to.id);
+                const idx = next.to.inputIndex ?? 0;
+                if (idx < TOOL_PORT_OFFSET) {
+                  const maxIdx = Math.max(0, (toBlock?.inputCount ?? 1) - 1);
+                  next.to = { ...next.to, inputIndex: Math.max(0, Math.min(maxIdx, idx)) };
+                }
+              }
+              return next;
+            });
+
+            // Auto-enable any ports referenced by uploaded connections so anchors/lines align.
+            const blocksWithUsedPorts: AgentBlockType[] = normalizedBlocks.map((b) => ({
+              ...b,
+              inputRequired: [...(b.inputRequired ?? [])],
+              outputRequired: [...(b.outputRequired ?? [])],
+            }));
+            const mutableById = new Map(blocksWithUsedPorts.map((b) => [b.id, b] as const));
+            for (const conn of loadedConnections) {
+              if (conn.from.type === "block") {
+                const b = mutableById.get(conn.from.id);
+                if (b && conn.from.port >= 0 && conn.from.port < b.outputRequired.length) {
+                  b.outputRequired[conn.from.port] = true;
+                }
+              }
+              if (conn.to.type === "block") {
+                const idx = conn.to.inputIndex ?? 0;
+                if (idx >= 0 && idx < TOOL_PORT_OFFSET) {
+                  const b = mutableById.get(conn.to.id);
+                  if (b && idx < b.inputRequired.length) b.inputRequired[idx] = true;
+                }
+              }
+            }
+
+            setBlocks(blocksWithUsedPorts);
             setTools(src.tools ?? []);
             setSelectedEvals(src.evals ?? []);
-            const loadedConnections = src.connections ?? [];
             setConnections(loadedConnections);
             setBlocks((prev) => recalcBlockPorts(loadedConnections, prev));
             agentPlanTemplateRef.current = null;
 
             bumpIdCounters({
-              blocks: src.blocks ?? [],
+              blocks: blocksWithUsedPorts,
               tools: src.tools ?? [],
               connections: loadedConnections,
             });
@@ -991,6 +1328,10 @@ export default function WorkflowEditorPage() {
   const handleReset = useCallback(() => {
     reset();
     resetWorkspace();
+
+    setPlans([]);
+    setPlanCanvasKey((k) => k + 1);
+
     agentPlanTemplateRef.current = null;
     setSelectedEvals([]);
   }, [reset, resetWorkspace, setSelectedEvals]);
@@ -1070,18 +1411,34 @@ export default function WorkflowEditorPage() {
 
   const appThemeClass = theme === "dark" ? "bg-slate-950 text-slate-100" : "bg-slate-50 text-slate-900";
 
+  const modalBlock = modalBlockId ? blocks.find((b) => b.id === modalBlockId) ?? null : null;
+  const modalTool = modalToolId ? tools.find((t) => t.id === modalToolId) ?? null : null;
+
   return (
     <div className={`relative h-screen w-screen overflow-hidden ${appThemeClass}`}>
       <Sidebar
         activePanel={activePanel}
         theme={theme}
+        viewMode={viewMode}
         toolPalette={toolPalette}
         onPanelChange={setActivePanel}
         onThemeChange={(value) => {
           setTheme(value);
           setUserThemeLocked(true);
         }}
-        onBlockDragStart={handleBlockDragStart}
+        onViewModeChange={(mode) => {
+          if (mode === "plan" && activePanel === "tools") setActivePanel("blocks");
+          if (mode === "plan") syncWorkflowToPlanView();
+          setViewMode(mode);
+          setModalBlockId(null);
+          setModalToolId(null);
+          setLinking(null);
+          setHoveredInput(null);
+          setHoveredOutput(null);
+          setSelected(null);
+        }}
+         onAgentDragStart={handleAgentDragStart}
+        onPlanDragStart={handlePlanDragStart}
         onToolDragStart={handleToolDragStart}
       />
 
@@ -1099,112 +1456,162 @@ export default function WorkflowEditorPage() {
       />
 
       <main className="relative z-0 h-full w-full">
-        <div
-          ref={containerRef}
-          className="absolute inset-0"
-          style={{ touchAction: "none" }}
-          onDragOver={handleCanvasDragOver}
-          onDrop={handleCanvasDrop}
-          onPointerDownCapture={handleCanvasPointerDown}
-        >
-          <Background transform={transform} theme={theme} />
-
-          <div
-            style={{
-              position: "absolute",
-              left: 0,
-              top: 0,
-              transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.zoom})`,
-              transformOrigin: "0 0",
-              width: "100%",
-              height: "100%",
-              overflow: "visible",
-              pointerEvents: "auto",
+        {viewMode === "plan" ? (
+          <PlanningCanvas
+            key={planCanvasKey}
+            theme={theme}
+            plans={plans}
+            onPlanMove={(id, x, y) => {
+              setPlans((prev) => prev.map((p) => (p.id === id ? { ...p, x, y } : p)));
             }}
-            onPointerMove={moveLinking}
-            onPointerUp={() => linking && finalizeLinking()}
+            onRemovePlan={(id) => {
+              setPlans((prev) => prev.filter((p) => p.id !== id));
+            }}
+            onDropPlanBlock={(point) => {
+              const id = `plan-${nextPlanIdRef.current++}`;
+              setPlans((prev) => [
+                ...prev,
+                {
+                  id,
+                  x: point.x,
+                  y: point.y,
+                  name: "Plan",
+                  query: "",
+                  triples: [],
+                },
+              ]);
+            }}
+            onEnterWorkflow={(plan) => {
+              if (plan.workflow) {
+                const loadedConnections = plan.workflow.connections ?? [];
+
+                setSelected(null);
+                setHoveredInput(null);
+                setHoveredOutput(null);
+                setHoveredBlockId(null);
+                setHoveredToolId(null);
+                setLinking(null);
+                linkingRef.current = false;
+
+                setBlocks(plan.workflow.blocks ?? []);
+                setTools(plan.workflow.tools ?? []);
+                setSelectedEvals(plan.workflow.evals ?? []);
+                setConnections(loadedConnections);
+                setBlocks((prev) => recalcBlockPorts(loadedConnections, prev));
+              }
+              setViewMode("agent");
+            }}
+          />
+        ) : (
+          <div
+            ref={containerRef}
+            className="absolute inset-0"
+            style={{ touchAction: "none" }}
+            onDragOver={handleCanvasDragOver}
+            onDrop={handleCanvasDrop}
+            onPointerDownCapture={handleCanvasPointerDown}
           >
-            <ConnectionLines
-              connections={connections}
-              linking={linking}
-              selected={selected}
-              getOutputAnchor={getOutputAnchor}
-              getInputAnchor={getInputAnchor}
-              onConnectionPointerDown={handleConnectionPointerDown}
-            />
+            <Background transform={transform} theme={theme} />
 
-            {blocks.map((block) => {
-              const handles = getBlockHandles(block);
-              return (
-                <AgentBlock
-                  key={block.id}
-                  block={block}
-                  handles={handles}
-                  isActive={selected?.type === "block" && selected.id === block.id}
-                  isDragging={draggingBlockId === block.id}
-                  showConnections={showHandlesForId(block.id)}
-                  toolCount={connections.filter((c) => c.to.type === "block" && c.to.id === block.id && (c.to.inputIndex ?? 0) >= TOOL_PORT_OFFSET).length}
-                  mode={getBlockMode(block)}
-                  onPointerDown={blockDrag.onPointerDown}
-                  onPointerMove={blockDrag.onPointerMove}
-                  onPointerUp={blockDrag.onPointerUp}
-                  onRemove={handleRemoveBlock}
-                  onDetailsClick={setModalBlockId}
-                  onHoverEnter={setHoveredBlockId}
-                  onHoverLeave={() => setHoveredBlockId(null)}
-                  onInputEnter={(target) => () => setHoveredInput(target)}
-                  onInputLeave={(target) => () => {
-                    void target;
-                    setHoveredInput(null);
-                  }}
-                  onOutputEnter={(source) => () => setHoveredOutput(source)}
-                  onOutputLeave={(source) => () => {
-                    void source;
-                    setHoveredOutput(null);
-                  }}
-                  onStartLinkingFromInput={startLinkingFromInput}
-                  onStartLinkingFromOutput={startLinkingFromOutput}
-                  onFinalizeLinking={finalizeLinking}
-                  onMoveLinking={moveLinking}
-                  onChangeInputs={changeBlockInputs}
-                  onChangeOutputs={changeBlockOutputs}
-                />
-              );
-            })}
-
-            {tools.map((tool) => (
-              <ToolNode
-                key={tool.id}
-                tool={tool}
-                handles={getToolHandles(tool)}
-                isActive={selected?.type === "tool" && selected.id === tool.id}
-                isDragging={draggingToolId === tool.id}
-                showHandles={showHandlesForId(tool.id)}
-                onPointerDown={toolDrag.onPointerDown}
-                onPointerMove={toolDrag.onPointerMove}
-                onPointerUp={toolDrag.onPointerUp}
-                onRemove={handleRemoveTool}
-                onDetailsClick={setModalToolId}
-                onHoverEnter={setHoveredToolId}
-                onHoverLeave={() => setHoveredToolId(null)}
-                onOutputEnter={(source) => () => setHoveredOutput(source)}
-                onOutputLeave={(source) => () => {
-                  void source;
-                  setHoveredOutput(null);
-                }}
-                onStartLinkingFromOutput={startLinkingFromOutput}
-                onFinalizeLinking={finalizeLinking}
-                onMoveLinking={moveLinking}
+            <div
+              style={{
+                position: "absolute",
+                left: 0,
+                top: 0,
+                transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.zoom})`,
+                transformOrigin: "0 0",
+                width: "100%",
+                height: "100%",
+                overflow: "visible",
+                pointerEvents: "auto",
+              }}
+              onPointerMove={moveLinking}
+              onPointerUp={() => linking && finalizeLinking()}
+            >
+              <ConnectionLines
+                connections={connections}
+                linking={linking}
+                selected={selected}
+                getOutputAnchor={getOutputAnchor}
+                getInputAnchor={getInputAnchor}
+                onConnectionPointerDown={handleConnectionPointerDown}
               />
-            ))}
+
+              {blocks.map((block) => {
+                const handles = getBlockHandles(block);
+                return (
+                  <AgentBlock
+                    key={block.id}
+                    block={block}
+                    handles={handles}
+                    isActive={selected?.type === "block" && selected.id === block.id}
+                    isDragging={draggingBlockId === block.id}
+                    showConnections={showHandlesForId(block.id)}
+                    toolCount={connections.filter((c) => c.to.type === "block" && c.to.id === block.id && (c.to.inputIndex ?? 0) >= TOOL_PORT_OFFSET).length}
+                    mode={getBlockMode(block)}
+                    onPointerDown={blockDrag.onPointerDown}
+                    onPointerMove={blockDrag.onPointerMove}
+                    onPointerUp={blockDrag.onPointerUp}
+                    onRemove={handleRemoveBlock}
+                    onDetailsClick={setModalBlockId}
+                    onHoverEnter={setHoveredBlockId}
+                    onHoverLeave={() => setHoveredBlockId(null)}
+                    onInputEnter={(target) => () => setHoveredInput(target)}
+                    onInputLeave={(target) => () => {
+                      void target;
+                      setHoveredInput(null);
+                    }}
+                    onOutputEnter={(source) => () => setHoveredOutput(source)}
+                    onOutputLeave={(source) => () => {
+                      void source;
+                      setHoveredOutput(null);
+                    }}
+                    onStartLinkingFromInput={startLinkingFromInput}
+                    onStartLinkingFromOutput={startLinkingFromOutput}
+                    onFinalizeLinking={finalizeLinking}
+                    onMoveLinking={moveLinking}
+                    onChangeInputs={changeBlockInputs}
+                    onChangeOutputs={changeBlockOutputs}
+                  />
+                );
+              })}
+
+              {tools.map((tool) => {
+                const handles = getToolHandles(tool);
+                return (
+                  <ToolNode
+                    key={tool.id}
+                    tool={tool}
+                    handles={handles}
+                    isActive={selected?.type === "tool" && selected.id === tool.id}
+                    isDragging={draggingToolId === tool.id}
+                    showHandles={showHandlesForId(tool.id)}
+                    onPointerDown={toolDrag.onPointerDown}
+                    onPointerMove={toolDrag.onPointerMove}
+                    onPointerUp={toolDrag.onPointerUp}
+                    onRemove={handleRemoveTool}
+                    onDetailsClick={setModalToolId}
+                    onHoverEnter={setHoveredToolId}
+                    onHoverLeave={() => setHoveredToolId(null)}
+                    onOutputEnter={(source) => () => setHoveredOutput(source)}
+                    onOutputLeave={(source) => () => {
+                      void source;
+                      setHoveredOutput(null);
+                    }}
+                    onStartLinkingFromOutput={startLinkingFromOutput}
+                    onFinalizeLinking={finalizeLinking}
+                    onMoveLinking={moveLinking}
+                  />
+                );
+              })}
+            </div>
           </div>
-        </div>
+        )}
       </main>
 
-      {modalBlockId && (
+      {modalBlock && (
         <BlockDetailsModal
-          block={blocks.find((b) => b.id === modalBlockId)!}
-          connections={connections}
+          block={modalBlock}
           toolPalette={toolPalette}
           modalToolChoice={modalToolChoice}
           onClose={() => setModalBlockId(null)}
@@ -1216,9 +1623,9 @@ export default function WorkflowEditorPage() {
         />
       )}
 
-      {modalToolId && (
+      {modalTool && (
         <ToolDetailsModal
-          tool={tools.find((t) => t.id === modalToolId)!}
+          tool={modalTool}
           connections={connections}
           onClose={() => setModalToolId(null)}
           onToggleInputRequired={toggleToolInputRequired}

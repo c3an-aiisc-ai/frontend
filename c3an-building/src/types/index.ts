@@ -8,6 +8,8 @@
 
 export type AgentBlock = {
   id: string;
+  /** Registry ID used for backend validation / re-hydration (not the canvas block id). */
+  agentId?: string;
   x: number;
   y: number;
   name: string;
@@ -21,6 +23,30 @@ export type AgentBlock = {
   presetId?: string;
   mandatoryInputCount?: number;
   mandatoryOutputCount?: number;
+};
+
+// -----------------------------------------------------------------------------
+// Agent Registry Types
+// -----------------------------------------------------------------------------
+
+export type AgentRegistryStreams = {
+  mandatory: string[];
+  optional?: string[];
+};
+
+export type AgentRegistryEntry = {
+  id: string;
+  name: string;
+  description: string;
+  capabilities: string[];
+  input_data_streams: AgentRegistryStreams;
+  output_data_streams: AgentRegistryStreams;
+};
+
+export type AgentRegistryFile = {
+  metadata?: Record<string, unknown>;
+  global_protocols?: string[];
+  agents: AgentRegistryEntry[];
 };
 
 export type ToolNode = {
@@ -88,6 +114,8 @@ export type Selection =
 // -----------------------------------------------------------------------------
 
 export type PanelKey = "blocks" | "tools" | "settings";
+
+export type ViewMode = "agent" | "plan";
 
 export type Theme = "light" | "dark";
 

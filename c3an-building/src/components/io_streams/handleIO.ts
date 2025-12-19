@@ -6,6 +6,12 @@
 
 import type { PlanningBlock } from "../../types/planning";
 import type { AgentBlock, Connection, ToolNode } from "../../types";
+import {
+	findAgentRegistryEntryByIdOrName,
+	listMandatoryOptional,
+	MIN_IO,
+	MAX_IO,
+} from "../../constants";
 import { parsePlanningJSON } from "./parsePlan";
 import { inferTripleOpsByDegree } from "../canvas/planOps";
 
@@ -53,33 +59,49 @@ export function hydrateAgentViewFromPlan(plan: PlanningBlock): AgentViewHydratio
 	const blocks: AgentBlock[] = [];
 	const connections: Connection[] = [];
 
-	const blockIdByName = new Map<string, string>();
-	const indexByName = new Map<string, number>();
+	const blockIdByKey = new Map<string, string>();
+	const indexByKey = new Map<string, number>();
 
 	let blockCount = 0;
 
-	const ensureBlock = (name: string) => {
-		const existing = blockIdByName.get(name);
+	const ensureBlock = (label: string) => {
+		const resolved = findAgentRegistryEntryByIdOrName(label);
+		const key = resolved?.id ?? label;
+
+		const existing = blockIdByKey.get(key);
 		if (existing) return existing;
 
 		const id = `block-${++blockCount}`;
-		blockIdByName.set(name, id);
-		indexByName.set(name, indexByName.size);
-		const index = indexByName.get(name)!;
+		blockIdByKey.set(key, id);
+		indexByKey.set(key, indexByKey.size);
+		const index = indexByKey.get(key)!;
+
+		const input = resolved ? listMandatoryOptional(resolved.input_data_streams) : { mandatory: [], optional: [] };
+		const output = resolved ? listMandatoryOptional(resolved.output_data_streams) : { mandatory: [], optional: [] };
+		const inputNames = [...input.mandatory, ...input.optional];
+		const outputNames = [...output.mandatory, ...output.optional];
+
+		const inputCount = Math.min(MAX_IO, Math.max(MIN_IO, inputNames.length || 1));
+		const outputCount = Math.min(MAX_IO, Math.max(MIN_IO, outputNames.length || 1));
+		const mandatoryInputCount = Math.min(resolved ? input.mandatory.length : 0, inputCount);
+		const mandatoryOutputCount = Math.min(resolved ? output.mandatory.length : 0, outputCount);
 
 		blocks.push({
 			id,
 			x: START_X + index * X_GAP,
 			y: START_Y,
-			name,
-			description: "",
-			inputCount: 1,
-			outputCount: 1,
-			inputRequired: [false],
-			outputRequired: [false],
-			inputNames: [],
-			outputNames: [],
-			presetId: "custom",
+			agentId: resolved?.id,
+			name: resolved?.name ?? label,
+			description: resolved?.description ?? "",
+			inputCount,
+			outputCount,
+			inputRequired: Array.from({ length: inputCount }, (_, i) => i < mandatoryInputCount),
+			outputRequired: Array.from({ length: outputCount }, (_, i) => i < mandatoryOutputCount),
+			inputNames,
+			outputNames,
+			presetId: resolved?.id ?? "custom",
+			mandatoryInputCount,
+			mandatoryOutputCount,
 		});
 
 		return id;
@@ -185,6 +207,7 @@ export function exportAgentViewPlanJson(args: {
 	const labelFor = (blockId: string) => {
 		const b = blockById.get(blockId);
 		if (!b) return blockId;
+		if (b.agentId) return b.agentId;
 		return hasDuplicateNames ? b.id : b.name;
 	};
 

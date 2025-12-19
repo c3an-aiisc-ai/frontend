@@ -11,20 +11,7 @@ import type {
 } from "../../types";
 
 function buildConnectionPath(start: AnchorPoint, end: AnchorPoint) {
-  const dx = end.x - start.x;
-  const dy = end.y - start.y;
-  const dist = Math.hypot(dx, dy);
-  const curve = Math.max(40, Math.min(200, dist * 0.35));
-
-  const startDir = start.dir ?? "right";
-  const endDir = end.dir ?? "left";
-
-  const c1x = start.x + (startDir === "right" ? curve : startDir === "left" ? -curve : 0);
-  const c1y = start.y + (startDir === "down" ? curve : startDir === "up" ? -curve : 0);
-  const c2x = end.x + (endDir === "left" ? curve : endDir === "right" ? -curve : 0);
-  const c2y = end.y + (endDir === "up" ? curve : endDir === "down" ? -curve : 0);
-
-  return `M ${start.x} ${start.y} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${end.x} ${end.y}`;
+  return `M ${start.x} ${start.y} L ${end.x} ${end.y}`;
 }
 
 type Props = {

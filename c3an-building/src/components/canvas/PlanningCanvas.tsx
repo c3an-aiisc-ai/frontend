@@ -15,7 +15,11 @@ function buildConnectionPath(start: AnchorPoint, end: AnchorPoint) {
   const curve = Math.max(40, Math.min(200, dist * 0.35));
 
   const startDir = start.dir ?? "right";
-  const endDir = end.dir ?? "left";
+  // If the end has no direction (e.g., linking preview), aim the arrow in the drag direction.
+  const majorAxis = Math.abs(dx) >= Math.abs(dy) ? "x" : "y";
+  const endDir =
+    end.dir ??
+    (majorAxis === "x" ? (dx >= 0 ? "right" : "left") : dy >= 0 ? "down" : "up");
 
   const c1x = start.x + (startDir === "right" ? curve : startDir === "left" ? -curve : 0);
   const c1y = start.y + (startDir === "down" ? curve : startDir === "up" ? -curve : 0);
@@ -29,6 +33,7 @@ function buildConnectionPath(start: AnchorPoint, end: AnchorPoint) {
 type Props = {
   onEnterWorkflow: (plan: PlanningBlock) => void;
   plans: PlanningBlock[];
+  onDropPlanBlock?: (point: { x: number; y: number }) => void;
   onPlanMove?: (id: string, x: number, y: number) => void;
   connections?: { from: string; to: string }[];
   linking?: { from: string; current: { x: number; y: number } } | null;
@@ -40,7 +45,7 @@ type Props = {
   theme?: "light" | "dark";
 };
 
-export default function PlanningCanvas({ onEnterWorkflow, plans, onPlanMove, connections = [], linking, onStartLink, onMoveLink, onCompleteLink, onCancelLink, onRemovePlan, theme = "dark" }: Props) {
+export default function PlanningCanvas({ onEnterWorkflow, plans, onDropPlanBlock, onPlanMove, connections = [], linking, onStartLink, onMoveLink, onCompleteLink, onCancelLink, onRemovePlan, theme = "dark" }: Props) {
   const [hoveredPlanId, setHoveredPlanId] = useState<string | null>(null);
   const [activePlanId, setActivePlanId] = useState<string | null>(null);
   const [planSizes, setPlanSizes] = useState<Record<string, { width: number; height: number }>>({});
@@ -208,6 +213,29 @@ export default function PlanningCanvas({ onEnterWorkflow, plans, onPlanMove, con
     <div
       ref={containerRef}
       className="absolute inset-0 overflow-hidden"
+      onDragOver={(e) => {
+        if (!onDropPlanBlock) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "copy";
+      }}
+      onDrop={(e) => {
+        if (!onDropPlanBlock) return;
+        e.preventDefault();
+
+        const raw = e.dataTransfer.getData("application/json");
+        if (!raw) return;
+
+        try {
+          const payload = JSON.parse(raw) as { type?: string };
+          if (payload.type !== "plan-block") return;
+        } catch {
+          return;
+        }
+
+        const world = toWorldPoint(e.clientX, e.clientY);
+        if (!world) return;
+        onDropPlanBlock(world);
+      }}
       onPointerDown={(e) => {
         const target = e.target as HTMLElement | null;
         // Clicking empty canvas deactivates the current plan (matches workflow selection behavior).
