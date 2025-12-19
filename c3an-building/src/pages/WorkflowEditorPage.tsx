@@ -32,6 +32,7 @@ import {
   MIN_IO,
   MAX_IO,
   TOOL_PORT_OFFSET,
+  PENDING_PLAN_STORAGE_KEY,
   AGENT_REGISTRY_AGENTS,
   findAgentRegistryEntryByIdOrName,
   getAgentRegistryEntryById,
@@ -40,7 +41,6 @@ import {
 import { readCustomAgents } from "../utils/customAgents";
 import { readCustomPlans } from "../utils/customPlans";
 import { exportAgentViewPlanJson, importAgentViewPlanJson } from "../components/io_streams/handleIO";
-import { normalizePlanOp } from "../components/canvas/planOps";
 import type {
   AgentBlock as AgentBlockType,
   AnchorPoint,
@@ -136,6 +136,7 @@ export default function WorkflowEditorPage() {
   const [plans, setPlans] = useState<PlanningBlock[]>([]);
   const nextPlanIdRef = useRef(1);
   const [planCanvasKey, setPlanCanvasKey] = useState(0);
+  const [activePlanId, setActivePlanId] = useState<string | null>(null);
 
   const [planConnections, setPlanConnections] = useState<Array<{ from: string; to: string }>>([]);
   const planLinkFromRef = useRef<string | null>(null);
@@ -204,49 +205,277 @@ export default function WorkflowEditorPage() {
     [customAgents]
   );
 
+  const bumpIdCounters = useCallback(
+    (args: {
+      blocks?: Array<{ id: string }>;
+      tools?: Array<{ id: string }>;
+      connections?: Array<{ id: string }>;
+    }) => {
+      const maxSuffix = (items: Array<{ id: string }> | undefined, prefix: string) => {
+        if (!items?.length) return 0;
+        let max = 0;
+        for (const item of items) {
+          if (!item.id?.startsWith(prefix)) continue;
+          const n = Number.parseInt(item.id.slice(prefix.length), 10);
+          if (Number.isFinite(n) && n > max) max = n;
+        }
+        return max;
+      };
+
+      const maxBlock = maxSuffix(args.blocks, "block-");
+      const maxTool = maxSuffix(args.tools, "tool-");
+      const maxConn = maxSuffix(args.connections, "conn-");
+
+      if (maxBlock > 0) nextBlockIdRef.current = Math.max(nextBlockIdRef.current, maxBlock + 1);
+      if (maxTool > 0) nextToolIdRef.current = Math.max(nextToolIdRef.current, maxTool + 1);
+      if (maxConn > 0) nextConnectionIdRef.current = Math.max(nextConnectionIdRef.current, maxConn + 1);
+    },
+    [nextBlockIdRef, nextConnectionIdRef, nextToolIdRef]
+  );
+
+  const applyPlanJson = useCallback(
+    (src: unknown) => {
+      const imported = importAgentViewPlanJson(src);
+      agentPlanTemplateRef.current = imported.template;
+
+      // Clear transient UI/linking state so we don't carry over stale hover/selection.
+      setSelected(null);
+      setHoveredInput(null);
+      setHoveredOutput(null);
+      setHoveredBlockId(null);
+      setHoveredToolId(null);
+      setLinking(null);
+      linkingRef.current = false;
+
+      const loadedBlocks = imported.workflow.blocks;
+      const loadedConnections = imported.workflow.connections;
+
+      const normalizedBlocks = loadedBlocks.map((b) => {
+        const maybeAgent =
+          getAgentRegistryEntryById((b as AgentBlockType).agentId, availableAgents) ??
+          findAgentRegistryEntryByIdOrName((b as AgentBlockType).name, availableAgents);
+
+        if (!maybeAgent) return b;
+
+        const io = buildIoFromStreams({
+          input: maybeAgent.input_data_streams,
+          output: maybeAgent.output_data_streams,
+        });
+
+        const rawInputCount = Number((b as AgentBlockType).inputCount);
+        const rawOutputCount = Number((b as AgentBlockType).outputCount);
+        const inputCount = Math.max(1, Number.isFinite(rawInputCount) ? rawInputCount : 1, io.inputCount);
+        const outputCount = Math.max(1, Number.isFinite(rawOutputCount) ? rawOutputCount : 1, io.outputCount);
+
+        const mergeNames = (existing: unknown, fallback: string[], length: number) => {
+          const ex = Array.isArray(existing) ? (existing as unknown[]).map((v) => String(v)) : [];
+          return Array.from({ length }, (_, i) => ex[i] ?? fallback[i] ?? "");
+        };
+
+        const ensureRequired = (existing: unknown, length: number, mandatoryCount: number) => {
+          const ex = Array.isArray(existing) ? (existing as unknown[]).map((v) => Boolean(v)) : [];
+          return Array.from({ length }, (_, i) => (i < mandatoryCount ? true : ex[i] ?? false));
+        };
+
+        return {
+          ...b,
+          agentId: (b as AgentBlockType).agentId ?? maybeAgent.id,
+          name: maybeAgent.name ?? (b as AgentBlockType).name,
+          description: maybeAgent.description ?? (b as AgentBlockType).description,
+          inputCount,
+          outputCount,
+          mandatoryInputCount: io.mandatoryInputCount,
+          mandatoryOutputCount: io.mandatoryOutputCount,
+          inputNames: mergeNames((b as AgentBlockType).inputNames, io.inputNames, inputCount),
+          outputNames: mergeNames((b as AgentBlockType).outputNames, io.outputNames, outputCount),
+          inputRequired: ensureRequired((b as AgentBlockType).inputRequired, inputCount, io.mandatoryInputCount),
+          outputRequired: ensureRequired((b as AgentBlockType).outputRequired, outputCount, io.mandatoryOutputCount),
+        } satisfies AgentBlockType;
+      });
+
+      const byId = new Map(normalizedBlocks.map((b) => [b.id, b] as const));
+
+      const normalizedConnections = loadedConnections.map((c: Connection) => {
+        const next = { ...c } as Connection;
+        if (next.from.type === "block") {
+          const fromBlock = byId.get(next.from.id);
+          const maxPort = Math.max(0, (fromBlock?.outputCount ?? 1) - 1);
+          next.from = { ...next.from, port: Math.max(0, Math.min(maxPort, next.from.port)) };
+        }
+        if (next.to.type === "block") {
+          const toBlock = byId.get(next.to.id);
+          const idx = next.to.inputIndex ?? 0;
+          if (idx < TOOL_PORT_OFFSET) {
+            const maxIdx = Math.max(0, (toBlock?.inputCount ?? 1) - 1);
+            next.to = { ...next.to, inputIndex: Math.max(0, Math.min(maxIdx, idx)) };
+          }
+        }
+        return next;
+      });
+
+      // Auto-enable any ports referenced by uploaded connections so anchors/lines align.
+      const blocksWithUsedPorts: AgentBlockType[] = normalizedBlocks.map((b) => ({
+        ...b,
+        inputRequired: [...(b.inputRequired ?? [])],
+        outputRequired: [...(b.outputRequired ?? [])],
+      }));
+      const mutableById = new Map(blocksWithUsedPorts.map((b) => [b.id, b] as const));
+      for (const conn of normalizedConnections) {
+        if (conn.from.type === "block") {
+          const b = mutableById.get(conn.from.id);
+          if (b && conn.from.port >= 0 && conn.from.port < b.outputRequired.length) {
+            b.outputRequired[conn.from.port] = true;
+          }
+        }
+        if (conn.to.type === "block") {
+          const idx = conn.to.inputIndex ?? 0;
+          if (idx >= 0 && idx < TOOL_PORT_OFFSET) {
+            const b = mutableById.get(conn.to.id);
+            if (b && idx < b.inputRequired.length) b.inputRequired[idx] = true;
+          }
+        }
+      }
+
+      setBlocks(blocksWithUsedPorts);
+      setTools([]);
+      setSelectedEvals([]);
+      setConnections(normalizedConnections);
+      setBlocks((prev) => recalcBlockPorts(normalizedConnections, prev));
+
+      bumpIdCounters({
+        blocks: blocksWithUsedPorts,
+        connections: normalizedConnections,
+        tools: [],
+      });
+
+      setViewMode("agent");
+    },
+    [
+      availableAgents,
+      bumpIdCounters,
+      linkingRef,
+      recalcBlockPorts,
+      setBlocks,
+      setConnections,
+      setHoveredBlockId,
+      setHoveredInput,
+      setHoveredOutput,
+      setHoveredToolId,
+      setLinking,
+      setSelected,
+      setSelectedEvals,
+      setTools,
+      setViewMode,
+    ]
+  );
+
+  const buildPlanWorkflowSnapshot = useCallback(
+    () => ({
+      blocks,
+      tools,
+      connections,
+      evals: selectedEvals,
+      notes: [],
+      uploads: [],
+      outputs: [],
+    }),
+    [blocks, connections, selectedEvals, tools]
+  );
+
+  const saveActivePlanWorkflow = useCallback(() => {
+    if (!activePlanId) return;
+    const snapshot = buildPlanWorkflowSnapshot();
+    setPlans((prev) =>
+      prev.map((plan) =>
+        plan.id === activePlanId ? { ...plan, workflow: snapshot } : plan
+      )
+    );
+  }, [activePlanId, buildPlanWorkflowSnapshot]);
+
+  const clearWorkspaceUIState = useCallback(() => {
+    setSelected(null);
+    setHoveredInput(null);
+    setHoveredOutput(null);
+    setHoveredBlockId(null);
+    setHoveredToolId(null);
+    setLinking(null);
+    linkingRef.current = false;
+  }, [
+    linkingRef,
+    setHoveredBlockId,
+    setHoveredInput,
+    setHoveredOutput,
+    setHoveredToolId,
+    setLinking,
+    setSelected,
+  ]);
+
+  const handleEnterPlanWorkflow = useCallback(
+    (plan: PlanningBlock) => {
+      saveActivePlanWorkflow();
+      setActivePlanId(plan.id);
+      clearWorkspaceUIState();
+
+      agentPlanTemplateRef.current = {
+        plan_id: plan.id,
+        query: plan.query,
+        triples: plan.triples,
+      };
+
+      if (plan.workflow) {
+        const loadedBlocks = plan.workflow.blocks ?? [];
+        const loadedTools = plan.workflow.tools ?? [];
+        const loadedConnections = plan.workflow.connections ?? [];
+
+        setBlocks(loadedBlocks);
+        setTools(loadedTools);
+        setSelectedEvals(plan.workflow.evals ?? []);
+        setConnections(loadedConnections);
+        setBlocks((prev) => recalcBlockPorts(loadedConnections, prev));
+
+        bumpIdCounters({
+          blocks: loadedBlocks,
+          tools: loadedTools,
+          connections: loadedConnections,
+        });
+      } else {
+        setBlocks([]);
+        setTools([]);
+        setConnections([]);
+        setSelectedEvals([]);
+      }
+
+      setViewMode("agent");
+    },
+    [
+      bumpIdCounters,
+      clearWorkspaceUIState,
+      recalcBlockPorts,
+      saveActivePlanWorkflow,
+      setBlocks,
+      setConnections,
+      setSelectedEvals,
+      setTools,
+      setViewMode,
+    ]
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof localStorage === "undefined") return;
+    const raw = localStorage.getItem(PENDING_PLAN_STORAGE_KEY);
+    if (!raw) return;
+    localStorage.removeItem(PENDING_PLAN_STORAGE_KEY);
+    try {
+      const payload = JSON.parse(raw) as unknown;
+      applyPlanJson(payload);
+    } catch {
+      // Ignore invalid pending plan payloads.
+    }
+  }, [applyPlanJson]);
+
   const handleC3ANClick = useCallback(() => {
     window.open("https://c3an.aiisc.ai/", "_blank", "noopener,noreferrer");
   }, []);
-
-  const syncWorkflowToPlanView = useCallback(() => {
-    const planJson: unknown = exportAgentViewPlanJson({
-      blocks,
-      connections,
-      base: agentPlanTemplateRef.current,
-    });
-
-    const planRecord = isRecord(planJson) ? planJson : {};
-    const planId = String(planRecord.plan_id ?? planRecord.id ?? `plan-${Date.now()}`);
-    const triplesRaw = Array.isArray(planRecord.triples) ? planRecord.triples : [];
-    const triples = triplesRaw.map((triple) => {
-      const t = isRecord(triple) ? triple : {};
-      return {
-        from: String(t.from ?? ""),
-        op: normalizePlanOp(String(t.op ?? "seq")),
-        to: String(t.to ?? ""),
-      };
-    });
-
-    const nextPlan: PlanningBlock = {
-      id: planId,
-      x: 220,
-      y: 200,
-      name: planId,
-      query: String(planRecord.query ?? ""),
-      triples,
-      workflow: {
-        blocks,
-        tools,
-        connections,
-        evals: selectedEvals,
-        notes: [],
-        uploads: [],
-        outputs: [],
-      },
-    };
-
-    setPlans([nextPlan]);
-  }, [blocks, connections, selectedEvals, tools]);
 
   const handleAgentDragStart = useCallback(
     (agentId: string) => (e: DragEvent<HTMLDivElement>) => {
@@ -1057,145 +1286,8 @@ export default function WorkflowEditorPage() {
           const src = JSON.parse(ev.target?.result as string);
           const kind = detectWorkflowType(src);
 
-          const bumpIdCounters = (args: {
-            blocks?: Array<{ id: string }>;
-            tools?: Array<{ id: string }>;
-            connections?: Array<{ id: string }>;
-          }) => {
-            const maxSuffix = (items: Array<{ id: string }> | undefined, prefix: string) => {
-              if (!items?.length) return 0;
-              let max = 0;
-              for (const item of items) {
-                if (!item.id?.startsWith(prefix)) continue;
-                const n = Number.parseInt(item.id.slice(prefix.length), 10);
-                if (Number.isFinite(n) && n > max) max = n;
-              }
-              return max;
-            };
-
-            const maxBlock = maxSuffix(args.blocks, "block-");
-            const maxTool = maxSuffix(args.tools, "tool-");
-            const maxConn = maxSuffix(args.connections, "conn-");
-
-            if (maxBlock > 0) nextBlockIdRef.current = Math.max(nextBlockIdRef.current, maxBlock + 1);
-            if (maxTool > 0) nextToolIdRef.current = Math.max(nextToolIdRef.current, maxTool + 1);
-            if (maxConn > 0) nextConnectionIdRef.current = Math.max(nextConnectionIdRef.current, maxConn + 1);
-          };
-
           if (kind === "planning") {
-            const imported = importAgentViewPlanJson(src);
-            agentPlanTemplateRef.current = imported.template;
-
-            // Clear transient UI/linking state so we don't carry over stale hover/selection.
-            setSelected(null);
-            setHoveredInput(null);
-            setHoveredOutput(null);
-            setHoveredBlockId(null);
-            setHoveredToolId(null);
-            setLinking(null);
-            linkingRef.current = false;
-
-            const loadedBlocks = imported.workflow.blocks;
-            const loadedConnections = imported.workflow.connections;
-
-            const normalizedBlocks = loadedBlocks.map((b) => {
-              const maybeAgent =
-                getAgentRegistryEntryById((b as AgentBlockType).agentId, availableAgents) ??
-                findAgentRegistryEntryByIdOrName((b as AgentBlockType).name, availableAgents);
-
-              if (!maybeAgent) return b;
-
-              const io = buildIoFromStreams({
-                input: maybeAgent.input_data_streams,
-                output: maybeAgent.output_data_streams,
-              });
-
-              const rawInputCount = Number((b as AgentBlockType).inputCount);
-              const rawOutputCount = Number((b as AgentBlockType).outputCount);
-              const inputCount = Math.max(1, Number.isFinite(rawInputCount) ? rawInputCount : 1, io.inputCount);
-              const outputCount = Math.max(1, Number.isFinite(rawOutputCount) ? rawOutputCount : 1, io.outputCount);
-
-              const mergeNames = (existing: unknown, fallback: string[], length: number) => {
-                const ex = Array.isArray(existing) ? (existing as unknown[]).map((v) => String(v)) : [];
-                return Array.from({ length }, (_, i) => ex[i] ?? fallback[i] ?? "");
-              };
-
-              const ensureRequired = (existing: unknown, length: number, mandatoryCount: number) => {
-                const ex = Array.isArray(existing) ? (existing as unknown[]).map((v) => Boolean(v)) : [];
-                return Array.from({ length }, (_, i) => (i < mandatoryCount ? true : ex[i] ?? false));
-              };
-
-              return {
-                ...b,
-                agentId: (b as AgentBlockType).agentId ?? maybeAgent.id,
-                name: maybeAgent.name ?? (b as AgentBlockType).name,
-                description: maybeAgent.description ?? (b as AgentBlockType).description,
-                inputCount,
-                outputCount,
-                mandatoryInputCount: io.mandatoryInputCount,
-                mandatoryOutputCount: io.mandatoryOutputCount,
-                inputNames: mergeNames((b as AgentBlockType).inputNames, io.inputNames, inputCount),
-                outputNames: mergeNames((b as AgentBlockType).outputNames, io.outputNames, outputCount),
-                inputRequired: ensureRequired((b as AgentBlockType).inputRequired, inputCount, io.mandatoryInputCount),
-                outputRequired: ensureRequired((b as AgentBlockType).outputRequired, outputCount, io.mandatoryOutputCount),
-              } satisfies AgentBlockType;
-            });
-
-            const byId = new Map(normalizedBlocks.map((b) => [b.id, b] as const));
-
-            const normalizedConnections = loadedConnections.map((c: Connection) => {
-              const next = { ...c } as Connection;
-              if (next.from.type === "block") {
-                const fromBlock = byId.get(next.from.id);
-                const maxPort = Math.max(0, (fromBlock?.outputCount ?? 1) - 1);
-                next.from = { ...next.from, port: Math.max(0, Math.min(maxPort, next.from.port)) };
-              }
-              if (next.to.type === "block") {
-                const toBlock = byId.get(next.to.id);
-                const idx = next.to.inputIndex ?? 0;
-                if (idx < TOOL_PORT_OFFSET) {
-                  const maxIdx = Math.max(0, (toBlock?.inputCount ?? 1) - 1);
-                  next.to = { ...next.to, inputIndex: Math.max(0, Math.min(maxIdx, idx)) };
-                }
-              }
-              return next;
-            });
-
-            // Auto-enable any ports referenced by uploaded connections so anchors/lines align.
-            const blocksWithUsedPorts: AgentBlockType[] = normalizedBlocks.map((b) => ({
-              ...b,
-              inputRequired: [...(b.inputRequired ?? [])],
-              outputRequired: [...(b.outputRequired ?? [])],
-            }));
-            const mutableById = new Map(blocksWithUsedPorts.map((b) => [b.id, b] as const));
-            for (const conn of normalizedConnections) {
-              if (conn.from.type === "block") {
-                const b = mutableById.get(conn.from.id);
-                if (b && conn.from.port >= 0 && conn.from.port < b.outputRequired.length) {
-                  b.outputRequired[conn.from.port] = true;
-                }
-              }
-              if (conn.to.type === "block") {
-                const idx = conn.to.inputIndex ?? 0;
-                if (idx >= 0 && idx < TOOL_PORT_OFFSET) {
-                  const b = mutableById.get(conn.to.id);
-                  if (b && idx < b.inputRequired.length) b.inputRequired[idx] = true;
-                }
-              }
-            }
-
-            setBlocks(blocksWithUsedPorts);
-            setTools([]);
-            setSelectedEvals([]);
-            setConnections(normalizedConnections);
-            setBlocks((prev) => recalcBlockPorts(normalizedConnections, prev));
-
-            // Ensure newly added blocks/connections get fresh IDs (avoid collisions like block-1).
-            bumpIdCounters({
-              blocks: blocksWithUsedPorts,
-              connections: normalizedConnections,
-              tools: [],
-            });
+            applyPlanJson(src);
             return;
           }
 
@@ -1339,10 +1431,9 @@ export default function WorkflowEditorPage() {
     },
     [
       linkingRef,
-      nextBlockIdRef,
-      nextConnectionIdRef,
-      nextToolIdRef,
+      applyPlanJson,
       availableAgents,
+      bumpIdCounters,
       recalcBlockPorts,
       setBlocks,
       setConnections,
@@ -1373,6 +1464,7 @@ export default function WorkflowEditorPage() {
 
     setPlans([]);
     setPlanCanvasKey((k) => k + 1);
+    setActivePlanId(null);
 
     agentPlanTemplateRef.current = null;
     setSelectedEvals([]);
@@ -1487,17 +1579,13 @@ export default function WorkflowEditorPage() {
         onViewModeChange={(mode) => {
           if (mode === "plan" && activePanel === "tools") setActivePanel("blocks");
           if (mode === "plan") {
-            syncWorkflowToPlanView();
-            setPlanConnections([]);
+            saveActivePlanWorkflow();
             planLinkFromRef.current = null;
           }
           setViewMode(mode);
           setModalBlockId(null);
           setModalToolId(null);
-          setLinking(null);
-          setHoveredInput(null);
-          setHoveredOutput(null);
-          setSelected(null);
+          clearWorkspaceUIState();
         }}
         onAgentDragStart={handleAgentDragStart}
         onPlanDragStart={handlePlanDragStart}
@@ -1552,6 +1640,7 @@ export default function WorkflowEditorPage() {
               setPlans((prev) => prev.filter((p) => p.id !== id));
               setPlanConnections((prev) => prev.filter((c) => c.from !== id && c.to !== id));
               if (planLinkFromRef.current === id) planLinkFromRef.current = null;
+              if (activePlanId === id) setActivePlanId(null);
             }}
             onDropPlanBlock={(point, payload) => {
               const id = `plan-${nextPlanIdRef.current++}`;
@@ -1568,26 +1657,7 @@ export default function WorkflowEditorPage() {
                 },
               ]);
             }}
-            onEnterWorkflow={(plan) => {
-              if (plan.workflow) {
-                const loadedConnections = plan.workflow.connections ?? [];
-
-                setSelected(null);
-                setHoveredInput(null);
-                setHoveredOutput(null);
-                setHoveredBlockId(null);
-                setHoveredToolId(null);
-                setLinking(null);
-                linkingRef.current = false;
-
-                setBlocks(plan.workflow.blocks ?? []);
-                setTools(plan.workflow.tools ?? []);
-                setSelectedEvals(plan.workflow.evals ?? []);
-                setConnections(loadedConnections);
-                setBlocks((prev) => recalcBlockPorts(loadedConnections, prev));
-              }
-              setViewMode("agent");
-            }}
+            onEnterWorkflow={handleEnterPlanWorkflow}
           />
         ) : (
           <div

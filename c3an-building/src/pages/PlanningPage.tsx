@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import type { PlanTemplate } from "../types/planning";
 import { parsePlanningJSON } from "../components/io_streams/parsePlan";
 import { readCustomPlans, writeCustomPlans } from "../utils/customPlans";
+import { PENDING_PLAN_STORAGE_KEY } from "../constants";
 
 const SAMPLE_JSON = `{
   "plans": [
@@ -84,6 +85,50 @@ function normalizePlanTemplate(
   };
 }
 
+function normalizePlanPayload(value: unknown, index: number): Record<string, unknown> | null {
+  if (!isRecord(value)) return null;
+  const record = value as Record<string, unknown>;
+  let parsed: ReturnType<typeof parsePlanningJSON>;
+  try {
+    const hasId = typeof record.plan_id === "string" || typeof record.id === "string";
+    parsed = parsePlanningJSON(
+      hasId ? record : { ...record, plan_id: `plan-${index + 1}` }
+    );
+  } catch {
+    return null;
+  }
+
+  const rawId =
+    typeof record.plan_id === "string"
+      ? record.plan_id.trim()
+      : typeof record.id === "string"
+        ? record.id.trim()
+        : "";
+  const planId = rawId || parsed.id;
+  const query =
+    typeof record.query === "string"
+      ? record.query.trim()
+      : typeof record.intent === "string"
+        ? record.intent.trim()
+        : parsed.query;
+
+  return {
+    ...record,
+    plan_id: planId,
+    query: query ?? "",
+    triples: parsed.triples,
+  };
+}
+
+function queuePlanForWorkflow(plan: Record<string, unknown>) {
+  if (typeof window === "undefined" || typeof localStorage === "undefined") return;
+  try {
+    localStorage.setItem(PENDING_PLAN_STORAGE_KEY, JSON.stringify(plan));
+  } catch {
+    // Ignore storage failures (e.g., quota or private mode).
+  }
+}
+
 function extractPlans(value: unknown): unknown[] {
   if (Array.isArray(value)) return value;
   if (isRecord(value) && Array.isArray(value.plans)) return value.plans;
@@ -118,8 +163,11 @@ export default function PlanningPage() {
       const normalized = entries
         .map((entry, index) => normalizePlanTemplate(entry, index, nextUsed))
         .filter((entry): entry is PlanTemplate => Boolean(entry));
+      const payloads = entries
+        .map((entry, index) => normalizePlanPayload(entry, index))
+        .filter((entry): entry is Record<string, unknown> => Boolean(entry));
 
-      if (normalized.length === 0) {
+      if (normalized.length === 0 || payloads.length === 0) {
         setParseError("No valid plans found in the input.");
         setLastAdded([]);
         return;
@@ -130,6 +178,8 @@ export default function PlanningPage() {
       writeCustomPlans(nextPlans);
       setLastAdded(normalized);
       setParseError(null);
+      queuePlanForWorkflow(payloads[0]);
+      window.location.hash = "#/workflow";
     } catch (error) {
       setParseError(error instanceof Error ? `Invalid JSON: ${error.message}` : "Invalid JSON.");
       setLastAdded([]);
@@ -221,7 +271,7 @@ export default function PlanningPage() {
               className="rounded-full border border-amber-200 bg-amber-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-amber-500"
               onClick={handleGenerate}
             >
-              Generate plans
+              Generate plan
             </button>
           </div>
         </header>
@@ -260,7 +310,7 @@ export default function PlanningPage() {
                 className="rounded-md bg-amber-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-amber-500"
                 onClick={handleGenerate}
               >
-                Generate plans
+                Generate plan
               </button>
               <button
                 className="rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"

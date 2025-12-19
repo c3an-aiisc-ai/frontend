@@ -295,3 +295,4 @@ export const ACCEPTED_FILE_TYPES =
 export const STORAGE_KEY = "c3an-workspace";
 export const CUSTOM_AGENT_STORAGE_KEY = "c3an-custom-agents";
 export const CUSTOM_PLAN_STORAGE_KEY = "c3an-custom-plans";
+export const PENDING_PLAN_STORAGE_KEY = "c3an-pending-plan";
