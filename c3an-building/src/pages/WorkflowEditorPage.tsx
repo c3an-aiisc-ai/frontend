@@ -134,6 +134,9 @@ export default function WorkflowEditorPage() {
   const nextPlanIdRef = useRef(1);
   const [planCanvasKey, setPlanCanvasKey] = useState(0);
 
+  const [planConnections, setPlanConnections] = useState<Array<{ from: string; to: string }>>([]);
+  const planLinkFromRef = useRef<string | null>(null);
+
   // Agent-view-only IO: when the user uploads a plan JSON while in agent view,
   // we keep the original payload as a template so download keeps the same schema.
   const agentPlanTemplateRef = useRef<unknown | null>(null);
@@ -1464,7 +1467,11 @@ export default function WorkflowEditorPage() {
         }}
         onViewModeChange={(mode) => {
           if (mode === "plan" && activePanel === "tools") setActivePanel("blocks");
-          if (mode === "plan") syncWorkflowToPlanView();
+          if (mode === "plan") {
+            syncWorkflowToPlanView();
+            setPlanConnections([]);
+            planLinkFromRef.current = null;
+          }
           setViewMode(mode);
           setModalBlockId(null);
           setModalToolId(null);
@@ -1497,11 +1504,29 @@ export default function WorkflowEditorPage() {
             key={planCanvasKey}
             theme={theme}
             plans={plans}
+            connections={planConnections}
+            onStartLink={(fromId) => {
+              planLinkFromRef.current = fromId;
+            }}
+            onCompleteLink={(toId) => {
+              const fromId = planLinkFromRef.current;
+              planLinkFromRef.current = null;
+              if (!fromId || fromId === toId) return;
+              setPlanConnections((prev) => {
+                if (prev.some((c) => c.from === fromId && c.to === toId)) return prev;
+                return [...prev, { from: fromId, to: toId }];
+              });
+            }}
+            onCancelLink={() => {
+              planLinkFromRef.current = null;
+            }}
             onPlanMove={(id, x, y) => {
               setPlans((prev) => prev.map((p) => (p.id === id ? { ...p, x, y } : p)));
             }}
             onRemovePlan={(id) => {
               setPlans((prev) => prev.filter((p) => p.id !== id));
+              setPlanConnections((prev) => prev.filter((c) => c.from !== id && c.to !== id));
+              if (planLinkFromRef.current === id) planLinkFromRef.current = null;
             }}
             onDropPlanBlock={(point) => {
               const id = `plan-${nextPlanIdRef.current++}`;
