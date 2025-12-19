@@ -6,21 +6,30 @@ export const AGENT_REGISTRY_AGENTS: AgentRegistryEntry[] = Array.isArray(AGENT_R
   ? AGENT_REGISTRY.agents
   : [];
 
-export function getAgentRegistryEntryById(agentId: string | undefined | null): AgentRegistryEntry | null {
+export function getAgentRegistryEntryById(
+  agentId: string | undefined | null,
+  agents: AgentRegistryEntry[] = AGENT_REGISTRY_AGENTS
+): AgentRegistryEntry | null {
   if (!agentId) return null;
-  return AGENT_REGISTRY_AGENTS.find((a) => a.id === agentId) ?? null;
+  return agents.find((a) => a.id === agentId) ?? null;
 }
 
-export function findAgentRegistryEntryByIdOrName(label: string | undefined | null): AgentRegistryEntry | null {
+export function findAgentRegistryEntryByIdOrName(
+  label: string | undefined | null,
+  agents: AgentRegistryEntry[] = AGENT_REGISTRY_AGENTS
+): AgentRegistryEntry | null {
   if (!label) return null;
-  const exact = AGENT_REGISTRY_AGENTS.find((a) => a.id === label);
+  const exact = agents.find((a) => a.id === label);
   if (exact) return exact;
   const normalized = label.trim().toLowerCase();
-  return AGENT_REGISTRY_AGENTS.find((a) => a.name.trim().toLowerCase() === normalized) ?? null;
+  return agents.find((a) => a.name.trim().toLowerCase() === normalized) ?? null;
 }
 
-export function getRegistryAgentForBlock(block: AgentBlock): AgentRegistryEntry | null {
-  return getAgentRegistryEntryById(block.agentId) ?? findAgentRegistryEntryByIdOrName(block.name);
+export function getRegistryAgentForBlock(
+  block: AgentBlock,
+  agents: AgentRegistryEntry[] = AGENT_REGISTRY_AGENTS
+): AgentRegistryEntry | null {
+  return getAgentRegistryEntryById(block.agentId, agents) ?? findAgentRegistryEntryByIdOrName(block.name, agents);
 }
 
 export function listMandatoryOptional(streams: { mandatory: string[]; optional?: string[] } | undefined) {

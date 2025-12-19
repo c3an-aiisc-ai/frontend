@@ -242,6 +242,14 @@ export default function EvaluationPage() {
             <button
               className="rounded-full border border-slate-200 bg-white/90 px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-white"
               onClick={() => {
+                window.location.hash = "#/agentgen";
+              }}
+            >
+              AgentGen
+            </button>
+            <button
+              className="rounded-full border border-slate-200 bg-white/90 px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-white"
+              onClick={() => {
                 window.location.hash = "#/planning";
               }}
             >

@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import "./App.css";
+import AgentGenPage from "./pages/AgentGenPage";
 import EvaluationPage from "./pages/EvaluationPage";
 import PlanningPage from "./pages/PlanningPage";
 import WorkflowEditorPage from "./pages/WorkflowEditorPage";
 
-type Route = "planning" | "evaluation" | "editor";
+type Route = "planning" | "evaluation" | "agentgen" | "editor";
 
 const getRoute = (): Route => {
   const hash = window.location.hash.replace("#", "");
@@ -12,6 +13,7 @@ const getRoute = (): Route => {
   if (hash.startsWith("/evaluation") || hash.startsWith("/evals") || hash.startsWith("/metrics")) {
     return "evaluation";
   }
+  if (hash.startsWith("/agentgen")) return "agentgen";
   return "editor";
 };
 
@@ -29,6 +31,9 @@ export default function App() {
   }
   if (route === "evaluation") {
     return <EvaluationPage />;
+  }
+  if (route === "agentgen") {
+    return <AgentGenPage />;
   }
 
   return <WorkflowEditorPage />;

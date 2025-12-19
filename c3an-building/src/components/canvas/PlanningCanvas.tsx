@@ -6,15 +6,18 @@ import { Background } from "../";
 import { PlanningBlockNode } from "./index";
 import ConnectionLines from "../ui/ConnectionLines";
 import type { AnchorPoint, Connection, LinkingState } from "../../types";
-import type { PlanningBlock } from "../../types/planning";
+import type { PlanTemplate, PlanningBlock } from "../../types/planning";
 
 type PlanLinkState = { from: string; current: { x: number; y: number } } | null;
+type PlanDropPayload =
+  | { type: "plan-block" }
+  | { type: "plan-template"; template: PlanTemplate };
 
 type Props = {
   onEnterWorkflow: (plan: PlanningBlock) => void;
   onSelectPlan?: (plan: PlanningBlock) => void;
   plans: PlanningBlock[];
-  onDropPlanBlock?: (point: { x: number; y: number }) => void;
+  onDropPlanBlock?: (point: { x: number; y: number }, payload?: PlanDropPayload) => void;
   onPlanMove?: (id: string, x: number, y: number) => void;
   connections?: { from: string; to: string }[];
   linking?: PlanLinkState;
@@ -245,7 +248,18 @@ export default function PlanningCanvas({
         if (!onDropPlanBlock) return;
         event.preventDefault();
         const world = toWorldPoint(event.clientX, event.clientY);
-        if (world) onDropPlanBlock(world);
+        if (!world) return;
+        const raw = event.dataTransfer.getData("application/json");
+        if (!raw) {
+          onDropPlanBlock(world);
+          return;
+        }
+        try {
+          const parsed = JSON.parse(raw) as PlanDropPayload;
+          onDropPlanBlock(world, parsed);
+        } catch {
+          onDropPlanBlock(world);
+        }
       }}
       onPointerMove={(e) => {
         if (!activeLink) return;

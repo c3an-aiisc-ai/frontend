@@ -1,7 +1,8 @@
+import type { WorkspaceSnapshot } from "./index";
+
 // src/types/planning.ts
 
 export type PlanOp = "seq" | "brn" | "agg";
-import type { WorkspaceSnapshot } from "./index";
 
 export type PlanningWorkflowSnapshot = Pick<
   WorkspaceSnapshot,
@@ -16,6 +17,13 @@ export type PlanningBlock = {
   query: string;
   triples: { from: string; op: PlanOp; to: string }[];
   workflow?: PlanningWorkflowSnapshot;
+};
+
+export type PlanTemplate = {
+  id: string;
+  name: string;
+  query: string;
+  triples: { from: string; op: PlanOp; to: string }[];
 };
 
 export type PlanTriple = {

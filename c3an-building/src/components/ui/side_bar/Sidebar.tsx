@@ -3,7 +3,8 @@
 // =============================================================================
 
 import type { DragEvent } from "react";
-import type { PanelKey, Theme, ToolPreset, ViewMode } from "../../../types";
+import type { AgentRegistryEntry, PanelKey, Theme, ToolPreset, ViewMode } from "../../../types";
+import type { PlanTemplate } from "../../../types/planning";
 import { PANEL_TABS, PANEL_TITLES } from "../../../constants";
 import { iconPaths } from "../../../assets";
 import BlocksPanel from "./BlocksPanel";
@@ -14,12 +15,15 @@ type Props = {
   activePanel: PanelKey | null;
   theme: Theme;
   viewMode: ViewMode;
+  registryAgents: AgentRegistryEntry[];
+  customAgents: AgentRegistryEntry[];
+  planTemplates: PlanTemplate[];
   toolPalette: ToolPreset[];
   onPanelChange: (panel: PanelKey | null) => void;
   onThemeChange: (theme: Theme) => void;
   onViewModeChange: (mode: ViewMode) => void;
   onAgentDragStart: (agentId: string) => (e: DragEvent<HTMLDivElement>) => void;
-  onPlanDragStart: (e: DragEvent<HTMLDivElement>) => void;
+  onPlanDragStart: (template?: PlanTemplate) => (e: DragEvent<HTMLDivElement>) => void;
   onToolDragStart: (toolName: string) => (e: DragEvent<HTMLDivElement>) => void;
 };
 
@@ -27,6 +31,9 @@ export default function Sidebar({
   activePanel,
   theme,
   viewMode,
+  registryAgents,
+  customAgents,
+  planTemplates,
   toolPalette,
   onPanelChange,
   onThemeChange,
@@ -99,6 +106,9 @@ export default function Sidebar({
           {activePanel === "blocks" && (
             <BlocksPanel
               viewMode={viewMode}
+              registryAgents={registryAgents}
+              customAgents={customAgents}
+              planTemplates={planTemplates}
               onAgentDragStart={onAgentDragStart}
               onPlanDragStart={onPlanDragStart}
             />

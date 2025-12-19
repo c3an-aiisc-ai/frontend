@@ -2,12 +2,13 @@
 // Block Details Modal Component
 // =============================================================================
 
-import type { AgentBlock, ToolPreset } from "../../types";
+import type { AgentBlock, AgentRegistryEntry, ToolPreset } from "../../types";
 import { iconPaths } from "../../assets";
 import { getRegistryAgentForBlock } from "../../constants";
 
 type Props = {
   block: AgentBlock;
+  registryAgents: AgentRegistryEntry[];
   toolPalette: ToolPreset[];
   modalToolChoice: string;
   onClose: () => void;
@@ -20,6 +21,7 @@ type Props = {
 
 export default function BlockDetailsModal({
   block,
+  registryAgents,
   toolPalette,
   modalToolChoice,
   onClose,
@@ -29,7 +31,7 @@ export default function BlockDetailsModal({
   onToggleOutputRequired,
   getBlockMode,
 }: Props) {
-  const registryAgent = getRegistryAgentForBlock(block);
+  const registryAgent = getRegistryAgentForBlock(block, registryAgents);
 
   return (
     <div

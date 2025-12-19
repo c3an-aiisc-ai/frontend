@@ -37,6 +37,8 @@ import {
   getAgentRegistryEntryById,
   listMandatoryOptional,
 } from "../constants";
+import { readCustomAgents } from "../utils/customAgents";
+import { readCustomPlans } from "../utils/customPlans";
 import { exportAgentViewPlanJson, importAgentViewPlanJson } from "../components/io_streams/handleIO";
 import { normalizePlanOp } from "../components/canvas/planOps";
 import type {
@@ -52,6 +54,7 @@ import type {
   ViewMode,
 } from "../types";
 import type { PlanningBlock } from "../types";
+import type { PlanTemplate } from "../types/planning";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -194,6 +197,12 @@ export default function WorkflowEditorPage() {
 
   const toolPalette = useMemo(() => TOOL_PALETTE, []);
   const evalOptions = useMemo(() => EVAL_OPTIONS, []);
+  const customAgents = useMemo(() => readCustomAgents(), []);
+  const customPlans = useMemo(() => readCustomPlans(), []);
+  const availableAgents = useMemo(
+    () => [...AGENT_REGISTRY_AGENTS, ...customAgents],
+    [customAgents]
+  );
 
   const handleC3ANClick = useCallback(() => {
     window.open("https://c3an.aiisc.ai/", "_blank", "noopener,noreferrer");
@@ -250,10 +259,16 @@ export default function WorkflowEditorPage() {
     []
   );
 
-  const handlePlanDragStart = useCallback((e: DragEvent<HTMLDivElement>) => {
-    e.dataTransfer.effectAllowed = "copy";
-    e.dataTransfer.setData("application/json", JSON.stringify({ type: "plan-block" }));
-  }, []);
+  const handlePlanDragStart = useCallback(
+    (template?: PlanTemplate) => (e: DragEvent<HTMLDivElement>) => {
+      e.dataTransfer.effectAllowed = "copy";
+      const payload = template
+        ? { type: "plan-template", template }
+        : { type: "plan-block" };
+      e.dataTransfer.setData("application/json", JSON.stringify(payload));
+    },
+    []
+  );
 
   const handleToolDragStart = useCallback(
     (toolName: string) => (e: DragEvent<HTMLDivElement>) => {
@@ -317,8 +332,8 @@ export default function WorkflowEditorPage() {
       if (payload.type === "agent-block") {
         const agentId = typeof payload.agentId === "string" ? payload.agentId : "";
         const agent =
-          getAgentRegistryEntryById(agentId) ??
-          (AGENT_REGISTRY_AGENTS.length ? AGENT_REGISTRY_AGENTS[0] : null);
+          getAgentRegistryEntryById(agentId, availableAgents) ??
+          (availableAgents.length ? availableAgents[0] : null);
 
         const io = agent
           ? buildIoFromStreams({
@@ -368,7 +383,7 @@ export default function WorkflowEditorPage() {
         setTools((prev) => [...prev, { ...paletteItem, id: `tool-${id}`, x: world.x, y: world.y }]);
       }
     },
-    [nextBlockIdRef, nextToolIdRef, setBlocks, setTools, toWorldPoint, toolPalette]
+    [availableAgents, nextBlockIdRef, nextToolIdRef, setBlocks, setTools, toWorldPoint, toolPalette]
   );
 
   const getBlockHandles = useCallback(
@@ -1085,8 +1100,8 @@ export default function WorkflowEditorPage() {
 
             const normalizedBlocks = loadedBlocks.map((b) => {
               const maybeAgent =
-                getAgentRegistryEntryById((b as AgentBlockType).agentId) ??
-                findAgentRegistryEntryByIdOrName((b as AgentBlockType).name);
+                getAgentRegistryEntryById((b as AgentBlockType).agentId, availableAgents) ??
+                findAgentRegistryEntryByIdOrName((b as AgentBlockType).name, availableAgents);
 
               if (!maybeAgent) return b;
 
@@ -1199,8 +1214,8 @@ export default function WorkflowEditorPage() {
             // Try to attach/validate agentId from the local registry on upload.
             const normalizedBlocks = loadedBlocks.map((b) => {
               const maybeAgent =
-                getAgentRegistryEntryById((b as AgentBlockType).agentId) ??
-                findAgentRegistryEntryByIdOrName((b as AgentBlockType).name);
+                getAgentRegistryEntryById((b as AgentBlockType).agentId, availableAgents) ??
+                findAgentRegistryEntryByIdOrName((b as AgentBlockType).name, availableAgents);
 
               if (!maybeAgent) return b;
 
@@ -1327,6 +1342,7 @@ export default function WorkflowEditorPage() {
       nextBlockIdRef,
       nextConnectionIdRef,
       nextToolIdRef,
+      availableAgents,
       recalcBlockPorts,
       setBlocks,
       setConnections,
@@ -1459,6 +1475,9 @@ export default function WorkflowEditorPage() {
         activePanel={activePanel}
         theme={theme}
         viewMode={viewMode}
+        registryAgents={AGENT_REGISTRY_AGENTS}
+        customAgents={customAgents}
+        planTemplates={customPlans}
         toolPalette={toolPalette}
         onPanelChange={setActivePanel}
         onThemeChange={(value) => {
@@ -1480,7 +1499,7 @@ export default function WorkflowEditorPage() {
           setHoveredOutput(null);
           setSelected(null);
         }}
-         onAgentDragStart={handleAgentDragStart}
+        onAgentDragStart={handleAgentDragStart}
         onPlanDragStart={handlePlanDragStart}
         onToolDragStart={handleToolDragStart}
       />
@@ -1490,6 +1509,12 @@ export default function WorkflowEditorPage() {
         fileInputRef={fileInputRef}
         onC3ANClick={handleC3ANClick}
         onAboutClick={() => setActivePanel((prev) => (prev === "settings" ? null : "settings"))}
+        onPlanningClick={() => {
+          window.location.hash = "#/planning";
+        }}
+        onAgentGenClick={() => {
+          window.location.hash = "#/agentgen";
+        }}
         onEvalsClick={() => setShowEvalsModal(true)}
         onDownloadClick={handleDownload}
         onUploadClick={() => fileInputRef.current?.click()}
@@ -1528,17 +1553,18 @@ export default function WorkflowEditorPage() {
               setPlanConnections((prev) => prev.filter((c) => c.from !== id && c.to !== id));
               if (planLinkFromRef.current === id) planLinkFromRef.current = null;
             }}
-            onDropPlanBlock={(point) => {
+            onDropPlanBlock={(point, payload) => {
               const id = `plan-${nextPlanIdRef.current++}`;
+              const template = payload?.type === "plan-template" ? payload.template : null;
               setPlans((prev) => [
                 ...prev,
                 {
                   id,
                   x: point.x,
                   y: point.y,
-                  name: "Plan",
-                  query: "",
-                  triples: [],
+                  name: template?.name ?? "Plan",
+                  query: template?.query ?? "",
+                  triples: template?.triples ?? [],
                 },
               ]);
             }}
@@ -1673,6 +1699,7 @@ export default function WorkflowEditorPage() {
       {modalBlock && (
         <BlockDetailsModal
           block={modalBlock}
+          registryAgents={availableAgents}
           toolPalette={toolPalette}
           modalToolChoice={modalToolChoice}
           onClose={() => setModalBlockId(null)}

@@ -13,6 +13,7 @@ type Props = {
   onAboutClick: () => void;
   onPlanningClick?: () => void;
   onEvaluationClick?: () => void;
+  onAgentGenClick?: () => void;
   onEvalsClick: () => void;
   onDownloadClick: () => void;
   onUploadClick: () => void;
@@ -28,6 +29,7 @@ export default function Toolbar({
   onAboutClick,
   onPlanningClick,
   onEvaluationClick,
+  onAgentGenClick,
   onEvalsClick,
   onDownloadClick,
   onUploadClick,
@@ -88,6 +90,11 @@ export default function Toolbar({
             Evaluation
           </button>
         )}
+        {onAgentGenClick && (
+          <button className={actionButtonClass} onClick={onAgentGenClick}>
+            AgentGen
+          </button>
+        )}
         <button className={actionButtonClass} onClick={onEvalsClick}>
           Evals
         </button>
@@ -130,6 +137,11 @@ export default function Toolbar({
             {onEvaluationClick && (
               <button className={menuItemClass} onClick={() => handleMenuAction(onEvaluationClick)} role="menuitem">
                 Evaluation
+              </button>
+            )}
+            {onAgentGenClick && (
+              <button className={menuItemClass} onClick={() => handleMenuAction(onAgentGenClick)} role="menuitem">
+                AgentGen
               </button>
             )}
             <button className={menuItemClass} onClick={() => handleMenuAction(onEvalsClick)} role="menuitem">
