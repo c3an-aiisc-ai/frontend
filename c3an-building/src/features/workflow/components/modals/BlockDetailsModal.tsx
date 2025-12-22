@@ -33,6 +33,13 @@ export default function BlockDetailsModal({
 }: Props) {
   const registryAgent = getRegistryAgentForBlock(block, registryAgents);
 
+  // Attach-tool UI is intentionally hidden, but we keep these props wired so
+  // the feature can still exist elsewhere (and to avoid breaking callers).
+  void toolPalette;
+  void modalToolChoice;
+  void onToolChoiceChange;
+  void onAddTool;
+
   return (
     <div
       className="modal-backdrop"
@@ -200,36 +207,7 @@ export default function BlockDetailsModal({
           </div>
         </div>
 
-        {/* Add Tool Section */}
-        <div className="mt-4 panel-sm">
-          <p className="label-xs mb-2">
-            Attach tool
-          </p>
-          <div className="flex items-center gap-2">
-            <select
-              className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800"
-              value={modalToolChoice}
-              onChange={(e) => onToolChoiceChange(e.target.value)}
-            >
-              {toolPalette.map((tool) => (
-                <option key={tool.name} value={tool.name}>
-                  {tool.name}
-                </option>
-              ))}
-            </select>
-            <button
-              className="rounded-md bg-slate-900 px-3 py-2 text-sm font-semibold text-white shadow-sm"
-              onClick={() => {
-                if (modalToolChoice) onAddTool(block.id, modalToolChoice);
-              }}
-            >
-              Add tool
-            </button>
-          </div>
-          <p className="mt-2 text-xs text-slate-600">
-            Tool will be placed below this agent and linked to its bottom port.
-          </p>
-        </div>
+        {/* Attach-tool UI removed */}
       </div>
     </div>
   );
