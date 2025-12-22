@@ -14,6 +14,7 @@ import {
 } from "../constants";
 import { parsePlanningJSON } from "./parsePlan";
 import { isRecord } from "../utils";
+import { canvasConfig } from "../../config";
 
 export type AgentViewHydration = {
 	blocks: AgentBlock[];
@@ -38,10 +39,7 @@ export type PlanJson = {
 	[key: string]: unknown;
 };
 
-const START_X = 200;
-const START_Y = 200;
-const X_GAP = 320;
-const Y_GAP = 200;
+const { startX: START_X, startY: START_Y, gapX: X_GAP, gapY: Y_GAP } = canvasConfig.agentLayout;
 
 type TripleLike = { from: string; to: string };
 

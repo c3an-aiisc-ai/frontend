@@ -2,6 +2,7 @@ import { useCallback, useEffect } from "react";
 import { parsePlanningJSON } from "../../../shared/planning/parsePlan";
 import { PENDING_PLAN_STORAGE_KEY } from "../../../shared/constants";
 import { isRecord } from "../../../shared/utils";
+import { canvasConfig } from "../../../config";
 import type { PlanningBlock } from "../../../shared/types";
 
 export function usePlanBench(args: {
@@ -26,11 +27,7 @@ export function usePlanBench(args: {
   } = args;
 
   const buildPlanBlocksFromPayload = useCallback((entries: unknown[]) => {
-    const colCount = 2;
-    const startX = 260;
-    const startY = 200;
-    const gapX = 380;
-    const gapY = 300;
+    const { columnCount: colCount, startX, startY, gapX, gapY } = canvasConfig.planLayout;
     const usedIds = new Set<string>();
 
     return entries

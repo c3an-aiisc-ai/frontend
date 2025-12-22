@@ -2,6 +2,8 @@
 // Utility Functions for C3AN Workflow Builder
 // =============================================================================
 
+import { canvasConfig } from "../../config";
+
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -102,10 +104,11 @@ export function buildConnectionPath(
   start: { x: number; y: number },
   end: { x: number; y: number }
 ): string {
+  const { offsetXFactor, offsetXMin, offsetYFactor, offsetYMax } = canvasConfig.connection;
   const dx = end.x - start.x;
   const dy = end.y - start.y;
-  const offsetX = Math.max(Math.abs(dx) * 0.45, 40);
-  const offsetY = Math.sign(dy) * Math.min(Math.abs(dy) * 0.25, 160);
+  const offsetX = Math.max(Math.abs(dx) * offsetXFactor, offsetXMin);
+  const offsetY = Math.sign(dy) * Math.min(Math.abs(dy) * offsetYFactor, offsetYMax);
   const c1x = start.x + offsetX;
   const c1y = start.y + offsetY;
   const c2x = end.x - offsetX;

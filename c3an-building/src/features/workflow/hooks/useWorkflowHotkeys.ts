@@ -1,5 +1,6 @@
 import { useCallback, useEffect } from "react";
 import type { AgentBlock, ClipboardItem, Selection, ToolNode } from "../../../shared/types";
+import { canvasConfig } from "../../../config";
 
 type SetState<T> = React.Dispatch<React.SetStateAction<T>>;
 
@@ -55,7 +56,7 @@ export function useWorkflowHotkeys(args: {
 
       if (modKey && key === "v" && clipboard) {
         event.preventDefault();
-        const OFFSET = 24;
+        const OFFSET = canvasConfig.paste.offset;
         if (clipboard.type === "block") {
           const id = nextBlockIdRef.current++;
           setBlocks((prev) => [

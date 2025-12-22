@@ -4,17 +4,10 @@ import AgentGenPage from "../features/agent-gen/AgentGenPage";
 import EvaluationPage from "../features/evaluation/EvaluationPage";
 import PlanningPage from "../features/planning/PlanningPage";
 import WorkflowEditorPage from "../features/workflow/WorkflowEditorPage";
+import { resolveRoute, type RouteKey } from "../config";
 
-type Route = "planning" | "evaluation" | "agentgen" | "editor";
-
-const getRoute = (): Route => {
-  const hash = window.location.hash.replace("#", "");
-  if (hash.startsWith("/planning")) return "planning";
-  if (hash.startsWith("/evaluation") || hash.startsWith("/evals") || hash.startsWith("/metrics")) {
-    return "evaluation";
-  }
-  if (hash.startsWith("/agentgen")) return "agentgen";
-  return "editor";
+const getRoute = (): RouteKey => {
+  return resolveRoute(window.location.hash);
 };
 
 export default function App() {

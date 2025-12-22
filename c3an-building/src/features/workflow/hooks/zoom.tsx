@@ -1,5 +1,6 @@
 // used to handle the zoom and movement and pass to the background
 import { useCallback, useEffect, useRef, useState } from "react";
+import { canvasConfig } from "../../../config";
 
 export type Transform = { x: number; y: number; zoom: number };
 
@@ -12,11 +13,13 @@ type Options = {
   isPanDisabled?: () => boolean;
 };
 
+const defaultInitial: Transform = { x: 0, y: 0, zoom: canvasConfig.zoom.initial };
+
 export function usePanZoom({
-  initial = { x: 0, y: 0, zoom: 1 },
-  minZoom = 0.1,
-  maxZoom = 3,
-  zoomStep = 0.02,
+  initial = defaultInitial,
+  minZoom = canvasConfig.zoom.min,
+  maxZoom = canvasConfig.zoom.max,
+  zoomStep = canvasConfig.zoom.step,
   shouldAllowPan,
   isPanDisabled,
 }: Options = {}) {

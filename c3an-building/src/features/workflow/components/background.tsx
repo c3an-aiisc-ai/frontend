@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 import type { Transform } from "../hooks/zoom";
+import { canvasConfig } from "../../../config";
 
 type Props = {
   transform?: Transform;
@@ -12,30 +13,19 @@ type Props = {
 
 export default function Background({
   transform = { x: 0, y: 0, zoom: 1 },
-  spacing = 24,
+  spacing = canvasConfig.grid.spacing,
   dotColor,
   theme = "dark",
   className = "",
   style,
 }: Props) {
-  const palettes = {
-    light: {
-      dot: "rgba(15, 23, 42, 0.08)",
-      grid: "rgba(15, 23, 42, 0.12)",
-      base: "#f8fafc",
-    },
-    dark: {
-      dot: "rgba(241, 245, 249, 0.14)",
-      grid: "rgba(148, 163, 184, 0.24)",
-      base: "#0f172a",
-    },
-  } as const;
+  const palettes = canvasConfig.themes;
 
   const palette = palettes[theme] ?? palettes.dark;
   const resolvedDotColor = dotColor ?? palette.dot;
   const baseSpacing = Math.max(10, spacing * (1 / transform.zoom));
-  const majorSpacing = baseSpacing * 4;
-  const gridExtent = 60000;
+  const majorSpacing = baseSpacing * canvasConfig.grid.majorMultiplier;
+  const gridExtent = canvasConfig.grid.extent;
   const patternId = "editor-dot-grid";
 
   const tx = -transform.x / transform.zoom;
