@@ -4,6 +4,14 @@ import type { WorkspaceSnapshot } from "./index";
 
 export type PlanOp = "seq" | "brn" | "agg";
 
+export type PlanSubTask = {
+  sub_task_id: string;
+  name: string;
+  description?: string;
+  knowledge_dependencies?: string[];
+  required_skills?: string[];
+};
+
 export type PlanningWorkflowSnapshot = Pick<
   WorkspaceSnapshot,
   "blocks" | "tools" | "connections" | "evals" | "notes" | "uploads" | "outputs"
@@ -16,6 +24,9 @@ export type PlanningBlock = {
   name: string;
   query: string;
   triples: { from: string; op: PlanOp; to: string }[];
+  task_id?: string;
+  main_task?: string;
+  sub_tasks?: PlanSubTask[];
   workflow?: PlanningWorkflowSnapshot;
 };
 
@@ -24,6 +35,9 @@ export type PlanTemplate = {
   name: string;
   query: string;
   triples: { from: string; op: PlanOp; to: string }[];
+  task_id?: string;
+  main_task?: string;
+  sub_tasks?: PlanSubTask[];
 };
 
 export type PlanTriple = {

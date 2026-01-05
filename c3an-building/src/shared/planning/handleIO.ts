@@ -4,7 +4,7 @@
 // - Agent View IO streams: shared hydration/sanitization helpers
 // =============================================================================
 
-import type { PlanningBlock } from "../types/planning";
+import type { PlanSubTask, PlanningBlock } from "../types/planning";
 import type { AgentBlock, Connection, ToolNode } from "../types";
 import {
 	findAgentRegistryEntryByIdOrName,
@@ -29,9 +29,12 @@ export type HydratedWorkflow = {
 export type PlanJsonTriple = { from: string; op: string; to: string };
 
 export type PlanJson = {
-	plan_id: string;
+	plan_id?: string;
+	task_id?: string;
+	main_task?: string;
 	query?: string;
 	intent?: string;
+	sub_tasks?: PlanSubTask[];
 	triples: PlanJsonTriple[];
 	metadata?: Record<string, unknown>;
 	// allow passthrough of unknown extra fields
@@ -47,9 +50,20 @@ type TripleLike = { from: string; to: string };
 
 function normalizeTriples(plan: PlanningBlock): TripleLike[] {
 	const triples = plan.triples ?? [];
+	const taskNameById = new Map<string, string>();
+	plan.sub_tasks?.forEach((task) => {
+		const taskId = task.sub_task_id?.trim();
+		const taskName = task.name?.trim();
+		if (taskId && taskName) taskNameById.set(taskId, taskName);
+	});
+	const resolveLabel = (value: string) => taskNameById.get(value) ?? value;
 	return triples
 		.filter((t) => Boolean(t?.from) && Boolean(t?.to))
-		.map((t) => ({ from: String(t.from), to: String(t.to) }));
+		.map((t) => {
+			const from = String(t.from ?? "").trim();
+			const to = String(t.to ?? "").trim();
+			return { from: resolveLabel(from), to: resolveLabel(to) };
+		});
 }
 
 // Agent-view hydration from a plan is intentionally simple:
@@ -240,6 +254,18 @@ export function importAgentViewPlanJson(raw: unknown): { template: PlanJson; wor
 
 	const template = cloneJson(raw) as PlanJson;
 	const plan = parsePlanningJSON(template);
+	const hasTaskId = typeof template.task_id === "string" && template.task_id.trim().length > 0;
+	const hasNewSchema = hasTaskId || typeof template.main_task === "string" || Array.isArray(template.sub_tasks);
+	if (hasNewSchema) {
+		template.task_id = plan.id;
+	} else {
+		template.plan_id = plan.id;
+	}
+	template.triples = plan.triples.map((triple) => ({
+		from: triple.from,
+		op: triple.op,
+		to: triple.to,
+	}));
 	const workflow = hydrateWorkflowFromPlan(plan);
 	return { template, workflow };
 }

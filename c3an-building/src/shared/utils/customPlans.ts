@@ -1,5 +1,6 @@
 import type { PlanTemplate } from "../types/planning";
 import { normalizePlanOp } from "../planning/planOps";
+import { normalizeSubTasks } from "../planning/parsePlan";
 import { CUSTOM_PLAN_STORAGE_KEY } from "../constants";
 import { isRecord } from "./index";
 
@@ -23,12 +24,26 @@ function normalizeTriples(value: unknown): PlanTemplate["triples"] {
 function normalizeStoredPlan(value: unknown, index: number): PlanTemplate | null {
   if (!isRecord(value)) return null;
   const rawId = typeof value.id === "string" ? value.id.trim() : "";
+  const rawPlanId = typeof value.plan_id === "string" ? value.plan_id.trim() : "";
+  const rawTaskId = typeof value.task_id === "string" ? value.task_id.trim() : "";
   const rawName = typeof value.name === "string" ? value.name.trim() : "";
-  const id = rawId || `custom-plan-${index + 1}`;
-  const name = rawName || id;
-  const query = typeof value.query === "string" ? value.query : "";
+  const rawMainTask = typeof value.main_task === "string" ? value.main_task.trim() : "";
+  const id = rawId || rawPlanId || rawTaskId || `custom-plan-${index + 1}`;
+  const name = rawName || rawMainTask || id;
+  const query = typeof value.query === "string" ? value.query : rawMainTask || "";
   const triples = normalizeTriples(value.triples);
-  return { id, name, query, triples };
+  const subTasks = normalizeSubTasks(value.sub_tasks);
+  const hasNewSchema = rawTaskId.length > 0 || rawMainTask.length > 0 || subTasks.length > 0;
+  const taskId = hasNewSchema ? (rawTaskId || id) : "";
+  return {
+    id,
+    name,
+    query,
+    triples,
+    ...(hasNewSchema && taskId ? { task_id: taskId } : {}),
+    ...(rawMainTask ? { main_task: rawMainTask } : {}),
+    ...(subTasks.length ? { sub_tasks: subTasks } : {}),
+  };
 }
 
 export function readCustomPlans(): PlanTemplate[] {

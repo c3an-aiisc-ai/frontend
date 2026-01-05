@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import { EVAL_OPTIONS } from "../../shared/constants";
-import { StreamPanel, MetricLibrary, MappingList } from "./components";
+import { StreamPanel, MetricLibrary, MappingList } from "../../components/evaluation";
 import { CATEGORY_STYLES, DEFAULT_INPUTS, DEFAULT_OUTPUTS, DEFAULT_MAPPINGS } from "./constants";
 import { normalizeMappings, uniqueList } from "./utils";
 import type { MappingRow } from "./types";

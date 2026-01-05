@@ -2,42 +2,124 @@
 // Workflow Editor Page - Main canvas page component
 // =============================================================================
 
-import { useCallback, useMemo, useRef, useState } from "react";
-import { Sidebar, Toolbar } from "./components/ui";
-import { AgentCanvasView, PlanCanvasView } from "./components/canvas";
-import { BlockDetailsModal, ToolDetailsModal, EvalsModal } from "./components/modals";
-import { usePanZoom, useWorkspace } from "./hooks";
-import { usePlanBench } from "./hooks/usePlanBench";
-import { usePlanWorkflow } from "./hooks/usePlanWorkflow";
-import { useWorkflowImport } from "./hooks/useWorkflowImport";
-import { useWorkflowDownload } from "./hooks/useWorkflowDownload";
-import { useNodeHandles } from "./hooks/useNodeHandles";
-import { useBlockIO } from "./hooks/useBlockIO";
-import { useCanvasDrop } from "./hooks/useCanvasDrop";
-import { useCanvasDragHandlers } from "./hooks/useCanvasDragHandlers";
-import { useCanvasLinking } from "./hooks/useCanvasLinking";
-import { useCanvasSelection } from "./hooks/useCanvasSelection";
-import { useWorkspaceActions } from "./hooks/useWorkspaceActions";
-import { useWorkflowHotkeys } from "./hooks/useWorkflowHotkeys";
-import { useIdCounters } from "./hooks/useIdCounters";
-import { useSidebarDragHandlers } from "./hooks/useSidebarDragHandlers";
-import { useHandleVisibility } from "./hooks/useHandleVisibility";
-import { useWorkflowReset } from "./hooks/useWorkflowReset";
-import { TOOL_PALETTE, EVAL_OPTIONS, AGENT_REGISTRY_AGENTS } from "../../shared/constants";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Sidebar, Toolbar } from "../../components/ui";
+import { AgentCanvasView, PlanCanvasView } from "../../components/canvas";
+import { BlockDetailsModal, ToolDetailsModal, EvalsModal } from "../../components/modals";
+import { usePanZoom, useWorkspace } from "../../hooks";
+import { usePlanBench } from "../../hooks/usePlanBench";
+import { usePlanWorkflow } from "../../hooks/usePlanWorkflow";
+import { useWorkflowImport } from "../../hooks/useWorkflowImport";
+import { useWorkflowDownload } from "../../hooks/useWorkflowDownload";
+import { useNodeHandles } from "../../hooks/useNodeHandles";
+import { useBlockIO } from "../../hooks/useBlockIO";
+import { useCanvasDrop } from "../../hooks/useCanvasDrop";
+import { useCanvasDragHandlers } from "../../hooks/useCanvasDragHandlers";
+import { useCanvasLinking } from "../../hooks/useCanvasLinking";
+import { useCanvasSelection } from "../../hooks/useCanvasSelection";
+import { useWorkspaceActions } from "../../hooks/useWorkspaceActions";
+import { useWorkflowHotkeys } from "../../hooks/useWorkflowHotkeys";
+import { useIdCounters } from "../../hooks/useIdCounters";
+import { useSidebarDragHandlers } from "../../hooks/useSidebarDragHandlers";
+import { useHandleVisibility } from "../../hooks/useHandleVisibility";
+import { useWorkflowReset } from "../../hooks/useWorkflowReset";
+import {
+  TOOL_PALETTE,
+  EVAL_OPTIONS,
+  AGENT_REGISTRY_AGENTS,
+  PLAN_WORKSPACE_STORAGE_KEY,
+} from "../../shared/constants";
+import { isRecord } from "../../shared/utils";
 import { readCustomAgents } from "../../shared/utils/customAgents";
 import { readCustomPlans } from "../../shared/utils/customPlans";
 import type { PlanningBlock, ViewMode } from "../../shared/types";
 
+type PlanConnection = { from: string; to: string };
+
+type PlanWorkspaceSnapshot = {
+  plans: PlanningBlock[];
+  planConnections: PlanConnection[];
+  activePlanId: string | null;
+  viewMode: ViewMode;
+  nextPlanId: number;
+};
+
+const getNextPlanId = (plans: PlanningBlock[], fallback = 1) => {
+  const maxPlanId = plans.reduce((max, plan) => {
+    if (!plan.id.startsWith("plan-")) return max;
+    const next = Number.parseInt(plan.id.slice(5), 10);
+    return Number.isFinite(next) ? Math.max(max, next) : max;
+  }, 0);
+  return Math.max(fallback, maxPlanId + 1);
+};
+
+const normalizePlanConnections = (plans: PlanningBlock[], connections: PlanConnection[]) => {
+  const planIds = new Set(plans.map((plan) => plan.id));
+  return connections.filter((conn) => planIds.has(conn.from) && planIds.has(conn.to));
+};
+
+const readPlanWorkspaceSnapshot = (): PlanWorkspaceSnapshot | null => {
+  if (typeof window === "undefined" || typeof localStorage === "undefined") return null;
+  const saved = localStorage.getItem(PLAN_WORKSPACE_STORAGE_KEY);
+  if (!saved) return null;
+  try {
+    const parsed: unknown = JSON.parse(saved);
+    if (!isRecord(parsed)) return null;
+    const rawPlans = Array.isArray(parsed.plans) ? parsed.plans : [];
+    const plans = rawPlans.filter(
+      (plan): plan is PlanningBlock =>
+        isRecord(plan) && typeof plan.id === "string"
+    );
+    const rawConnections = Array.isArray(parsed.planConnections)
+      ? parsed.planConnections
+      : Array.isArray(parsed.connections)
+        ? parsed.connections
+        : [];
+    const connections = rawConnections.filter(
+      (conn): conn is PlanConnection =>
+        isRecord(conn) && typeof conn.from === "string" && typeof conn.to === "string"
+    );
+    const planConnections = normalizePlanConnections(plans, connections);
+    const viewMode =
+      parsed.viewMode === "plan" || parsed.viewMode === "agent" ? parsed.viewMode : "agent";
+    const activePlanId =
+      typeof parsed.activePlanId === "string" && plans.some((plan) => plan.id === parsed.activePlanId)
+        ? parsed.activePlanId
+        : null;
+    const nextPlanIdFallback = getNextPlanId(plans);
+    const nextPlanId =
+      typeof parsed.nextPlanId === "number" && Number.isFinite(parsed.nextPlanId)
+        ? Math.max(parsed.nextPlanId, nextPlanIdFallback)
+        : nextPlanIdFallback;
+    return {
+      plans,
+      planConnections,
+      activePlanId,
+      viewMode,
+      nextPlanId,
+    };
+  } catch {
+    return null;
+  }
+};
+
 export default function WorkflowEditorPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [viewMode, setViewMode] = useState<ViewMode>("agent");
-  const [plans, setPlans] = useState<PlanningBlock[]>([]);
-  const nextPlanIdRef = useRef(1);
+  const initialPlanSnapshot = useMemo(() => readPlanWorkspaceSnapshot(), []);
+  const [viewMode, setViewMode] = useState<ViewMode>(() => initialPlanSnapshot?.viewMode ?? "agent");
+  const [plans, setPlans] = useState<PlanningBlock[]>(() => initialPlanSnapshot?.plans ?? []);
+  const nextPlanIdRef = useRef(
+    initialPlanSnapshot?.nextPlanId ?? getNextPlanId(initialPlanSnapshot?.plans ?? [])
+  );
   const [planCanvasKey, setPlanCanvasKey] = useState(0);
-  const [activePlanId, setActivePlanId] = useState<string | null>(null);
+  const [activePlanId, setActivePlanId] = useState<string | null>(
+    () => initialPlanSnapshot?.activePlanId ?? null
+  );
 
-  const [planConnections, setPlanConnections] = useState<Array<{ from: string; to: string }>>([]);
+  const [planConnections, setPlanConnections] = useState<PlanConnection[]>(
+    () => initialPlanSnapshot?.planConnections ?? []
+  );
   const planLinkFromRef = useRef<string | null>(null);
 
   // Agent-view-only IO: when the user uploads a plan JSON while in agent view,
@@ -163,6 +245,46 @@ export default function WorkflowEditorPage() {
     setViewMode,
     setActivePanel,
   });
+
+  useEffect(() => {
+    const activePlan = activePlanId ? plans.find((plan) => plan.id === activePlanId) : null;
+    if (!activePlan) return;
+    const hasNewSchema = Boolean(activePlan.task_id || activePlan.main_task || activePlan.sub_tasks);
+    agentPlanTemplateRef.current = {
+      ...(hasNewSchema ? { task_id: activePlan.task_id ?? activePlan.id } : { plan_id: activePlan.id }),
+      ...(activePlan.main_task ? { main_task: activePlan.main_task } : {}),
+      ...(activePlan.sub_tasks ? { sub_tasks: activePlan.sub_tasks } : {}),
+      query: activePlan.query,
+      triples: activePlan.triples,
+    };
+  }, [activePlanId, plans]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof localStorage === "undefined") return;
+    const plansForStorage =
+      activePlanId && viewMode === "agent"
+        ? plans.map((plan) =>
+            plan.id === activePlanId
+              ? { ...plan, workflow: buildPlanWorkflowSnapshot() }
+              : plan
+          )
+        : plans;
+    const planConnectionsForStorage = normalizePlanConnections(plansForStorage, planConnections);
+    const snapshot: PlanWorkspaceSnapshot = {
+      plans: plansForStorage,
+      planConnections: planConnectionsForStorage,
+      activePlanId,
+      viewMode,
+      nextPlanId: nextPlanIdRef.current,
+    };
+    localStorage.setItem(PLAN_WORKSPACE_STORAGE_KEY, JSON.stringify(snapshot));
+  }, [
+    activePlanId,
+    buildPlanWorkflowSnapshot,
+    planConnections,
+    plans,
+    viewMode,
+  ]);
 
   const handleC3ANClick = useCallback(() => {
     window.open("https://c3an.aiisc.ai/", "_blank", "noopener,noreferrer");
@@ -314,7 +436,13 @@ export default function WorkflowEditorPage() {
     handleRemoveConnection,
   });
 
-  const { downloadLabel, handleDownload } = useWorkflowDownload({ viewMode, activePlanId, plans, availableAgents, buildPlanWorkflowSnapshot });
+  const { downloadLabel, handleDownload } = useWorkflowDownload({
+    viewMode,
+    activePlanId,
+    plans,
+    buildPlanWorkflowSnapshot,
+    agentPlanTemplateRef,
+  });
 
   const { handleReset } = useWorkflowReset({
     reset,

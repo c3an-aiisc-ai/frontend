@@ -1,163 +1,176 @@
-import type { AgentRegistryEntry, PlanningBlock } from "../../../shared/types";
-import { findAgentRegistryEntryByIdOrName, listMandatoryOptional } from "../../../shared/constants";
-import { resizeRequired } from "../../../shared/utils";
+import type { AgentBlock, Connection, PlanningBlock } from "../../../shared/types";
+import { normalizePlanOp } from "../../../shared/planning/planOps";
+import { TOOL_PORT_OFFSET } from "../../../shared/constants";
 
-type PlanDownloadAgent = {
-  block_id?: string;
-  agent_id: string;
-  name: string;
-  description?: string;
-  input_data_streams: { mandatory: string[]; optional: string[] };
-  output_data_streams: { mandatory: string[]; optional: string[] };
-};
+type PlanSubTask = NonNullable<PlanningBlock["sub_tasks"]>[number];
 
-type PlanDownloadEntry = {
-  plan_id: string;
-  name: string;
-  query: string;
+export type PlanDownloadEntry = {
+  task_id: string;
+  main_task: string;
+  sub_tasks: PlanSubTask[];
   triples: PlanningBlock["triples"];
-  agents: PlanDownloadAgent[];
-  workflow: PlanningBlock["workflow"] | null;
 };
 
 export type PlanDownloadBundle = {
-  exported_at: string;
   plans: PlanDownloadEntry[];
 };
 
-function buildPortLabels(
-  names: string[] | undefined,
-  count: number,
-  fallbackPrefix: string,
-  fallbackNames?: string[]
-) {
-  return Array.from({ length: count }, (_, index) => {
-    const primary = names?.[index]?.trim();
-    if (primary) return primary;
-    const fallback = fallbackNames?.[index]?.trim();
-    if (fallback) return fallback;
-    return `${fallbackPrefix} ${index + 1}`;
-  });
-}
+const padSubTaskId = (index: number) => `st-${String(index + 1).padStart(3, "0")}`;
 
-function splitStreams(labels: string[], required: boolean[]) {
-  const mandatory: string[] = [];
-  const optional: string[] = [];
-  labels.forEach((label, index) => {
-    if (required[index]) {
-      mandatory.push(label);
-    } else {
-      optional.push(label);
-    }
-  });
-  return { mandatory, optional };
-}
+const normalizeStringList = (value: string[] | undefined) =>
+  Array.isArray(value)
+    ? value.map((item) => String(item).trim()).filter(Boolean)
+    : [];
 
-function buildAgentFromBlock(
-  block: {
-    id: string;
-    name: string;
-    description?: string;
-    agentId?: string;
-    inputCount: number;
-    outputCount: number;
-    inputRequired?: boolean[];
-    outputRequired?: boolean[];
-    inputNames?: string[];
-    outputNames?: string[];
-  },
-  availableAgents: AgentRegistryEntry[]
-): PlanDownloadAgent {
-  const registryEntry = findAgentRegistryEntryByIdOrName(block.agentId ?? block.name, availableAgents);
-  const registryInput = listMandatoryOptional(registryEntry?.input_data_streams);
-  const registryOutput = listMandatoryOptional(registryEntry?.output_data_streams);
-
-  const inputLabels = buildPortLabels(
-    block.inputNames,
-    block.inputCount,
-    "Input",
-    [...registryInput.mandatory, ...registryInput.optional]
-  );
-  const outputLabels = buildPortLabels(
-    block.outputNames,
-    block.outputCount,
-    "Output",
-    [...registryOutput.mandatory, ...registryOutput.optional]
-  );
-  const inputRequired = resizeRequired(block.inputRequired, block.inputCount);
-  const outputRequired = resizeRequired(block.outputRequired, block.outputCount);
-  const inputStreams = splitStreams(inputLabels, inputRequired);
-  const outputStreams = splitStreams(outputLabels, outputRequired);
-  const description = block.description?.trim() || registryEntry?.description || "";
-
-  return {
-    block_id: block.id,
-    agent_id: block.agentId ?? registryEntry?.id ?? block.name,
-    name: block.name,
-    description,
-    input_data_streams: inputStreams,
-    output_data_streams: outputStreams,
-  };
-}
-
-function buildAgentsFromTriples(
-  triples: PlanningBlock["triples"] | undefined,
-  availableAgents: AgentRegistryEntry[]
-) {
-  const agents: PlanDownloadAgent[] = [];
-  const seen = new Set<string>();
-  const normalized = triples ?? [];
-
-  const addAgent = (label: string) => {
-    const name = label.trim();
-    if (!name || seen.has(name)) return;
-    seen.add(name);
-    const registryEntry = findAgentRegistryEntryByIdOrName(name, availableAgents);
-    const input = listMandatoryOptional(registryEntry?.input_data_streams);
-    const output = listMandatoryOptional(registryEntry?.output_data_streams);
-    agents.push({
-      agent_id: registryEntry?.id ?? name,
-      name: registryEntry?.name ?? name,
-      description: registryEntry?.description ?? "",
-      input_data_streams: { mandatory: input.mandatory, optional: input.optional },
-      output_data_streams: { mandatory: output.mandatory, optional: output.optional },
-    });
-  };
-
-  normalized.forEach((triple) => {
-    addAgent(String(triple.from ?? ""));
-    addAgent(String(triple.to ?? ""));
-  });
-
-  return agents;
-}
-
-export function buildPlanDownloadBundle(args: {
-  plans: PlanningBlock[];
-  activePlanId: string | null;
-  activeSnapshot: PlanningBlock["workflow"] | null;
-  availableAgents: AgentRegistryEntry[];
-}): PlanDownloadBundle {
-  const exportPlans = args.plans.map((plan) =>
-    plan.id === args.activePlanId && args.activeSnapshot ? { ...plan, workflow: args.activeSnapshot } : plan
-  );
-
-  return {
-    exported_at: new Date().toISOString(),
-    plans: exportPlans.map((plan) => {
-      const workflowBlocks = plan.workflow?.blocks ?? [];
-      const agents =
-        workflowBlocks.length > 0
-          ? workflowBlocks.map((block) => buildAgentFromBlock(block, args.availableAgents))
-          : buildAgentsFromTriples(plan.triples, args.availableAgents);
+function normalizePlanTriples(triples: PlanningBlock["triples"] | undefined) {
+  return (triples ?? [])
+    .map((triple) => {
+      const from = String(triple?.from ?? "").trim();
+      const to = String(triple?.to ?? "").trim();
+      if (!from || !to) return null;
       return {
-        plan_id: plan.id,
-        name: plan.name,
-        query: plan.query,
-        triples: plan.triples,
-        agents,
-        workflow: plan.workflow ?? null,
-      };
-    }),
+        from,
+        op: normalizePlanOp(triple?.op),
+        to,
+      } satisfies PlanningBlock["triples"][number];
+    })
+    .filter((triple): triple is PlanningBlock["triples"][number] => Boolean(triple));
+}
+
+function buildSubTasks(
+  triples: PlanningBlock["triples"],
+  existing: PlanningBlock["sub_tasks"] | undefined
+) {
+  const seen = new Set<string>();
+  const result: PlanSubTask[] = [];
+
+  const addTask = (task: PlanSubTask) => {
+    const subTaskId = String(task.sub_task_id ?? "").trim();
+    if (!subTaskId || seen.has(subTaskId)) return;
+    const name = String(task.name ?? "").trim() || subTaskId;
+    const description = typeof task.description === "string" ? task.description.trim() : "";
+    const knowledgeDependencies = normalizeStringList(task.knowledge_dependencies);
+    const requiredSkills = normalizeStringList(task.required_skills);
+
+    const next: PlanSubTask = { sub_task_id: subTaskId, name };
+    if (description) next.description = description;
+    if (knowledgeDependencies.length) next.knowledge_dependencies = knowledgeDependencies;
+    if (requiredSkills.length) next.required_skills = requiredSkills;
+
+    seen.add(subTaskId);
+    result.push(next);
+  };
+
+  existing?.forEach((task) => addTask(task));
+
+  const addId = (value: string) => {
+    const subTaskId = String(value ?? "").trim();
+    if (!subTaskId || seen.has(subTaskId)) return;
+    seen.add(subTaskId);
+    result.push({ sub_task_id: subTaskId, name: subTaskId });
+  };
+
+  triples.forEach((triple) => {
+    addId(triple.from);
+    addId(triple.to);
+  });
+
+  return result;
+}
+
+export function buildPlanDownloadEntry(plan: PlanningBlock): PlanDownloadEntry {
+  const normalizedTriples = normalizePlanTriples(plan.triples);
+  const taskId = plan.task_id?.trim() || plan.id;
+  const mainTask =
+    plan.main_task?.trim() ||
+    plan.name?.trim() ||
+    plan.query?.trim() ||
+    plan.id;
+  const subTasks = buildSubTasks(normalizedTriples, plan.sub_tasks);
+
+  return {
+    task_id: taskId,
+    main_task: mainTask,
+    sub_tasks: subTasks,
+    triples: normalizedTriples,
+  };
+}
+
+export function buildPlanDownloadBundle(plans: PlanningBlock[]): PlanDownloadBundle {
+  return { plans: plans.map((plan) => buildPlanDownloadEntry(plan)) };
+}
+
+function buildSubTasksFromBlocks(blocks: AgentBlock[]) {
+  return blocks.map((block, index) => {
+    const name = block.name?.trim() || padSubTaskId(index);
+    const description = block.description?.trim() || "";
+    const subTask: PlanSubTask = {
+      sub_task_id: padSubTaskId(index),
+      name,
+    };
+    if (description) subTask.description = description;
+    return subTask;
+  });
+}
+
+function buildTriplesFromConnections(
+  connections: Connection[],
+  subTaskIdByBlockId: Map<string, string>
+) {
+  const inbound = new Map<string, Set<string>>();
+  const outbound = new Map<string, Set<string>>();
+  const edges: Array<{ fromId: string; toId: string }> = [];
+  const seen = new Set<string>();
+
+  connections.forEach((conn) => {
+    if (conn.from.type !== "block" || conn.to.type !== "block") return;
+    const inputIndex = conn.to.inputIndex ?? 0;
+    if (inputIndex >= TOOL_PORT_OFFSET) return;
+    const fromId = conn.from.id;
+    const toId = conn.to.id;
+    if (!fromId || !toId) return;
+    const key = `${fromId}::${toId}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    edges.push({ fromId, toId });
+    if (!outbound.has(fromId)) outbound.set(fromId, new Set());
+    if (!inbound.has(toId)) inbound.set(toId, new Set());
+    outbound.get(fromId)!.add(toId);
+    inbound.get(toId)!.add(fromId);
+  });
+
+  return edges.map((edge) => {
+    const from = subTaskIdByBlockId.get(edge.fromId) ?? edge.fromId;
+    const to = subTaskIdByBlockId.get(edge.toId) ?? edge.toId;
+    const inboundCount = inbound.get(edge.toId)?.size ?? 0;
+    const outboundCount = outbound.get(edge.fromId)?.size ?? 0;
+    let op: PlanningBlock["triples"][number]["op"] = "seq";
+    if (inboundCount > 1) op = "agg";
+    else if (outboundCount > 1) op = "brn";
+    return { from, op, to } satisfies PlanningBlock["triples"][number];
+  });
+}
+
+export function buildPlanDownloadEntryFromWorkflow(args: {
+  blocks: AgentBlock[];
+  connections: Connection[];
+  taskId?: string | null;
+  mainTask?: string | null;
+}): PlanDownloadEntry {
+  const { blocks, connections, taskId, mainTask } = args;
+  const normalizedBlocks = blocks ?? [];
+  const subTasks = buildSubTasksFromBlocks(normalizedBlocks);
+  const subTaskIdByBlockId = new Map(
+    normalizedBlocks.map((block, index) => [block.id, padSubTaskId(index)] as const)
+  );
+  const triples = buildTriplesFromConnections(connections ?? [], subTaskIdByBlockId);
+  const nextTaskId = taskId?.trim() || `task-${Date.now()}`;
+  const nextMainTask = mainTask?.trim() || "Untitled task";
+
+  return {
+    task_id: nextTaskId,
+    main_task: nextMainTask,
+    sub_tasks: subTasks,
+    triples: normalizePlanTriples(triples),
   };
 }
