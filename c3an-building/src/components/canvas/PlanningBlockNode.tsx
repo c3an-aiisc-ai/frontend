@@ -47,6 +47,7 @@ export default function PlanningBlockNode({
   const cardRef = useRef<HTMLDivElement | null>(null);
   const [size, setSize] = useState<{ width: number; height: number }>({ width: 220, height: 140 });
   const effectiveMode = modeOverride ?? null;
+  const hasSubPlans = Boolean(plan.sub_plans?.plans?.length);
 
   // Touching props to satisfy usage and keep lints clean
   void onMove;
@@ -120,7 +121,7 @@ export default function PlanningBlockNode({
           className="mt-4 inline-flex items-center gap-1 rounded-full bg-slate-900 px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-white shadow-sm"
           onClick={onEnterWorkflow}
         >
-          Enter Workflow →
+          {hasSubPlans ? "View Subplans →" : "Enter Workflow →"}
         </button>
       </div>
 

@@ -36,12 +36,20 @@ import type { PlanningBlock, ViewMode } from "../../shared/types";
 
 type PlanConnection = { from: string; to: string };
 
+type PlanContextSnapshot = {
+  plans: PlanningBlock[];
+  planConnections: PlanConnection[];
+  activePlanId: string | null;
+  parentPlanId: string | null;
+};
+
 type PlanWorkspaceSnapshot = {
   plans: PlanningBlock[];
   planConnections: PlanConnection[];
   activePlanId: string | null;
   viewMode: ViewMode;
   nextPlanId: number;
+  planStack?: PlanContextSnapshot[];
 };
 
 const getNextPlanId = (plans: PlanningBlock[], fallback = 1) => {
@@ -56,6 +64,39 @@ const getNextPlanId = (plans: PlanningBlock[], fallback = 1) => {
 const normalizePlanConnections = (plans: PlanningBlock[], connections: PlanConnection[]) => {
   const planIds = new Set(plans.map((plan) => plan.id));
   return connections.filter((conn) => planIds.has(conn.from) && planIds.has(conn.to));
+};
+
+const readPlanContextSnapshot = (value: unknown): PlanContextSnapshot | null => {
+  if (!isRecord(value)) return null;
+  const rawPlans = Array.isArray(value.plans) ? value.plans : [];
+  const plans = rawPlans.filter(
+    (plan): plan is PlanningBlock =>
+      isRecord(plan) && typeof plan.id === "string"
+  );
+  const rawConnections = Array.isArray(value.planConnections)
+    ? value.planConnections
+    : Array.isArray(value.connections)
+      ? value.connections
+      : [];
+  const connections = rawConnections.filter(
+    (conn): conn is PlanConnection =>
+      isRecord(conn) && typeof conn.from === "string" && typeof conn.to === "string"
+  );
+  const planConnections = normalizePlanConnections(plans, connections);
+  const activePlanId =
+    typeof value.activePlanId === "string" && plans.some((plan) => plan.id === value.activePlanId)
+      ? value.activePlanId
+      : null;
+  const parentPlanId =
+    typeof value.parentPlanId === "string" && plans.some((plan) => plan.id === value.parentPlanId)
+      ? value.parentPlanId
+      : null;
+  return {
+    plans,
+    planConnections,
+    activePlanId,
+    parentPlanId,
+  };
 };
 
 const readPlanWorkspaceSnapshot = (): PlanWorkspaceSnapshot | null => {
@@ -91,12 +132,17 @@ const readPlanWorkspaceSnapshot = (): PlanWorkspaceSnapshot | null => {
       typeof parsed.nextPlanId === "number" && Number.isFinite(parsed.nextPlanId)
         ? Math.max(parsed.nextPlanId, nextPlanIdFallback)
         : nextPlanIdFallback;
+    const rawStack = Array.isArray(parsed.planStack) ? parsed.planStack : [];
+    const planStack = rawStack
+      .map((entry) => readPlanContextSnapshot(entry))
+      .filter((entry): entry is PlanContextSnapshot => Boolean(entry));
     return {
       plans,
       planConnections,
       activePlanId,
       viewMode,
       nextPlanId,
+      planStack,
     };
   } catch {
     return null;
@@ -119,6 +165,9 @@ export default function WorkflowEditorPage() {
 
   const [planConnections, setPlanConnections] = useState<PlanConnection[]>(
     () => initialPlanSnapshot?.planConnections ?? []
+  );
+  const [planStack, setPlanStack] = useState<PlanContextSnapshot[]>(
+    () => initialPlanSnapshot?.planStack ?? []
   );
   const planLinkFromRef = useRef<string | null>(null);
 
@@ -235,12 +284,87 @@ export default function WorkflowEditorPage() {
     agentPlanTemplateRef,
   });
 
+  const handleEnterPlanNode = useCallback(
+    (plan: PlanningBlock) => {
+      const nestedPlans = plan.sub_plans?.plans ?? [];
+      if (nestedPlans.length > 0) {
+        setPlanStack((prev) => [
+          ...prev,
+          {
+            plans,
+            planConnections,
+            activePlanId,
+            parentPlanId: plan.id,
+          },
+        ]);
+        setPlans(nestedPlans);
+        setPlanConnections(plan.sub_plans?.connections ?? []);
+        setActivePlanId(null);
+        planLinkFromRef.current = null;
+        setViewMode("plan");
+        clearWorkspaceUIState();
+        return;
+      }
+      handleEnterPlanWorkflow(plan);
+    },
+    [
+      activePlanId,
+      clearWorkspaceUIState,
+      handleEnterPlanWorkflow,
+      planConnections,
+      plans,
+      setActivePlanId,
+      setPlanConnections,
+      setPlanStack,
+      setPlans,
+      setViewMode,
+    ]
+  );
+
+  const handlePlanBack = useCallback(() => {
+    setPlanStack((prev) => {
+      if (!prev.length) return prev;
+      const nextStack = prev.slice(0, -1);
+      const parentContext = prev[prev.length - 1];
+      const parentPlanId = parentContext.parentPlanId;
+      setPlans((currentPlans) => {
+        if (!parentPlanId) return parentContext.plans;
+        return parentContext.plans.map((plan) =>
+          plan.id === parentPlanId
+            ? {
+                ...plan,
+                sub_plans: {
+                  plans: currentPlans,
+                  connections: planConnections,
+                },
+              }
+            : plan
+        );
+      });
+      setPlanConnections(parentContext.planConnections);
+      setActivePlanId(parentContext.activePlanId);
+      planLinkFromRef.current = null;
+      setViewMode("plan");
+      clearWorkspaceUIState();
+      return nextStack;
+    });
+  }, [
+    clearWorkspaceUIState,
+    planConnections,
+    setActivePlanId,
+    setPlanConnections,
+    setPlanStack,
+    setPlans,
+    setViewMode,
+  ]);
+
   usePlanBench({
     applyPlanJson,
     nextPlanIdRef,
     planLinkFromRef,
     setPlans,
     setPlanConnections,
+    setPlanStack,
     setActivePlanId,
     setViewMode,
     setActivePanel,
@@ -270,12 +394,30 @@ export default function WorkflowEditorPage() {
           )
         : plans;
     const planConnectionsForStorage = normalizePlanConnections(plansForStorage, planConnections);
+    const planStackForStorage = planStack.map((entry) => {
+      const normalizedConnections = normalizePlanConnections(entry.plans, entry.planConnections);
+      const normalizedActivePlanId =
+        entry.activePlanId && entry.plans.some((plan) => plan.id === entry.activePlanId)
+          ? entry.activePlanId
+          : null;
+      const normalizedParentPlanId =
+        entry.parentPlanId && entry.plans.some((plan) => plan.id === entry.parentPlanId)
+          ? entry.parentPlanId
+          : null;
+      return {
+        ...entry,
+        activePlanId: normalizedActivePlanId,
+        parentPlanId: normalizedParentPlanId,
+        planConnections: normalizedConnections,
+      };
+    });
     const snapshot: PlanWorkspaceSnapshot = {
       plans: plansForStorage,
       planConnections: planConnectionsForStorage,
       activePlanId,
       viewMode,
       nextPlanId: nextPlanIdRef.current,
+      planStack: planStackForStorage,
     };
     localStorage.setItem(PLAN_WORKSPACE_STORAGE_KEY, JSON.stringify(snapshot));
   }, [
@@ -283,6 +425,7 @@ export default function WorkflowEditorPage() {
     buildPlanWorkflowSnapshot,
     planConnections,
     plans,
+    planStack,
     viewMode,
   ]);
 
@@ -440,7 +583,9 @@ export default function WorkflowEditorPage() {
     viewMode,
     activePlanId,
     plans,
+    planConnections,
     buildPlanWorkflowSnapshot,
+    planStackDepth: planStack.length,
     agentPlanTemplateRef,
   });
 
@@ -450,6 +595,7 @@ export default function WorkflowEditorPage() {
     setPlans,
     setPlanCanvasKey,
     setActivePlanId,
+    setPlanStack,
     agentPlanTemplateRef,
     setSelectedEvals,
   });
@@ -503,6 +649,9 @@ export default function WorkflowEditorPage() {
         theme={theme}
         fileInputRef={fileInputRef}
         downloadLabel={downloadLabel}
+        onPlanBackClick={
+          viewMode === "plan" && planStack.length > 0 ? handlePlanBack : undefined
+        }
         onC3ANClick={handleC3ANClick}
         onAboutClick={() => setActivePanel((prev) => (prev === "settings" ? null : "settings"))}
         onPlanningClick={() => {
@@ -532,7 +681,7 @@ export default function WorkflowEditorPage() {
             setActivePlanId={setActivePlanId}
             activePlanId={activePlanId}
             nextPlanIdRef={nextPlanIdRef}
-            onEnterWorkflow={handleEnterPlanWorkflow}
+            onEnterWorkflow={handleEnterPlanNode}
           />
         ) : (
           <AgentCanvasView

@@ -11,6 +11,21 @@ export type PlanDownloadEntry = {
   triples: PlanningBlock["triples"];
 };
 
+export type PlanSubPlanEntry = PlanDownloadEntry & {
+  workflow?: { triples: PlanningBlock["triples"] };
+};
+
+export type PlanHierarchyDownload = {
+  task_id: string;
+  main_task: string;
+  sub_plans: PlanSubPlanEntry[];
+  triples: PlanningBlock["triples"];
+};
+
+export type PlanSubPlanBundle = {
+  sub_plans: PlanSubPlanEntry[];
+};
+
 export type PlanDownloadBundle = {
   plans: PlanDownloadEntry[];
 };
@@ -98,6 +113,101 @@ export function buildPlanDownloadEntry(plan: PlanningBlock): PlanDownloadEntry {
 
 export function buildPlanDownloadBundle(plans: PlanningBlock[]): PlanDownloadBundle {
   return { plans: plans.map((plan) => buildPlanDownloadEntry(plan)) };
+}
+
+export function buildWorkflowTriplesFromWorkflow(args: {
+  blocks: AgentBlock[];
+  connections: Connection[];
+}) {
+  const { blocks, connections } = args;
+  const labelByBlockId = new Map(
+    (blocks ?? []).map((block) => [
+      block.id,
+      block.name?.trim() || block.agentId?.trim() || block.id,
+    ] as const)
+  );
+  const triples = buildTriplesFromConnections(connections ?? [], labelByBlockId);
+  return normalizePlanTriples(triples);
+}
+
+function buildSubPlanEntries(plans: PlanningBlock[]) {
+  return plans.map((plan) => {
+    const entry = buildPlanDownloadEntry(plan);
+    if (!plan.workflow) return entry;
+    const workflowTriples = buildWorkflowTriplesFromWorkflow({
+      blocks: plan.workflow.blocks ?? [],
+      connections: plan.workflow.connections ?? [],
+    });
+    return { ...entry, workflow: { triples: workflowTriples } } satisfies PlanSubPlanEntry;
+  });
+}
+
+export function buildPlanSubPlanBundle(plans: PlanningBlock[]): PlanSubPlanBundle {
+  return { sub_plans: buildSubPlanEntries(plans) };
+}
+
+function buildMainPlanTriples(
+  connections: Array<{ from: string; to: string }>,
+  taskIdByPlanId: Map<string, string>
+) {
+  const inbound = new Map<string, Set<string>>();
+  const outbound = new Map<string, Set<string>>();
+  const edges: Array<{ fromId: string; toId: string }> = [];
+  const seen = new Set<string>();
+
+  connections.forEach((conn) => {
+    const fromId = String(conn.from ?? "").trim();
+    const toId = String(conn.to ?? "").trim();
+    if (!fromId || !toId) return;
+    const key = `${fromId}::${toId}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    edges.push({ fromId, toId });
+    if (!outbound.has(fromId)) outbound.set(fromId, new Set());
+    if (!inbound.has(toId)) inbound.set(toId, new Set());
+    outbound.get(fromId)!.add(toId);
+    inbound.get(toId)!.add(fromId);
+  });
+
+  return edges.map((edge) => {
+    const from = taskIdByPlanId.get(edge.fromId) ?? edge.fromId;
+    const to = taskIdByPlanId.get(edge.toId) ?? edge.toId;
+    const inboundCount = inbound.get(edge.toId)?.size ?? 0;
+    const outboundCount = outbound.get(edge.fromId)?.size ?? 0;
+    let op: PlanningBlock["triples"][number]["op"] = "seq";
+    if (inboundCount > 1) op = "agg";
+    else if (outboundCount > 1) op = "brn";
+    return { from, op, to } satisfies PlanningBlock["triples"][number];
+  });
+}
+
+export function buildPlanHierarchyDownload(args: {
+  plans: PlanningBlock[];
+  connections: Array<{ from: string; to: string }>;
+  taskId?: string | null;
+  mainTask?: string | null;
+}): PlanHierarchyDownload {
+  const { plans, connections, taskId, mainTask } = args;
+  const subPlans = buildSubPlanEntries(plans);
+  const taskIdByPlanId = new Map(
+    plans.map((plan) => [plan.id, plan.task_id?.trim() || plan.id] as const)
+  );
+  const triples = normalizePlanTriples(buildMainPlanTriples(connections ?? [], taskIdByPlanId));
+  const fallbackTaskId =
+    plans.length === 1 ? taskIdByPlanId.get(plans[0].id) ?? "main-plan" : "main-plan";
+  const fallbackMainTask =
+    plans.length === 1
+      ? plans[0].main_task?.trim() || plans[0].name?.trim() || plans[0].query?.trim() || "Main plan"
+      : "Main plan";
+  const nextTaskId = taskId?.trim() || fallbackTaskId;
+  const nextMainTask = mainTask?.trim() || fallbackMainTask;
+
+  return {
+    task_id: nextTaskId,
+    main_task: nextMainTask,
+    sub_plans: subPlans,
+    triples,
+  };
 }
 
 function buildSubTasksFromBlocks(blocks: AgentBlock[]) {

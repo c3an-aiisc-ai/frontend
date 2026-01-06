@@ -10,6 +10,7 @@ type Props = {
   theme: Theme;
   fileInputRef: RefObject<HTMLInputElement | null>;
   downloadLabel?: string;
+  onPlanBackClick?: () => void;
   onC3ANClick: () => void;
   onAboutClick: () => void;
   onPlanningClick?: () => void;
@@ -27,6 +28,7 @@ export default function Toolbar({
   theme,
   fileInputRef,
   downloadLabel,
+  onPlanBackClick,
   onC3ANClick,
   onAboutClick,
   onPlanningClick,
@@ -78,6 +80,11 @@ export default function Toolbar({
   return (
     <div className="absolute top-4 right-6 z-30 flex items-center gap-3">
       <div className="hidden lg:flex items-center gap-3">
+        {onPlanBackClick && (
+          <button className={actionButtonClass} onClick={onPlanBackClick}>
+            Back
+          </button>
+        )}
         <button className={actionButtonClass} onClick={onC3ANClick}>
           C3AN
         </button>
@@ -127,6 +134,15 @@ export default function Toolbar({
         </button>
         {isMenuOpen && (
           <div id={menuId} className={menuPanelClass} role="menu">
+            {onPlanBackClick && (
+              <button
+                className={menuItemClass}
+                onClick={() => handleMenuAction(onPlanBackClick)}
+                role="menuitem"
+              >
+                Back
+              </button>
+            )}
             <button className={menuItemClass} onClick={() => handleMenuAction(onC3ANClick)} role="menuitem">
               C3AN
             </button>

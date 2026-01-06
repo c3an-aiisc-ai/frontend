@@ -12,6 +12,8 @@ export type PlanSubTask = {
   required_skills?: string[];
 };
 
+export type PlanConnections = Array<{ from: string; to: string }>;
+
 export type PlanningWorkflowSnapshot = Pick<
   WorkspaceSnapshot,
   "blocks" | "tools" | "connections" | "evals" | "notes" | "uploads" | "outputs"
@@ -27,7 +29,13 @@ export type PlanningBlock = {
   task_id?: string;
   main_task?: string;
   sub_tasks?: PlanSubTask[];
+  sub_plans?: PlanHierarchy;
   workflow?: PlanningWorkflowSnapshot;
+};
+
+export type PlanHierarchy = {
+  plans: PlanningBlock[];
+  connections: PlanConnections;
 };
 
 export type PlanTemplate = {

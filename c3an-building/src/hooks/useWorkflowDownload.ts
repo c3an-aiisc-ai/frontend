@@ -1,13 +1,12 @@
 import { useCallback } from "react";
 import type { MutableRefObject } from "react";
-import { downloadWorkflow, isRecord } from "../shared/utils";
+import { downloadWorkflow } from "../shared/utils";
 import type { PlanningBlock, ViewMode } from "../shared/types";
 import {
-  buildPlanDownloadBundle,
-  buildPlanDownloadEntry,
-  buildPlanDownloadEntryFromWorkflow,
+  buildPlanHierarchyDownload,
+  buildPlanSubPlanBundle,
+  buildWorkflowTriplesFromWorkflow,
 } from "../features/workflow/utils/planDownload";
-import { parsePlanningJSON } from "../shared/planning/parsePlan";
 
 type SnapshotBuilder = () => PlanningBlock["workflow"];
 
@@ -15,58 +14,60 @@ export function useWorkflowDownload(args: {
   viewMode: ViewMode;
   activePlanId: string | null;
   plans: PlanningBlock[];
+  planConnections: Array<{ from: string; to: string }>;
   buildPlanWorkflowSnapshot: SnapshotBuilder;
+  planStackDepth?: number;
   agentPlanTemplateRef?: MutableRefObject<unknown | null>;
 }) {
   const {
     viewMode,
-    activePlanId,
     plans,
+    planConnections,
     buildPlanWorkflowSnapshot,
-    agentPlanTemplateRef,
+    planStackDepth = 0,
   } = args;
-  const isPlanTemplate = (
-    value: unknown
-  ): value is Record<string, unknown> & { triples: unknown[] } =>
-    isRecord(value) && Array.isArray(value.triples);
-  const planTemplate = isPlanTemplate(agentPlanTemplateRef?.current)
-    ? agentPlanTemplateRef?.current
-    : null;
-  const hasPlanTemplate = viewMode === "agent" && Boolean(planTemplate);
-  const downloadLabel = "Download Plan";
+  const downloadLabel = viewMode === "agent" ? "Download Triples" : "Download Plan";
 
   const handleDownload = useCallback(() => {
     if (viewMode === "plan") {
-      const bundle = buildPlanDownloadBundle(plans);
-      const payload = bundle.plans.length === 1 ? bundle.plans[0] : bundle;
+      if (planStackDepth > 0) {
+        const payload = buildPlanSubPlanBundle(plans);
+        downloadWorkflow(payload, "plans.json");
+        return;
+      }
+      const rootPlan = plans.length === 1 ? plans[0] : null;
+      const nestedPlans = rootPlan?.sub_plans?.plans ?? [];
+      if (nestedPlans.length > 0) {
+        const payload = buildPlanHierarchyDownload({
+          plans: nestedPlans,
+          connections: rootPlan?.sub_plans?.connections ?? [],
+          taskId: rootPlan?.task_id ?? rootPlan?.id,
+          mainTask: rootPlan?.main_task ?? rootPlan?.name ?? rootPlan?.query,
+        });
+        downloadWorkflow(payload, "plans.json");
+        return;
+      }
+      const isMainPlan = plans.length > 1 || planConnections.length > 0;
+      const payload = isMainPlan
+        ? buildPlanHierarchyDownload({
+            plans,
+            connections: planConnections,
+          })
+        : buildPlanSubPlanBundle(plans);
       downloadWorkflow(payload, "plans.json");
       return;
     }
 
-    if (hasPlanTemplate && planTemplate) {
-      try {
-        const parsed = parsePlanningJSON(planTemplate);
-        const entry = buildPlanDownloadEntry(parsed);
-        downloadWorkflow(entry, `${entry.task_id}.json`);
-        return;
-      } catch {
-        // Fall back to workflow snapshot if the template is invalid.
-      }
-    }
-
     const workflowSnapshot = buildPlanWorkflowSnapshot();
-    const entry = buildPlanDownloadEntryFromWorkflow({
+    const triples = buildWorkflowTriplesFromWorkflow({
       blocks: workflowSnapshot.blocks ?? [],
       connections: workflowSnapshot.connections ?? [],
-      taskId: activePlanId,
-      mainTask: activePlanId,
     });
-    downloadWorkflow(entry, `${entry.task_id}.json`);
+    downloadWorkflow({ triples }, "triples.json");
   }, [
-    activePlanId,
     buildPlanWorkflowSnapshot,
-    hasPlanTemplate,
-    planTemplate,
+    planStackDepth,
+    planConnections,
     plans,
     viewMode,
   ]);

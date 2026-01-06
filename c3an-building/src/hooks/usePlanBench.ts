@@ -1,8 +1,136 @@
 import { useCallback, useEffect } from "react";
 import { parsePlanningJSON } from "../shared/planning/parsePlan";
 import { PENDING_PLAN_STORAGE_KEY } from "../shared/constants";
+import { findAgentRegistryEntryByIdOrName } from "../shared/constants/agentRegistry";
 import { isRecord } from "../shared/utils";
-import type { PlanningBlock } from "../shared/types";
+import { buildIoFromStreams } from "../features/workflow/utils/workflowIO";
+import type { AgentBlock, Connection, PlanSubTask, PlanningBlock } from "../shared/types";
+
+const formatTaskIdLabel = (taskId: string) => {
+  const trimmed = taskId.trim();
+  if (!trimmed) return "";
+  if (trimmed.startsWith("task-") && trimmed.length > 5) {
+    return trimmed.slice(5);
+  }
+  return trimmed;
+};
+
+const normalizeWorkflowSnapshot = (
+  value: unknown
+): PlanningBlock["workflow"] | undefined => {
+  if (!isRecord(value)) return undefined;
+  const blocks = Array.isArray(value.blocks) ? value.blocks : null;
+  const connections = Array.isArray(value.connections) ? value.connections : null;
+  const tools = Array.isArray(value.tools) ? value.tools : null;
+  if (!blocks && !connections && !tools) return undefined;
+  return {
+    blocks: blocks ?? [],
+    tools: tools ?? [],
+    connections: connections ?? [],
+    evals: Array.isArray(value.evals) ? value.evals : [],
+    notes: Array.isArray(value.notes) ? value.notes : [],
+    uploads: Array.isArray(value.uploads) ? value.uploads : [],
+    outputs: Array.isArray(value.outputs) ? value.outputs : [],
+  };
+};
+
+const buildPlanConnectionsFromTriples = (triples: PlanningBlock["triples"]) => {
+  const seen = new Set<string>();
+  return (triples ?? [])
+    .map((triple) => {
+      const from = String(triple?.from ?? "").trim();
+      const to = String(triple?.to ?? "").trim();
+      if (!from || !to) return null;
+      const key = `${from}::${to}`;
+      if (seen.has(key)) return null;
+      seen.add(key);
+      return { from, to };
+    })
+    .filter((conn): conn is { from: string; to: string } => Boolean(conn));
+};
+
+const normalizeLabels = (value: string[] | undefined) =>
+  Array.isArray(value)
+    ? value.map((item) => String(item ?? "").trim()).filter(Boolean)
+    : [];
+
+const buildWorkflowForSubTask = (task: PlanSubTask): PlanningBlock["workflow"] => {
+  const labels: string[] = [];
+  const seen = new Set<string>();
+  const addLabel = (value: string) => {
+    const trimmed = value.trim();
+    if (!trimmed || seen.has(trimmed)) return;
+    seen.add(trimmed);
+    labels.push(trimmed);
+  };
+
+  normalizeLabels(task.required_skills).forEach(addLabel);
+  if (!labels.length) {
+    const primaryLabel = task.name?.trim() || task.sub_task_id?.trim() || "";
+    if (primaryLabel) addLabel(primaryLabel);
+  }
+  if (!labels.length && task.sub_task_id) addLabel(task.sub_task_id);
+
+  const startX = 200;
+  const startY = 200;
+  const gapX = 320;
+
+  const buildFallbackIo = () => ({
+    inputCount: 1,
+    outputCount: 1,
+    mandatoryInputCount: 0,
+    mandatoryOutputCount: 0,
+    inputRequired: [false],
+    outputRequired: [false],
+    inputNames: [],
+    outputNames: [],
+  });
+
+  const blocks: AgentBlock[] = labels.map((label, index) => {
+    const registry = findAgentRegistryEntryByIdOrName(label);
+    const io = registry
+      ? buildIoFromStreams({
+          input: registry.input_data_streams,
+          output: registry.output_data_streams,
+        })
+      : buildFallbackIo();
+    const isPrimary = index === labels.length - 1;
+    const description = isPrimary ? task.description?.trim() || "" : "";
+    return {
+      id: `block-${index + 1}`,
+      x: startX + index * gapX,
+      y: startY,
+      agentId: registry?.id,
+      name: registry?.name ?? label,
+      description,
+      inputCount: io.inputCount,
+      outputCount: io.outputCount,
+      inputRequired: io.inputRequired,
+      outputRequired: io.outputRequired,
+      inputNames: io.inputNames,
+      outputNames: io.outputNames,
+      presetId: registry?.id ?? "custom",
+      mandatoryInputCount: io.mandatoryInputCount,
+      mandatoryOutputCount: io.mandatoryOutputCount,
+    };
+  });
+
+  const connections: Connection[] = labels.slice(0, -1).map((_, index) => ({
+    id: `conn-${index + 1}`,
+    from: { type: "block", id: `block-${index + 1}`, port: 0 },
+    to: { type: "block", id: `block-${index + 2}`, inputIndex: 0 },
+  }));
+
+  return {
+    blocks,
+    tools: [],
+    connections,
+    evals: [],
+    notes: [],
+    uploads: [],
+    outputs: [],
+  };
+};
 
 export function usePlanBench(args: {
   applyPlanJson: (src: unknown) => void;
@@ -10,6 +138,16 @@ export function usePlanBench(args: {
   planLinkFromRef: React.MutableRefObject<string | null>;
   setPlans: React.Dispatch<React.SetStateAction<PlanningBlock[]>>;
   setPlanConnections: React.Dispatch<React.SetStateAction<Array<{ from: string; to: string }>>>;
+  setPlanStack: React.Dispatch<
+    React.SetStateAction<
+      Array<{
+        plans: PlanningBlock[];
+        planConnections: Array<{ from: string; to: string }>;
+        activePlanId: string | null;
+        parentPlanId: string | null;
+      }>
+    >
+  >;
   setActivePlanId: React.Dispatch<React.SetStateAction<string | null>>;
   setViewMode: React.Dispatch<React.SetStateAction<"agent" | "plan">>;
   setActivePanel: React.Dispatch<React.SetStateAction<"blocks" | "tools" | "settings" | null>>;
@@ -22,6 +160,7 @@ export function usePlanBench(args: {
     setActivePlanId,
     setPlanConnections,
     setPlans,
+    setPlanStack,
     setViewMode,
   } = args;
 
@@ -34,7 +173,6 @@ export function usePlanBench(args: {
     const cardWidth = 240;
     const cardHeight = 150;
     const railWidth = 64;
-    const isSingle = entries.length === 1;
     const centerX =
       typeof window === "undefined"
         ? startX
@@ -43,10 +181,117 @@ export function usePlanBench(args: {
       typeof window === "undefined"
         ? startY
         : window.innerHeight / 2 - cardHeight / 2;
-    const usedIds = new Set<string>();
+    const layoutPlans = <T,>(
+      items: T[],
+      build: (item: T, index: number, x: number, y: number) => PlanningBlock | null
+    ) => {
+      const single = items.length === 1;
+      return items
+        .map((item, index) => {
+          const col = index % colCount;
+          const row = Math.floor(index / colCount);
+          const x = single ? centerX : startX + col * gapX;
+          const y = single ? centerY : startY + row * gapY;
+          return build(item, index, x, y);
+        })
+        .filter((plan): plan is PlanningBlock => Boolean(plan));
+    };
 
-    return entries
-      .map((entry, index) => {
+    const buildSubPlansFromSubTasks = (
+      subTasks: PlanSubTask[],
+      triples: PlanningBlock["triples"]
+    ): PlanningBlock["sub_plans"] | undefined => {
+      if (!subTasks.length && !triples.length) return undefined;
+      const taskById = new Map<string, PlanSubTask>();
+      const orderedIds: string[] = [];
+      const seen = new Set<string>();
+      const addId = (value: string, task?: PlanSubTask) => {
+        const id = value.trim();
+        if (!id || seen.has(id)) return;
+        seen.add(id);
+        orderedIds.push(id);
+        if (task) taskById.set(id, task);
+      };
+      subTasks.forEach((task) => {
+        if (!task?.sub_task_id) return;
+        addId(task.sub_task_id, task);
+      });
+      triples.forEach((triple) => {
+        addId(String(triple?.from ?? ""));
+        addId(String(triple?.to ?? ""));
+      });
+
+      const subPlanBlocks = layoutPlans(orderedIds, (nodeId, index, x, y) => {
+        void index;
+        const task = taskById.get(nodeId);
+        const name = task?.name?.trim() || nodeId;
+        const description = task?.description?.trim() || "";
+        const workflow = task ? buildWorkflowForSubTask(task) : undefined;
+        const plan: PlanningBlock = {
+          id: nodeId,
+          x,
+          y,
+          name,
+          query: description,
+          triples: [],
+          task_id: nodeId,
+          ...(task?.name ? { main_task: task.name } : {}),
+          ...(task ? { sub_tasks: [task] } : {}),
+          ...(workflow ? { workflow } : {}),
+        };
+        return plan;
+      });
+
+      return {
+        plans: subPlanBlocks,
+        connections: buildPlanConnectionsFromTriples(triples),
+      };
+    };
+
+    function resolveSubPlans(
+      record: Record<string, unknown>,
+      parsed: PlanningBlock
+    ): PlanningBlock["sub_plans"] | undefined {
+      const rawSubPlans = record.sub_plans;
+      if (Array.isArray(rawSubPlans)) {
+        const subPlanBlocks = buildPlanBlocks(rawSubPlans, { preserveIds: true });
+        if (!subPlanBlocks.length) return undefined;
+        return {
+          plans: subPlanBlocks,
+          connections: buildPlanConnectionsFromTriples(parsed.triples),
+        };
+      }
+      if (isRecord(rawSubPlans) && Array.isArray(rawSubPlans.plans)) {
+        const subPlanBlocks = buildPlanBlocks(rawSubPlans.plans, { preserveIds: true });
+        if (!subPlanBlocks.length) return undefined;
+        const rawConnections = Array.isArray(rawSubPlans.connections)
+          ? rawSubPlans.connections
+          : [];
+        const planIds = new Set(subPlanBlocks.map((plan) => plan.id));
+        const connections = rawConnections.filter(
+          (conn): conn is { from: string; to: string } =>
+            isRecord(conn) &&
+            typeof conn.from === "string" &&
+            typeof conn.to === "string" &&
+            planIds.has(conn.from) &&
+            planIds.has(conn.to)
+        );
+        return {
+          plans: subPlanBlocks,
+          connections,
+        };
+      }
+      const subTasks = parsed.sub_tasks?.length ? parsed.sub_tasks : [];
+      return buildSubPlansFromSubTasks(subTasks, parsed.triples);
+    }
+
+    function buildPlanBlocks(
+      items: unknown[],
+      options?: { preserveIds?: boolean }
+    ): PlanningBlock[] {
+      const usedIds = new Set<string>();
+      return layoutPlans(items, (entry, index, x, y) => {
+        void index;
         if (!isRecord(entry)) return null;
         let parsed: PlanningBlock;
         try {
@@ -67,42 +312,54 @@ export function usePlanBench(args: {
               : "");
         const baseId = rawId || parsed.id;
         let id = baseId;
-        if (usedIds.has(id)) {
+        if (options?.preserveIds) {
+          if (usedIds.has(id)) return null;
+          usedIds.add(id);
+        } else if (usedIds.has(id)) {
           let counter = 1;
           while (usedIds.has(`${baseId}-${counter}`)) counter += 1;
           id = `${baseId}-${counter}`;
+          usedIds.add(id);
+        } else {
+          usedIds.add(id);
         }
-        usedIds.add(id);
 
+        const subTasks = parsed.sub_tasks?.length ? parsed.sub_tasks : undefined;
+        const subPlanHierarchy = resolveSubPlans(record, parsed);
+        const taskLabel = rawTaskId ? formatTaskIdLabel(rawTaskId) : "";
         const name =
           typeof record.name === "string"
             ? record.name.trim()
-            : rawMainTask || baseId;
+            : subPlanHierarchy && taskLabel
+              ? taskLabel
+              : rawMainTask || baseId;
         const query =
           typeof record.query === "string"
             ? record.query.trim()
             : typeof record.intent === "string"
               ? record.intent.trim()
               : rawMainTask || parsed.query;
-        const subTasks = parsed.sub_tasks?.length ? parsed.sub_tasks : undefined;
-        const hasNewSchema = Boolean(rawTaskId || rawMainTask || subTasks);
+        const hasNewSchema = Boolean(rawTaskId || rawMainTask || subTasks || subPlanHierarchy);
         const taskId = hasNewSchema ? (rawTaskId || baseId) : "";
+        const workflow = normalizeWorkflowSnapshot(record.workflow);
 
-        const col = index % colCount;
-        const row = Math.floor(index / colCount);
         return {
           id: String(id),
-          x: isSingle ? centerX : startX + col * gapX,
-          y: isSingle ? centerY : startY + row * gapY,
+          x,
+          y,
           name: name || String(id),
           query: query ?? "",
           triples: parsed.triples,
           ...(hasNewSchema && taskId ? { task_id: taskId } : {}),
           ...(rawMainTask ? { main_task: rawMainTask } : {}),
           ...(subTasks ? { sub_tasks: subTasks } : {}),
+          ...(subPlanHierarchy ? { sub_plans: subPlanHierarchy } : {}),
+          ...(workflow ? { workflow } : {}),
         } satisfies PlanningBlock;
-      })
-      .filter((plan): plan is PlanningBlock => Boolean(plan));
+      });
+    }
+
+    return buildPlanBlocks(entries);
   }, []);
 
   const buildSequentialPlanConnections = useCallback(
@@ -133,15 +390,18 @@ export function usePlanBench(args: {
           setPlanConnections(buildSequentialPlanConnections(nextPlans));
           planLinkFromRef.current = null;
           setActivePlanId(null);
+          setPlanStack([]);
           setViewMode("plan");
           setActivePanel((prev) => (prev === "tools" ? "blocks" : prev));
           return;
         }
       }
       if (isRecord(payload) && payload.mode === "agent" && payload.plan) {
+        setPlanStack([]);
         applyPlanJson(payload.plan);
         return;
       }
+      setPlanStack([]);
       applyPlanJson(payload);
     } catch {
       // Ignore invalid pending plan payloads.
@@ -156,6 +416,7 @@ export function usePlanBench(args: {
     setActivePlanId,
     setPlanConnections,
     setPlans,
+    setPlanStack,
     setViewMode,
   ]);
 }

@@ -10,6 +10,14 @@ export function useWorkflowReset(args: {
   setPlans: SetState<PlanningBlock[]>;
   setPlanCanvasKey: SetState<number>;
   setActivePlanId: SetState<string | null>;
+  setPlanStack: SetState<
+    Array<{
+      plans: PlanningBlock[];
+      planConnections: Array<{ from: string; to: string }>;
+      activePlanId: string | null;
+      parentPlanId: string | null;
+    }>
+  >;
   agentPlanTemplateRef: React.MutableRefObject<unknown | null>;
   setSelectedEvals: SetState<string[]>;
 }) {
@@ -19,6 +27,7 @@ export function useWorkflowReset(args: {
     setPlans,
     setPlanCanvasKey,
     setActivePlanId,
+    setPlanStack,
     agentPlanTemplateRef,
     setSelectedEvals,
   } = args;
@@ -30,6 +39,7 @@ export function useWorkflowReset(args: {
     setPlans([]);
     setPlanCanvasKey((k) => k + 1);
     setActivePlanId(null);
+    setPlanStack([]);
 
     agentPlanTemplateRef.current = null;
     setSelectedEvals([]);
@@ -37,7 +47,16 @@ export function useWorkflowReset(args: {
     if (typeof window !== "undefined" && typeof localStorage !== "undefined") {
       localStorage.removeItem(PLAN_WORKSPACE_STORAGE_KEY);
     }
-  }, [agentPlanTemplateRef, reset, resetWorkspace, setActivePlanId, setPlanCanvasKey, setPlans, setSelectedEvals]);
+  }, [
+    agentPlanTemplateRef,
+    reset,
+    resetWorkspace,
+    setActivePlanId,
+    setPlanCanvasKey,
+    setPlanStack,
+    setPlans,
+    setSelectedEvals,
+  ]);
 
   return { handleReset };
 }
