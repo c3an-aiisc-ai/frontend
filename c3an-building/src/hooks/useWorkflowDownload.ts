@@ -3,9 +3,9 @@ import type { MutableRefObject } from "react";
 import { downloadWorkflow } from "../shared/utils";
 import type { PlanningBlock, ViewMode } from "../shared/types";
 import {
-  buildPlanHierarchyDownload,
   buildPlanSubPlanBundle,
   buildWorkflowTriplesFromWorkflow,
+  buildPlanDownloadEntry,
 } from "../features/workflow/utils/planDownload";
 
 type SnapshotBuilder = () => PlanningBlock["workflow"];
@@ -38,27 +38,33 @@ export function useWorkflowDownload(args: {
       const rootPlan = plans.length === 1 ? plans[0] : null;
       const nestedPlans = rootPlan?.sub_plans?.plans ?? [];
       if (nestedPlans.length > 0) {
-        const payload = buildPlanHierarchyDownload({
-          plans: nestedPlans,
-          connections: rootPlan?.sub_plans?.connections ?? [],
-          taskId: rootPlan?.task_id ?? rootPlan?.id,
-          mainTask: rootPlan?.main_task ?? rootPlan?.name ?? rootPlan?.query,
-        });
+        // When a root plan contains sub_plans, download the root plan itself
+        // in the same schema we accept on upload.
+        // IMPORTANT: we intentionally DO NOT serialize sub_plans here; the user expects
+        // the original plan JSON shape {task_id, main_task, sub_tasks, triples}.
+        const payload = buildPlanDownloadEntry(rootPlan!);
         downloadWorkflow(payload, "plans.json");
         return;
       }
-      const isMainPlan = plans.length > 1 || planConnections.length > 0;
-      const payload = isMainPlan
-        ? buildPlanHierarchyDownload({
-            plans,
-            connections: planConnections,
-          })
-        : buildPlanSubPlanBundle(plans);
-      downloadWorkflow(payload, "plans.json");
+      // Root plan view: download the plan itself (task_id/main_task/sub_tasks/triples).
+      // Subplan view (planStackDepth > 0) is handled above via buildPlanSubPlanBundle.
+      const single = plans.length === 1 ? plans[0] : null;
+      if (single) {
+        downloadWorkflow(buildPlanDownloadEntry(single), "plans.json");
+        return;
+      }
+
+      // Fallback: if somehow multiple plans are visible at the root without a container plan,
+      // export them as a sub_plans bundle.
+      downloadWorkflow(buildPlanSubPlanBundle(plans), "plans.json");
       return;
     }
 
     const workflowSnapshot = buildPlanWorkflowSnapshot();
+    if (!workflowSnapshot) {
+      downloadWorkflow({ triples: [] }, "triples.json");
+      return;
+    }
     const triples = buildWorkflowTriplesFromWorkflow({
       blocks: workflowSnapshot.blocks ?? [],
       connections: workflowSnapshot.connections ?? [],

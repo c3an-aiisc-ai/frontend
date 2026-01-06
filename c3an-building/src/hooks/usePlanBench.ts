@@ -1,10 +1,8 @@
 import { useCallback, useEffect } from "react";
 import { parsePlanningJSON } from "../shared/planning/parsePlan";
 import { PENDING_PLAN_STORAGE_KEY } from "../shared/constants";
-import { findAgentRegistryEntryByIdOrName } from "../shared/constants/agentRegistry";
 import { isRecord } from "../shared/utils";
-import { buildIoFromStreams } from "../features/workflow/utils/workflowIO";
-import type { AgentBlock, Connection, PlanSubTask, PlanningBlock } from "../shared/types";
+import type { PlanSubTask, PlanningBlock } from "../shared/types";
 
 const formatTaskIdLabel = (taskId: string) => {
   const trimmed = taskId.trim();
@@ -49,88 +47,9 @@ const buildPlanConnectionsFromTriples = (triples: PlanningBlock["triples"]) => {
     .filter((conn): conn is { from: string; to: string } => Boolean(conn));
 };
 
-const normalizeLabels = (value: string[] | undefined) =>
-  Array.isArray(value)
-    ? value.map((item) => String(item ?? "").trim()).filter(Boolean)
-    : [];
-
-const buildWorkflowForSubTask = (task: PlanSubTask): PlanningBlock["workflow"] => {
-  const labels: string[] = [];
-  const seen = new Set<string>();
-  const addLabel = (value: string) => {
-    const trimmed = value.trim();
-    if (!trimmed || seen.has(trimmed)) return;
-    seen.add(trimmed);
-    labels.push(trimmed);
-  };
-
-  normalizeLabels(task.required_skills).forEach(addLabel);
-  if (!labels.length) {
-    const primaryLabel = task.name?.trim() || task.sub_task_id?.trim() || "";
-    if (primaryLabel) addLabel(primaryLabel);
-  }
-  if (!labels.length && task.sub_task_id) addLabel(task.sub_task_id);
-
-  const startX = 200;
-  const startY = 200;
-  const gapX = 320;
-
-  const buildFallbackIo = () => ({
-    inputCount: 1,
-    outputCount: 1,
-    mandatoryInputCount: 0,
-    mandatoryOutputCount: 0,
-    inputRequired: [false],
-    outputRequired: [false],
-    inputNames: [],
-    outputNames: [],
-  });
-
-  const blocks: AgentBlock[] = labels.map((label, index) => {
-    const registry = findAgentRegistryEntryByIdOrName(label);
-    const io = registry
-      ? buildIoFromStreams({
-          input: registry.input_data_streams,
-          output: registry.output_data_streams,
-        })
-      : buildFallbackIo();
-    const isPrimary = index === labels.length - 1;
-    const description = isPrimary ? task.description?.trim() || "" : "";
-    return {
-      id: `block-${index + 1}`,
-      x: startX + index * gapX,
-      y: startY,
-      agentId: registry?.id,
-      name: registry?.name ?? label,
-      description,
-      inputCount: io.inputCount,
-      outputCount: io.outputCount,
-      inputRequired: io.inputRequired,
-      outputRequired: io.outputRequired,
-      inputNames: io.inputNames,
-      outputNames: io.outputNames,
-      presetId: registry?.id ?? "custom",
-      mandatoryInputCount: io.mandatoryInputCount,
-      mandatoryOutputCount: io.mandatoryOutputCount,
-    };
-  });
-
-  const connections: Connection[] = labels.slice(0, -1).map((_, index) => ({
-    id: `conn-${index + 1}`,
-    from: { type: "block", id: `block-${index + 1}`, port: 0 },
-    to: { type: "block", id: `block-${index + 2}`, inputIndex: 0 },
-  }));
-
-  return {
-    blocks,
-    tools: [],
-    connections,
-    evals: [],
-    notes: [],
-    uploads: [],
-    outputs: [],
-  };
-};
+// NOTE: Option A behavior: do NOT auto-generate agent workflows for sub-plans.
+// Sub-plans should remain in the same schema family as uploaded plan JSON
+// ({task_id, main_task, sub_tasks, triples}).
 
 export function usePlanBench(args: {
   applyPlanJson: (src: unknown) => void;
@@ -226,7 +145,6 @@ export function usePlanBench(args: {
         const task = taskById.get(nodeId);
         const name = task?.name?.trim() || nodeId;
         const description = task?.description?.trim() || "";
-        const workflow = task ? buildWorkflowForSubTask(task) : undefined;
         const plan: PlanningBlock = {
           id: nodeId,
           x,
@@ -237,7 +155,6 @@ export function usePlanBench(args: {
           task_id: nodeId,
           ...(task?.name ? { main_task: task.name } : {}),
           ...(task ? { sub_tasks: [task] } : {}),
-          ...(workflow ? { workflow } : {}),
         };
         return plan;
       });

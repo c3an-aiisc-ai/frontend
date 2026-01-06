@@ -11,9 +11,7 @@ export type PlanDownloadEntry = {
   triples: PlanningBlock["triples"];
 };
 
-export type PlanSubPlanEntry = PlanDownloadEntry & {
-  workflow?: { triples: PlanningBlock["triples"] };
-};
+export type PlanSubPlanEntry = PlanDownloadEntry;
 
 export type PlanHierarchyDownload = {
   task_id: string;
@@ -23,7 +21,7 @@ export type PlanHierarchyDownload = {
 };
 
 export type PlanSubPlanBundle = {
-  sub_plans: PlanSubPlanEntry[];
+  sub_plans: PlanSubTask[];
 };
 
 export type PlanDownloadBundle = {
@@ -131,19 +129,21 @@ export function buildWorkflowTriplesFromWorkflow(args: {
 }
 
 function buildSubPlanEntries(plans: PlanningBlock[]) {
-  return plans.map((plan) => {
-    const entry = buildPlanDownloadEntry(plan);
-    if (!plan.workflow) return entry;
-    const workflowTriples = buildWorkflowTriplesFromWorkflow({
-      blocks: plan.workflow.blocks ?? [],
-      connections: plan.workflow.connections ?? [],
-    });
-    return { ...entry, workflow: { triples: workflowTriples } } satisfies PlanSubPlanEntry;
-  });
+  return plans.map((plan) => buildPlanDownloadEntry(plan));
 }
 
 export function buildPlanSubPlanBundle(plans: PlanningBlock[]): PlanSubPlanBundle {
-  return { sub_plans: buildSubPlanEntries(plans) };
+  const extracted: PlanSubTask[] = [];
+  const seen = new Set<string>();
+  plans.forEach((plan) => {
+    const task = plan.sub_tasks?.[0];
+    if (!task) return;
+    const subTaskId = String(task.sub_task_id ?? "").trim();
+    if (!subTaskId || seen.has(subTaskId)) return;
+    seen.add(subTaskId);
+    extracted.push(task);
+  });
+  return { sub_plans: extracted };
 }
 
 function buildMainPlanTriples(
