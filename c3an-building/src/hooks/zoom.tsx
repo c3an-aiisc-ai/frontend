@@ -15,20 +15,21 @@ type Options = {
 export function usePanZoom({
   initial = { x: 0, y: 0, zoom: 1 },
   minZoom = 0.1,
-  maxZoom = 1,
+  maxZoom = 3,
   zoomStep = 0.02,
   shouldAllowPan,
   isPanDisabled,
 }: Options = {}) {
-  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [containerEl, setContainerEl] = useState<HTMLDivElement | null>(null);
+  const containerRef = useCallback((node: HTMLDivElement | null) => {
+    setContainerEl(node);
+  }, []);
   const draggingRef = useRef(false);
   const lastPosRef = useRef<{ x: number; y: number } | null>(null);
   const rafRef = useRef<number | null>(null);
   const pendingRef = useRef<Transform | null>(null);
-  const wheelTimeoutRef = useRef<number | null>(null);
   const [transform, setTransform] = useState<Transform>(initial);
   const transformRef = useRef<Transform>(initial);
-  const [isPanning, setIsPanning] = useState(false);
 
   const applyTransform = useCallback((next: Transform) => {
     transformRef.current = next;
@@ -46,7 +47,7 @@ export function usePanZoom({
 
   // pointer down = start dragging
   useEffect(() => {
-    const el = containerRef.current;
+    const el = containerEl;
     if (!el) return;
 
     function onPointerDown(e: PointerEvent) {
@@ -57,7 +58,6 @@ export function usePanZoom({
       e.preventDefault();
       draggingRef.current = true;
       lastPosRef.current = { x: e.clientX, y: e.clientY };
-      setIsPanning(true);
       (e.target as Element | null)?.setPointerCapture?.(e.pointerId);
     }
 
@@ -66,7 +66,6 @@ export function usePanZoom({
       if (isPanDisabled && isPanDisabled()) {
         draggingRef.current = false;
         lastPosRef.current = null;
-        setIsPanning(false);
         return;
       }
       e.preventDefault();
@@ -80,7 +79,6 @@ export function usePanZoom({
     function onPointerUp() {
       draggingRef.current = false;
       lastPosRef.current = null;
-      setIsPanning(false);
     }
 
     el.addEventListener("pointerdown", onPointerDown);
@@ -92,17 +90,16 @@ export function usePanZoom({
       window.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("pointerup", onPointerUp);
     };
-  }, [applyTransform, shouldAllowPan]);
+  }, [applyTransform, containerEl, isPanDisabled, shouldAllowPan]);
 
   // wheel to zoom (centered on the cursor)
   useEffect(() => {
-    const el = containerRef.current;
+    const el = containerEl;
     if (!el) return;
     const element: HTMLDivElement = el;
 
     function onWheel(e: WheelEvent) {
       e.preventDefault();
-      setIsPanning(true);
       const direction = e.deltaY > 0 ? -1 : 1;
       const factor = 1 + direction * zoomStep;
 
@@ -116,21 +113,13 @@ export function usePanZoom({
       const newX = cx - ((cx - current.x) * newZoom) / current.zoom;
       const newY = cy - ((cy - current.y) * newZoom) / current.zoom;
       applyTransform({ x: newX, y: newY, zoom: newZoom });
-      if (wheelTimeoutRef.current) {
-        clearTimeout(wheelTimeoutRef.current);
-      }
-      wheelTimeoutRef.current = window.setTimeout(() => setIsPanning(false), 120);
     }
 
     element.addEventListener("wheel", onWheel, { passive: false });
     return () => {
       element.removeEventListener("wheel", onWheel);
-      if (wheelTimeoutRef.current) {
-        clearTimeout(wheelTimeoutRef.current);
-        wheelTimeoutRef.current = null;
-      }
     };
-  }, [applyTransform, maxZoom, minZoom, zoomStep]);
+  }, [applyTransform, containerEl, maxZoom, minZoom, zoomStep]);
 
   useEffect(() => {
     transformRef.current = transform;
@@ -147,5 +136,5 @@ export function usePanZoom({
     setTransform(initial);
   }, [initial]);
 
-  return { containerRef, transform, setTransform: applyTransform, reset, isPanning };
+  return { containerRef, containerEl, transform, setTransform: applyTransform, reset };
 }
