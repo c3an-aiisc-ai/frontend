@@ -1,4 +1,5 @@
-import React, { Children } from "react";
+
+import * as React from "react";
 import  Sidebar from "../panels/Sidebar";
 import  AgentBlock  from "../AgentBlock";
 import ToolNode from "../ToolNode"
