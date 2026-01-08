@@ -78,7 +78,7 @@ export function useWorkspace() {
   const [linking, setLinking] = useState<LinkingState>(null);
   const linkingRef = useRef(false);
   const [hoveredInput, setHoveredInput] = useState<{
-    type: "block" | "tool";
+    type: "block" | "tool" | "output";
     id: string;
     inputIndex?: number;
   } | null>(null);

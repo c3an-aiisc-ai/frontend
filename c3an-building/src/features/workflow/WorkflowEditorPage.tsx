@@ -6,6 +6,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Sidebar, Toolbar } from "../../components/ui";
 import { AgentCanvasView, PlanCanvasView } from "../../components/canvas";
 import { BlockDetailsModal, ToolDetailsModal, EvalsModal } from "../../components/modals";
+import AgentViewLoadingScreen from "./AgentViewLoadingScreen";
+import PlanViewLoadingScreen from "./PlanViewLoadingScreen";
 import { usePanZoom, useWorkspace } from "../../hooks";
 import { usePlanBench } from "../../hooks/usePlanBench";
 import { usePlanWorkflow } from "../../hooks/usePlanWorkflow";
@@ -154,6 +156,22 @@ export default function WorkflowEditorPage() {
 
   const initialPlanSnapshot = useMemo(() => readPlanWorkspaceSnapshot(), []);
   const [viewMode, setViewMode] = useState<ViewMode>(() => initialPlanSnapshot?.viewMode ?? "agent");
+
+  const STARTUP_LOADING_MS = 900;
+  const VIEW_SWITCH_LOADING_MS = 650;
+  const startupLoadingKey = "c3an_workflow_startup_loading_shown";
+
+  const [showStartupLoading, setShowStartupLoading] = useState(() => {
+    try {
+      return sessionStorage.getItem(startupLoadingKey) !== "1";
+    } catch {
+      return true;
+    }
+  });
+
+  const [isViewSwitchLoading, setIsViewSwitchLoading] = useState(false);
+  const [pendingViewMode, setPendingViewMode] = useState<ViewMode | null>(null);
+  const viewSwitchTimeoutRef = useRef<number | null>(null);
   const [plans, setPlans] = useState<PlanningBlock[]>(() => initialPlanSnapshot?.plans ?? []);
   const nextPlanIdRef = useRef(
     initialPlanSnapshot?.nextPlanId ?? getNextPlanId(initialPlanSnapshot?.plans ?? [])
@@ -162,6 +180,49 @@ export default function WorkflowEditorPage() {
   const [activePlanId, setActivePlanId] = useState<string | null>(
     () => initialPlanSnapshot?.activePlanId ?? null
   );
+
+  useEffect(() => {
+    if (!showStartupLoading) return;
+
+    // Per request: on first load, show a loading page and land in agent view.
+    setViewMode("agent");
+
+    const timeout = window.setTimeout(() => {
+      try {
+        sessionStorage.setItem(startupLoadingKey, "1");
+      } catch {
+        // ignore
+      }
+      setShowStartupLoading(false);
+    }, STARTUP_LOADING_MS);
+
+    return () => window.clearTimeout(timeout);
+  }, [showStartupLoading]);
+
+  const beginViewSwitchLoading = useCallback((nextMode: ViewMode) => {
+    if (viewSwitchTimeoutRef.current !== null) {
+      window.clearTimeout(viewSwitchTimeoutRef.current);
+      viewSwitchTimeoutRef.current = null;
+    }
+
+    setPendingViewMode(nextMode);
+    setIsViewSwitchLoading(true);
+
+    viewSwitchTimeoutRef.current = window.setTimeout(() => {
+      setViewMode(nextMode);
+      setIsViewSwitchLoading(false);
+      setPendingViewMode(null);
+      viewSwitchTimeoutRef.current = null;
+    }, VIEW_SWITCH_LOADING_MS);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (viewSwitchTimeoutRef.current !== null) {
+        window.clearTimeout(viewSwitchTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const [planConnections, setPlanConnections] = useState<PlanConnection[]>(
     () => initialPlanSnapshot?.planConnections ?? []
@@ -616,6 +677,16 @@ export default function WorkflowEditorPage() {
 
   return (
     <div className={`relative h-screen w-screen overflow-hidden ${appThemeClass}`}>
+      {showStartupLoading ? (
+        <AgentViewLoadingScreen theme={theme} />
+      ) : isViewSwitchLoading ? (
+        (pendingViewMode ?? viewMode) === "plan" ? (
+          <PlanViewLoadingScreen theme={theme} />
+        ) : (
+          <AgentViewLoadingScreen theme={theme} />
+        )
+      ) : null}
+
       <Sidebar
         activePanel={activePanel}
         theme={theme}
@@ -635,7 +706,12 @@ export default function WorkflowEditorPage() {
             saveActivePlanWorkflow();
             planLinkFromRef.current = null;
           }
-          setViewMode(mode);
+          // Show a brief loading screen on any view switch.
+          if (!showStartupLoading && mode !== viewMode) {
+            beginViewSwitchLoading(mode);
+          } else {
+            setViewMode(mode);
+          }
           setModalBlockId(null);
           setModalToolId(null);
           clearWorkspaceUIState();
@@ -669,7 +745,7 @@ export default function WorkflowEditorPage() {
       />
 
       <main className="relative z-0 h-full w-full">
-        {viewMode === "plan" ? (
+        {showStartupLoading || isViewSwitchLoading ? null : viewMode === "plan" ? (
           <PlanCanvasView
             key={planCanvasKey}
             theme={theme}
