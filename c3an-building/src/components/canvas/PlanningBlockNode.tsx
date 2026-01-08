@@ -45,7 +45,8 @@ export default function PlanningBlockNode({
   showHandles = false,
 }: Props) {
   const cardRef = useRef<HTMLDivElement | null>(null);
-  const [size, setSize] = useState<{ width: number; height: number }>({ width: 220, height: 140 });
+  const onSizeRef = useRef<Props["onSize"]>(onSize);
+  const [size, setSize] = useState<{ width: number; height: number }>({ width: 260, height: 150 });
   const effectiveMode = modeOverride ?? null;
   const hasSubPlans = Boolean(plan.sub_plans?.plans?.length);
 
@@ -54,20 +55,29 @@ export default function PlanningBlockNode({
   void toWorldPoint;
 
   useEffect(() => {
-    if (!cardRef.current || !onSize) return;
+    onSizeRef.current = onSize;
+  }, [onSize]);
+
+  useEffect(() => {
+    if (!cardRef.current) return;
+    const applySize = (width: number, height: number) => {
+      setSize((prev) => {
+        if (prev.width === width && prev.height === height) return prev;
+        return { width, height };
+      });
+      onSizeRef.current?.({ width, height });
+    };
     const observer = new ResizeObserver(([entry]) => {
       const width = Math.round(entry.contentRect.width);
       const height = Math.round(entry.contentRect.height);
-      setSize({ width, height });
-      onSize({ width, height });
+      applySize(width, height);
     });
     observer.observe(cardRef.current);
     const initialWidth = Math.round(cardRef.current.offsetWidth);
     const initialHeight = Math.round(cardRef.current.offsetHeight);
-    setSize({ width: initialWidth, height: initialHeight });
-    onSize({ width: initialWidth, height: initialHeight });
+    applySize(initialWidth, initialHeight);
     return () => observer.disconnect();
-  }, [onSize]);
+  }, []);
 
   const outputAnchor = { x: plan.x + size.width, y: plan.y + size.height / 2 };
 
@@ -84,7 +94,7 @@ export default function PlanningBlockNode({
     >
       <div
         ref={cardRef}
-        className={`plan-card group min-w-[220px] max-w-[340px] min-h-[120px] ${
+        className={`plan-card group min-h-[120px] ${
           linkingFrom || linkingTarget ? "plan-card-active" : ""
         }`}
       >

@@ -85,7 +85,7 @@ export function usePlanBench(args: {
     const startY = 200;
     const gapX = 380;
     const gapY = 300;
-    const cardWidth = 240;
+    const cardWidth = 260;
     const cardHeight = 150;
     const railWidth = 64;
     const centerX =

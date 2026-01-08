@@ -59,7 +59,7 @@ export default function PlanningCanvas({
 
   const isPanDisabled = useCallback(() => Boolean(linking || localLink), [linking, localLink]);
 
-  const { containerRef, containerEl, transform } = usePanZoom({
+  const { containerRef, containerEl, transform, setTransform, getTransform } = usePanZoom({
     initial: { x: 0, y: 0, zoom: 1 },
     shouldAllowPan: allowPan,
     isPanDisabled,
@@ -80,8 +80,57 @@ export default function PlanningCanvas({
   }, [containerEl, transform.x, transform.y, transform.zoom]);
 
   const getSize = useCallback(
-    (plan: PlanningBlock) => planSizes[plan.id] ?? { width: 240, height: 150 },
+    (plan: PlanningBlock) => planSizes[plan.id] ?? { width: 260, height: 150 },
     [planSizes]
+  );
+
+  const toWorldPointDuringDrag = useCallback(
+    (clientX: number, clientY: number, plan: PlanningBlock) => {
+      const el = containerEl;
+      if (!el) return null;
+      const rect = el.getBoundingClientRect();
+      const margin = 140;
+      const maxSpeed = 22;
+      const base = getTransform();
+      const size = getSize(plan);
+      const leftEdge = base.x + plan.x * base.zoom;
+      const rightEdge = base.x + (plan.x + size.width) * base.zoom;
+      const topEdge = base.y + plan.y * base.zoom;
+      const bottomEdge = base.y + (plan.y + size.height) * base.zoom;
+
+      let dx = 0;
+      let dy = 0;
+      const overflowRight = rightEdge - (rect.right - margin);
+      const overflowLeft = (rect.left + margin) - leftEdge;
+      const overflowBottom = bottomEdge - (rect.bottom - margin);
+      const overflowTop = (rect.top + margin) - topEdge;
+
+      if (overflowRight > 0) {
+        dx = -Math.min(maxSpeed, overflowRight);
+      } else if (overflowLeft > 0) {
+        dx = Math.min(maxSpeed, overflowLeft);
+      }
+
+      if (overflowBottom > 0) {
+        dy = -Math.min(maxSpeed, overflowBottom);
+      } else if (overflowTop > 0) {
+        dy = Math.min(maxSpeed, overflowTop);
+      }
+
+      const nextX = base.x + dx;
+      const nextY = base.y + dy;
+      if (dx || dy) {
+        setTransform({ x: nextX, y: nextY, zoom: base.zoom });
+      }
+
+      const localX = clientX - rect.left;
+      const localY = clientY - rect.top;
+      return {
+        x: (localX - nextX) / base.zoom,
+        y: (localY - nextY) / base.zoom,
+      };
+    },
+    [containerEl, getSize, getTransform, setTransform]
   );
 
   const getPlanMode = useCallback(
@@ -219,7 +268,7 @@ export default function PlanningCanvas({
   const handlePlanPointerMove = (plan: PlanningBlock) => (e: React.PointerEvent<HTMLDivElement>) => {
     if (draggingPlanId !== plan.id) return;
     if (linking || localLink) return;
-    const world = toWorldPoint(e.clientX, e.clientY);
+    const world = toWorldPointDuringDrag(e.clientX, e.clientY, plan);
     if (!world) return;
     onPlanMove?.(plan.id, world.x - planDragOffsetRef.current.x, world.y - planDragOffsetRef.current.y);
   };
@@ -337,7 +386,8 @@ export default function PlanningCanvas({
               }}
               onSize={(size) => {
                 setPlanSizes((prev) => {
-                  if (prev[plan.id]) return prev;
+                  const current = prev[plan.id];
+                  if (current && current.width === size.width && current.height === size.height) return prev;
                   return { ...prev, [plan.id]: size };
                 });
               }}

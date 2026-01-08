@@ -172,6 +172,8 @@ export default function WorkflowEditorPage() {
   const [isViewSwitchLoading, setIsViewSwitchLoading] = useState(false);
   const [pendingViewMode, setPendingViewMode] = useState<ViewMode | null>(null);
   const viewSwitchTimeoutRef = useRef<number | null>(null);
+  const [isSubplanLoading, setIsSubplanLoading] = useState(false);
+  const subplanLoadingTimeoutRef = useRef<number | null>(null);
   const [plans, setPlans] = useState<PlanningBlock[]>(() => initialPlanSnapshot?.plans ?? []);
   const nextPlanIdRef = useRef(
     initialPlanSnapshot?.nextPlanId ?? getNextPlanId(initialPlanSnapshot?.plans ?? [])
@@ -216,10 +218,27 @@ export default function WorkflowEditorPage() {
     }, VIEW_SWITCH_LOADING_MS);
   }, []);
 
+  const beginSubplanLoading = useCallback(() => {
+    if (subplanLoadingTimeoutRef.current !== null) {
+      window.clearTimeout(subplanLoadingTimeoutRef.current);
+      subplanLoadingTimeoutRef.current = null;
+    }
+
+    setIsSubplanLoading(true);
+
+    subplanLoadingTimeoutRef.current = window.setTimeout(() => {
+      setIsSubplanLoading(false);
+      subplanLoadingTimeoutRef.current = null;
+    }, VIEW_SWITCH_LOADING_MS);
+  }, [VIEW_SWITCH_LOADING_MS]);
+
   useEffect(() => {
     return () => {
       if (viewSwitchTimeoutRef.current !== null) {
         window.clearTimeout(viewSwitchTimeoutRef.current);
+      }
+      if (subplanLoadingTimeoutRef.current !== null) {
+        window.clearTimeout(subplanLoadingTimeoutRef.current);
       }
     };
   }, []);
@@ -349,6 +368,7 @@ export default function WorkflowEditorPage() {
     (plan: PlanningBlock) => {
       const nestedPlans = plan.sub_plans?.plans ?? [];
       if (nestedPlans.length > 0) {
+        beginSubplanLoading();
         setPlanStack((prev) => [
           ...prev,
           {
@@ -366,13 +386,19 @@ export default function WorkflowEditorPage() {
         clearWorkspaceUIState();
         return;
       }
+      if (planStack.length > 0) {
+        beginViewSwitchLoading("agent");
+      }
       handleEnterPlanWorkflow(plan);
     },
     [
       activePlanId,
+      beginSubplanLoading,
+      beginViewSwitchLoading,
       clearWorkspaceUIState,
       handleEnterPlanWorkflow,
       planConnections,
+      planStack.length,
       plans,
       setActivePlanId,
       setPlanConnections,
@@ -381,6 +407,8 @@ export default function WorkflowEditorPage() {
       setViewMode,
     ]
   );
+
+  const loadingViewMode = isSubplanLoading ? "plan" : (pendingViewMode ?? viewMode);
 
   const handlePlanBack = useCallback(() => {
     setPlanStack((prev) => {
@@ -524,30 +552,70 @@ export default function WorkflowEditorPage() {
     [containerEl, transform.x, transform.y, transform.zoom]
   );
 
+  const { getBlockHandles, getToolHandles } = useNodeHandles({
+    connections,
+    linking,
+    hoveredBlockId,
+  });
+
   const toWorldPointDuringDrag = useCallback(
     (clientX: number, clientY: number) => {
       const el = containerEl;
       if (!el) return null;
       const rect = el.getBoundingClientRect();
-      const margin = 80;
-      const maxSpeed = 18;
+      const margin = 140;
+      const maxSpeed = 22;
       const base = getTransform();
       let dx = 0;
       let dy = 0;
-      const left = clientX - rect.left;
-      const right = rect.right - clientX;
-      const top = clientY - rect.top;
-      const bottom = rect.bottom - clientY;
-      if (left < margin) {
-        dx = Math.min(maxSpeed, ((margin - left) / margin) * maxSpeed);
-      } else if (right < margin) {
-        dx = -Math.min(maxSpeed, ((margin - right) / margin) * maxSpeed);
+
+      const bounds = (() => {
+        if (draggingBlockId) {
+          const block = blocks.find((item) => item.id === draggingBlockId);
+          if (!block) return null;
+          const handles = getBlockHandles(block);
+          return {
+            left: base.x + block.x * base.zoom,
+            right: base.x + (block.x + handles.width) * base.zoom,
+            top: base.y + block.y * base.zoom,
+            bottom: base.y + (block.y + handles.height) * base.zoom,
+          };
+        }
+        if (draggingToolId) {
+          const tool = tools.find((item) => item.id === draggingToolId);
+          if (!tool) return null;
+          const handles = getToolHandles(tool);
+          return {
+            left: base.x + tool.x * base.zoom,
+            right: base.x + (tool.x + handles.width) * base.zoom,
+            top: base.y + tool.y * base.zoom,
+            bottom: base.y + (tool.y + handles.height) * base.zoom,
+          };
+        }
+        return null;
+      })();
+
+      const leftEdge = bounds?.left ?? clientX;
+      const rightEdge = bounds?.right ?? clientX;
+      const topEdge = bounds?.top ?? clientY;
+      const bottomEdge = bounds?.bottom ?? clientY;
+      const overflowRight = rightEdge - (rect.right - margin);
+      const overflowLeft = (rect.left + margin) - leftEdge;
+      const overflowBottom = bottomEdge - (rect.bottom - margin);
+      const overflowTop = (rect.top + margin) - topEdge;
+
+      if (overflowRight > 0) {
+        dx = -Math.min(maxSpeed, overflowRight);
+      } else if (overflowLeft > 0) {
+        dx = Math.min(maxSpeed, overflowLeft);
       }
-      if (top < margin) {
-        dy = Math.min(maxSpeed, ((margin - top) / margin) * maxSpeed);
-      } else if (bottom < margin) {
-        dy = -Math.min(maxSpeed, ((margin - bottom) / margin) * maxSpeed);
+
+      if (overflowBottom > 0) {
+        dy = -Math.min(maxSpeed, overflowBottom);
+      } else if (overflowTop > 0) {
+        dy = Math.min(maxSpeed, overflowTop);
       }
+
       const nextX = base.x + dx;
       const nextY = base.y + dy;
       if (dx || dy) {
@@ -560,14 +628,18 @@ export default function WorkflowEditorPage() {
         y: (localY - nextY) / base.zoom,
       };
     },
-    [containerEl, getTransform, setTransform]
+    [
+      blocks,
+      containerEl,
+      draggingBlockId,
+      draggingToolId,
+      getBlockHandles,
+      getToolHandles,
+      getTransform,
+      setTransform,
+      tools,
+    ]
   );
-
-  const { getBlockHandles, getToolHandles } = useNodeHandles({
-    connections,
-    linking,
-    hoveredBlockId,
-  });
 
   const { addToolToBlock, changeBlockInputs, changeBlockOutputs } = useBlockIO({
     blocks,
@@ -719,8 +791,8 @@ export default function WorkflowEditorPage() {
     <div className={`relative h-screen w-screen overflow-hidden ${appThemeClass}`}>
       {showStartupLoading ? (
         <AgentViewLoadingScreen theme={theme} />
-      ) : isViewSwitchLoading ? (
-        (pendingViewMode ?? viewMode) === "plan" ? (
+      ) : isViewSwitchLoading || isSubplanLoading ? (
+        loadingViewMode === "plan" ? (
           <PlanViewLoadingScreen theme={theme} />
         ) : (
           <AgentViewLoadingScreen theme={theme} />
@@ -785,7 +857,7 @@ export default function WorkflowEditorPage() {
       />
 
       <main className="relative z-0 h-full w-full">
-        {showStartupLoading || isViewSwitchLoading ? null : viewMode === "plan" ? (
+        {showStartupLoading || isViewSwitchLoading || isSubplanLoading ? null : viewMode === "plan" ? (
           <PlanCanvasView
             key={planCanvasKey}
             theme={theme}

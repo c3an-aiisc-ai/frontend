@@ -293,6 +293,8 @@ function extractAgentsFromTriples(entries: Record<string, unknown>[]) {
 export default function AgentGenPage() {
   const [jsonInput, setJsonInput] = useState(SAMPLE_JSON);
   const [parseError, setParseError] = useState<string | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [loadingLabel, setLoadingLabel] = useState("Generating agents...");
   const [customAgents, setCustomAgents] = useState<AgentRegistryEntry[]>(() => readCustomAgents());
   const [lastAdded, setLastAdded] = useState<AgentRegistryEntry[]>([]);
   const [planQueued, setPlanQueued] = useState<{ count: number; triples: number } | null>(null);
@@ -301,71 +303,87 @@ export default function AgentGenPage() {
     return new Set([...AGENT_REGISTRY_AGENTS, ...customAgents].map((agent) => agent.id));
   }, [customAgents]);
 
+  const startLoading = (label: string) => {
+    setLoadingLabel(label);
+    setIsGenerating(true);
+  };
+
+  const stopLoading = () => {
+    setIsGenerating(false);
+  };
+
   const handleGenerate = () => {
-    if (!jsonInput.trim()) {
-      setParseError("Paste JSON to generate agents.");
-      setLastAdded([]);
-      setPlanQueued(null);
-      return;
-    }
-    try {
-      const parsed = JSON.parse(jsonInput) as unknown;
-      const planEntries = extractPlanEntries(parsed);
-      const parsedPlans: PlanningBlock[] = [];
-      const planPayloads: Record<string, unknown>[] = [];
-      planEntries.forEach((entry, index) => {
-        if (!isRecord(entry)) return;
-        const parsedEntry = parsePlanEntry(entry, index);
-        if (!parsedEntry) return;
-        parsedPlans.push(parsedEntry.plan);
-        planPayloads.push(parsedEntry.payload);
-      });
-
-      const directEntries = extractAgents(parsed);
-      const planAgentEntries = extractAgentsFromPlans(planEntries);
-      const tripleAgentEntries = extractAgentsFromTriples(planEntries);
-      const entries = directEntries.length
-        ? directEntries
-        : planAgentEntries.length
-          ? planAgentEntries
-          : tripleAgentEntries;
-      const nextUsed = new Set(usedIds);
-      const tripleGraph = buildTripleGraph(parsedPlans);
-      const normalized = entries
-        .map((entry, index) => normalizeAgent(entry, index, nextUsed, tripleGraph))
-        .filter((entry): entry is AgentRegistryEntry => Boolean(entry));
-      const addedAgents = normalized;
-
-      if (addedAgents.length === 0 && planPayloads.length === 0) {
-        setParseError("No agents or plan triples found. Provide agents or plan JSON with agents and triples.");
+    startLoading("Generating agents...");
+    setTimeout(() => {
+      if (!jsonInput.trim()) {
+        setParseError("Paste JSON to generate agents.");
         setLastAdded([]);
         setPlanQueued(null);
+        stopLoading();
         return;
       }
+      try {
+        const parsed = JSON.parse(jsonInput) as unknown;
+        const planEntries = extractPlanEntries(parsed);
+        const parsedPlans: PlanningBlock[] = [];
+        const planPayloads: Record<string, unknown>[] = [];
+        planEntries.forEach((entry, index) => {
+          if (!isRecord(entry)) return;
+          const parsedEntry = parsePlanEntry(entry, index);
+          if (!parsedEntry) return;
+          parsedPlans.push(parsedEntry.plan);
+          planPayloads.push(parsedEntry.payload);
+        });
 
-      if (addedAgents.length > 0) {
-        const nextAgents = [...customAgents, ...addedAgents];
-        setCustomAgents(nextAgents);
-        writeCustomAgents(nextAgents);
-        setLastAdded(addedAgents);
-      } else {
+        const directEntries = extractAgents(parsed);
+        const planAgentEntries = extractAgentsFromPlans(planEntries);
+        const tripleAgentEntries = extractAgentsFromTriples(planEntries);
+        const entries = directEntries.length
+          ? directEntries
+          : planAgentEntries.length
+            ? planAgentEntries
+            : tripleAgentEntries;
+        const nextUsed = new Set(usedIds);
+        const tripleGraph = buildTripleGraph(parsedPlans);
+        const normalized = entries
+          .map((entry, index) => normalizeAgent(entry, index, nextUsed, tripleGraph))
+          .filter((entry): entry is AgentRegistryEntry => Boolean(entry));
+        const addedAgents = normalized;
+
+        if (addedAgents.length === 0 && planPayloads.length === 0) {
+          setParseError("No agents or plan triples found. Provide agents or plan JSON with agents and triples.");
+          setLastAdded([]);
+          setPlanQueued(null);
+          stopLoading();
+          return;
+        }
+
+        if (addedAgents.length > 0) {
+          const nextAgents = [...customAgents, ...addedAgents];
+          setCustomAgents(nextAgents);
+          writeCustomAgents(nextAgents);
+          setLastAdded(addedAgents);
+        } else {
+          setLastAdded([]);
+        }
+
+        if (planPayloads.length > 0) {
+          queuePlansForBench(planPayloads);
+          const totalTriples = parsedPlans.reduce((acc, plan) => acc + plan.triples.length, 0);
+          setPlanQueued({ count: planPayloads.length, triples: totalTriples });
+        } else {
+          setPlanQueued(null);
+        }
+
+        setParseError(null);
+      } catch (error) {
+        setParseError(error instanceof Error ? `Invalid JSON: ${error.message}` : "Invalid JSON.");
         setLastAdded([]);
-      }
-
-      if (planPayloads.length > 0) {
-        queuePlansForBench(planPayloads);
-        const totalTriples = parsedPlans.reduce((acc, plan) => acc + plan.triples.length, 0);
-        setPlanQueued({ count: planPayloads.length, triples: totalTriples });
-      } else {
         setPlanQueued(null);
+      } finally {
+        stopLoading();
       }
-
-      setParseError(null);
-    } catch (error) {
-      setParseError(error instanceof Error ? `Invalid JSON: ${error.message}` : "Invalid JSON.");
-      setLastAdded([]);
-      setPlanQueued(null);
-    }
+    }, 0);
   };
 
   const handleUseSample = () => {
@@ -407,7 +425,15 @@ export default function AgentGenPage() {
   }, [customAgents]);
 
   return (
-    <div className="h-screen overflow-y-auto bg-gradient-to-br from-slate-50 via-white to-emerald-50 text-slate-900">
+    <div className="relative h-screen overflow-y-auto bg-gradient-to-br from-slate-50 via-white to-emerald-50 text-slate-900">
+      {isGenerating && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-white/80 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-4 rounded-2xl border border-slate-200 bg-white/90 px-6 py-5 shadow-lg">
+            <div className="h-10 w-10 animate-spin rounded-full border-4 border-slate-200 border-t-emerald-500" />
+            <div className="text-sm font-semibold text-slate-700">{loadingLabel}</div>
+          </div>
+        </div>
+      )}
       <div className="relative overflow-hidden">
         <div className="pointer-events-none absolute -top-32 right-10 h-72 w-72 rounded-full bg-emerald-200/40 blur-3xl" />
         <div className="pointer-events-none absolute -bottom-32 left-10 h-72 w-72 rounded-full bg-amber-200/40 blur-3xl" />
