@@ -50,7 +50,7 @@
       "outputRequired": [true]
     },
     {
-      "name": "Vector Store",
+      "name": "Vector DB",
       "tagline": "Semantic retrieval",
       "gradient": "from-gray-50 via-white to-slate-100",
       "ring": "ring-slate-200",
@@ -61,22 +61,11 @@
       "outputRequired": [false]
     },
     {
-      "name": "Chat Orchestrator",
-      "tagline": "Conversation layer",
+      "name": "LLM",
+      "tagline": "For chat focused tasks",
       "gradient": "from-fuchsia-50 via-white to-purple-100",
       "ring": "ring-fuchsia-200",
       "accent": "bg-fuchsia-600",
-      "inputCount": 1,
-      "outputCount": 1,
-      "inputRequired": [false],
-      "outputRequired": [false]
-    },
-    {
-      "name": "Data Asset",
-      "tagline": "Input source",
-      "gradient": "from-blue-50 via-white to-sky-100",
-      "ring": "ring-blue-200",
-      "accent": "bg-blue-600",
       "inputCount": 1,
       "outputCount": 1,
       "inputRequired": [false],

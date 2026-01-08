@@ -15,6 +15,12 @@ export function normalizeSubTasks(value: unknown): PlanSubTask[] {
       const description = typeof entry["description"] === "string" ? entry["description"].trim() : "";
       const knowledgeDependencies = toStringArray(entry["knowledge_dependencies"]);
       const requiredSkills = toStringArray(entry["required_skills"]);
+      const tools = Array.from(
+        new Set([
+          ...toStringArray(entry["Tools"]),
+          ...toStringArray(entry["tools"]),
+        ])
+      );
       const subTask: PlanSubTask = {
         sub_task_id: subTaskId,
         name,
@@ -22,6 +28,7 @@ export function normalizeSubTasks(value: unknown): PlanSubTask[] {
       if (description) subTask.description = description;
       if (knowledgeDependencies.length) subTask.knowledge_dependencies = knowledgeDependencies;
       if (requiredSkills.length) subTask.required_skills = requiredSkills;
+      if (tools.length) subTask.Tools = tools;
       return subTask;
     })
     .filter((entry): entry is PlanSubTask => Boolean(entry));

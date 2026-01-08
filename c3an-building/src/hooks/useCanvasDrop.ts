@@ -2,7 +2,7 @@ import { useCallback } from "react";
 import type { DragEvent } from "react";
 import type { AgentBlock, AgentRegistryEntry, ToolPreset, ToolNode } from "../shared/types";
 import { getAgentRegistryEntryById } from "../shared/constants";
-import { buildIoFromStreams } from "../features/workflow/utils/workflowIO";
+import { buildIoFromStreams } from "../shared/planning/workflowIO";
 
 type SetState<T> = React.Dispatch<React.SetStateAction<T>>;
 

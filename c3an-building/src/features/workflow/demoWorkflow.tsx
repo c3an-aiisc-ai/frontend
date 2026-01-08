@@ -44,18 +44,21 @@ export function buildKimoDemoPlanPayload(taskDescription: string): DemoPlanPaylo
 			name: "Anomaly Prediction",
 			description:
 				"Build an agent that uses multimodal sensor data to detect and classify anomalies in real time.",
+			Tools: ["LSTM Model", "CNN Model"],
 		},
 		{
 			sub_task_id: "ST-2",
 			name: "Manuals Guide",
 			description:
 				"Build an agent that retrieves relevant mitigation steps from manufacturing manuals.",
+			Tools: ["PDF Parser"],
 		},
 		{
 			sub_task_id: "ST-3",
 			name: "Conversational Chatbot",
 			description:
 				"Integrate ST-1 and ST-2 within an interactive conversational interface.",
+			Tools: ["LLM"],
 		},
 	];
 
