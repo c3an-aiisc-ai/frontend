@@ -3,17 +3,16 @@
 // =============================================================================
 
 import type { EvalOption, ToolPreset } from "../types";
-import { appConfig } from "../../config";
 
 export * from "./agentRegistry";
 
 // -----------------------------------------------------------------------------
-// Node Configuration Constants (re-exported from config)
+// Node Configuration Constants
 // -----------------------------------------------------------------------------
 
-export const MIN_IO = appConfig.nodeIO.minIO;
-export const MAX_IO = appConfig.nodeIO.maxIO;
-export const TOOL_PORT_OFFSET = appConfig.nodeIO.toolPortOffset;
+export const MIN_IO = 1;
+export const MAX_IO = 5;
+export const TOOL_PORT_OFFSET = 1000;
 
 // -----------------------------------------------------------------------------
 // Tool Palette Presets
@@ -217,23 +216,31 @@ export const EVAL_OPTIONS: EvalOption[] = [
 ];
 
 // -----------------------------------------------------------------------------
-// Panel Configuration (re-exported from config)
+// Panel Configuration
 // -----------------------------------------------------------------------------
 
-import { panelConfig } from "../../config";
+export const PANEL_TITLES: Record<string, string> = {
+  blocks: "Blocks",
+  tools: "Tools",
+  settings: "Settings",
+};
 
-export const PANEL_TITLES = panelConfig.titles;
-export const PANEL_TABS = panelConfig.tabs;
+export const PANEL_TABS: { id: string; label: string; symbol: string }[] = [
+  { id: "blocks", label: "Blocks", symbol: "[]" },
+  { id: "tools", label: "Tools", symbol: "TL" },
+  { id: "settings", label: "Settings", symbol: ":" },
+];
 
 // -----------------------------------------------------------------------------
 // Accepted File Types for Upload
 // -----------------------------------------------------------------------------
 
 // -----------------------------------------------------------------------------
-// Local Storage Keys (re-exported from config)
+// Local Storage Keys
 // -----------------------------------------------------------------------------
 
-export const STORAGE_KEY = appConfig.storage.workspace;
-export const CUSTOM_AGENT_STORAGE_KEY = appConfig.storage.customAgents;
-export const CUSTOM_PLAN_STORAGE_KEY = appConfig.storage.customPlans;
-export const PENDING_PLAN_STORAGE_KEY = appConfig.storage.pendingPlan;
+export const STORAGE_KEY = "c3an-workspace";
+export const CUSTOM_AGENT_STORAGE_KEY = "c3an-custom-agents";
+export const CUSTOM_PLAN_STORAGE_KEY = "c3an-custom-plans";
+export const PENDING_PLAN_STORAGE_KEY = "c3an-pending-plan";
+export const PLAN_WORKSPACE_STORAGE_KEY = "c3an-plan-workspace";

@@ -6,89 +6,99 @@ import { PENDING_PLAN_STORAGE_KEY } from "../../shared/constants";
 import { buildUniqueId, isRecord, slugify } from "../../shared/utils";
 
 const SAMPLE_JSON = `{
-  "plans": [
+  "task_id": "task-7821",
+  "main_task": "Plan and execute a product launch campaign",
+  "sub_tasks": [
     {
-      "plan_id": "fulfillment-rollout",
-      "name": "Fulfillment Rollout",
-      "query": "Reduce order latency and boost throughput.",
-      "intent": "Stabilize core fulfillment KPIs while scaling volume.",
-      "triples": [
-        { "from": "Ingest", "op": "seq", "to": "Validate Order" },
-        { "from": "Validate Order", "op": "seq", "to": "Route" },
-        { "from": "Route", "op": "brn", "to": "Pick Pack" },
-        { "from": "Route", "op": "brn", "to": "Carrier Match" },
-        { "from": "Route", "op": "brn", "to": "Inventory Check" },
-        { "from": "Inventory Check", "op": "seq", "to": "Stockout Alert" },
-        { "from": "Pick Pack", "op": "agg", "to": "Label" },
-        { "from": "Carrier Match", "op": "agg", "to": "Label" },
-        { "from": "Stockout Alert", "op": "agg", "to": "Label" },
-        { "from": "Label", "op": "seq", "to": "Quality Scan" },
-        { "from": "Quality Scan", "op": "seq", "to": "Ship" },
-        { "from": "Ship", "op": "seq", "to": "Confirm" },
-        { "from": "Confirm", "op": "seq", "to": "Postmortem" }
-      ],
-      "metadata": {
-        "owner": "Ops",
-        "priority": "high"
-      }
+      "sub_task_id": "st-001",
+      "name": "Market Research",
+      "description": "Analyze target audience and competitive landscape",
+      "knowledge_dependencies": ["kg-market-data", "kg-competitor-intel"],
+      "required_skills": ["market_analysis", "data_interpretation"]
     },
     {
-      "plan_id": "support-triage",
-      "name": "Support Triage",
-      "query": "Route incoming tickets by urgency, intent, and SLA risk.",
-      "triples": [
-        { "from": "Intake", "op": "seq", "to": "Classify" },
-        { "from": "Classify", "op": "brn", "to": "Urgent Queue" },
-        { "from": "Classify", "op": "brn", "to": "Standard Queue" },
-        { "from": "Classify", "op": "brn", "to": "Auto Resolve" },
-        { "from": "Classify", "op": "brn", "to": "Fraud Review" },
-        { "from": "Urgent Queue", "op": "seq", "to": "Escalate" },
-        { "from": "Standard Queue", "op": "seq", "to": "Assist" },
-        { "from": "Fraud Review", "op": "seq", "to": "Escalate" },
-        { "from": "Escalate", "op": "agg", "to": "Resolve" },
-        { "from": "Assist", "op": "agg", "to": "Resolve" },
-        { "from": "Auto Resolve", "op": "agg", "to": "Resolve" },
-        { "from": "Resolve", "op": "seq", "to": "Close" }
-      ]
+      "sub_task_id": "st-002",
+      "name": "Define Positioning",
+      "description": "Create unique value proposition and messaging framework",
+      "knowledge_dependencies": ["kg-brand-guidelines", "kg-customer-personas"],
+      "required_skills": ["brand_strategy", "copywriting"]
     },
     {
-      "plan_id": "research-synthesis",
-      "name": "Research Synthesis",
-      "query": "Aggregate findings and draft a final report.",
-      "triples": [
-        { "from": "Collect Sources", "op": "seq", "to": "Summarize" },
-        { "from": "Summarize", "op": "brn", "to": "Extract Themes" },
-        { "from": "Summarize", "op": "brn", "to": "Draft Outline" },
-        { "from": "Summarize", "op": "brn", "to": "Flag Gaps" },
-        { "from": "Summarize", "op": "brn", "to": "Pull Quotes" },
-        { "from": "Extract Themes", "op": "agg", "to": "Compose Report" },
-        { "from": "Draft Outline", "op": "agg", "to": "Compose Report" },
-        { "from": "Flag Gaps", "op": "agg", "to": "Compose Report" },
-        { "from": "Pull Quotes", "op": "agg", "to": "Compose Report" },
-        { "from": "Compose Report", "op": "seq", "to": "Review" },
-        { "from": "Review", "op": "seq", "to": "Revise" },
-        { "from": "Revise", "op": "seq", "to": "Finalize" }
-      ]
+      "sub_task_id": "st-003",
+      "name": "Design Creative Assets",
+      "description": "Develop visual identity and marketing materials",
+      "knowledge_dependencies": ["kg-brand-guidelines", "kg-design-templates"],
+      "required_skills": ["graphic_design", "video_production"]
     },
     {
-      "plan_id": "market-intel-flywheel",
-      "name": "Market Intel Flywheel",
-      "query": "Continuously gather, verify, and act on market signals.",
-      "triples": [
-        { "from": "Signal Intake", "op": "seq", "to": "Source Scan" },
-        { "from": "Source Scan", "op": "brn", "to": "Competitor Watch" },
-        { "from": "Source Scan", "op": "brn", "to": "Customer Pulse" },
-        { "from": "Source Scan", "op": "brn", "to": "Analyst Review" },
-        { "from": "Source Scan", "op": "brn", "to": "Partner Intel" },
-        { "from": "Competitor Watch", "op": "seq", "to": "Validate" },
-        { "from": "Customer Pulse", "op": "seq", "to": "Validate" },
-        { "from": "Analyst Review", "op": "seq", "to": "Validate" },
-        { "from": "Partner Intel", "op": "seq", "to": "Validate" },
-        { "from": "Validate", "op": "agg", "to": "Synthesize" },
-        { "from": "Synthesize", "op": "seq", "to": "Brief Stakeholders" },
-        { "from": "Brief Stakeholders", "op": "seq", "to": "Decide Actions" },
-        { "from": "Decide Actions", "op": "seq", "to": "Track Outcomes" }
-      ]
+      "sub_task_id": "st-004",
+      "name": "Build Landing Page",
+      "description": "Create conversion-optimized product landing page",
+      "knowledge_dependencies": ["kg-web-standards", "kg-seo-best-practices"],
+      "required_skills": ["web_development", "ux_design"]
+    },
+    {
+      "sub_task_id": "st-005",
+      "name": "Setup Email Campaign",
+      "description": "Configure automated email sequences",
+      "knowledge_dependencies": ["kg-email-templates", "kg-marketing-automation"],
+      "required_skills": ["email_marketing", "automation"]
+    },
+    {
+      "sub_task_id": "st-006",
+      "name": "Launch Social Media",
+      "description": "Execute social media campaign across platforms",
+      "knowledge_dependencies": ["kg-social-playbook", "kg-content-calendar"],
+      "required_skills": ["social_media_marketing", "content_creation"]
+    },
+    {
+      "sub_task_id": "st-007",
+      "name": "Monitor and Optimize",
+      "description": "Track KPIs and make data-driven adjustments",
+      "knowledge_dependencies": ["kg-analytics-framework", "kg-kpi-benchmarks"],
+      "required_skills": ["analytics", "optimization"]
+    }
+  ],
+  "triples": [
+    {
+      "from": "st-001",
+      "op": "seq",
+      "to": "st-002"
+    },
+    {
+      "from": "st-002",
+      "op": "brn",
+      "to": "st-003"
+    },
+    {
+      "from": "st-002",
+      "op": "brn",
+      "to": "st-004"
+    },
+    {
+      "from": "st-002",
+      "op": "brn",
+      "to": "st-005"
+    },
+    {
+      "from": "st-003",
+      "op": "seq",
+      "to": "st-006"
+    },
+    {
+      "from": "st-004",
+      "op": "agg",
+      "to": "st-007"
+    },
+    {
+      "from": "st-005",
+      "op": "agg",
+      "to": "st-007"
+    },
+    {
+      "from": "st-006",
+      "op": "agg",
+      "to": "st-007"
     }
   ]
 }`;
@@ -113,31 +123,40 @@ function normalizePlanTemplate(
   }
 
   const rawName = typeof record.name === "string" ? record.name.trim() : "";
+  const rawMainTask = typeof record.main_task === "string" ? record.main_task.trim() : "";
+  const rawTaskId = typeof record.task_id === "string" ? record.task_id.trim() : "";
   const rawId =
-    typeof record.plan_id === "string"
+    rawTaskId ||
+    (typeof record.plan_id === "string"
       ? record.plan_id.trim()
       : typeof record.id === "string"
         ? record.id.trim()
-        : "";
-  const name = rawName || rawId || `Plan ${index + 1}`;
+        : "");
+  const name = rawName || rawMainTask || rawId || `Plan ${index + 1}`;
   const query =
     typeof record.query === "string"
       ? record.query.trim()
       : typeof record.intent === "string"
         ? record.intent.trim()
-        : "";
-  const baseId = rawId || rawName || `plan-template-${index + 1}`;
+        : rawMainTask || parsed.query;
+  const baseId = rawId || rawName || rawMainTask || `plan-template-${index + 1}`;
   const id = buildUniqueId(
     slugify(baseId) || `plan-template-${index + 1}`,
     usedIds,
     "plan-template"
   );
+  const subTasks = parsed.sub_tasks?.length ? parsed.sub_tasks : undefined;
+  const hasNewSchema = rawTaskId.length > 0 || rawMainTask.length > 0 || Boolean(subTasks);
+  const taskId = hasNewSchema ? (rawTaskId || parsed.id) : "";
 
   return {
     id,
     name,
     query,
     triples: parsed.triples,
+    ...(hasNewSchema && taskId ? { task_id: taskId } : {}),
+    ...(rawMainTask ? { main_task: rawMainTask } : {}),
+    ...(subTasks ? { sub_tasks: subTasks } : {}),
   };
 }
 
@@ -154,26 +173,41 @@ function normalizePlanPayload(value: unknown, index: number): Record<string, unk
     return null;
   }
 
+  const rawTaskId = typeof record.task_id === "string" ? record.task_id.trim() : "";
+  const rawMainTask = typeof record.main_task === "string" ? record.main_task.trim() : "";
   const rawId =
-    typeof record.plan_id === "string"
+    rawTaskId ||
+    (typeof record.plan_id === "string"
       ? record.plan_id.trim()
       : typeof record.id === "string"
         ? record.id.trim()
-        : "";
+        : "");
   const planId = rawId || parsed.id;
   const query =
     typeof record.query === "string"
       ? record.query.trim()
       : typeof record.intent === "string"
         ? record.intent.trim()
-        : parsed.query;
+        : rawMainTask || parsed.query;
+  const subTasks = parsed.sub_tasks?.length ? parsed.sub_tasks : undefined;
+  const hasNewSchema =
+    rawTaskId.length > 0 ||
+    rawMainTask.length > 0 ||
+    Array.isArray(record.sub_tasks);
 
-  return {
+  const payload: Record<string, unknown> = {
     ...record,
-    plan_id: planId,
     query: query ?? "",
     triples: parsed.triples,
   };
+  if (rawMainTask) payload.main_task = rawMainTask;
+  if (subTasks) payload.sub_tasks = subTasks;
+  if (hasNewSchema) {
+    payload.task_id = planId;
+  } else {
+    payload.plan_id = planId;
+  }
+  return payload;
 }
 
 function queuePlansForBench(plans: Record<string, unknown>[]) {
@@ -278,6 +312,11 @@ export default function PlanningPage() {
     return { totalTriples, nodeCount: nodes.size };
   }, [customPlans]);
 
+  const resolveNodeLabel = (plan: PlanTemplate, nodeId: string) => {
+    const match = plan.sub_tasks?.find((task) => task.sub_task_id === nodeId);
+    return match?.name ?? nodeId;
+  };
+
   return (
     <div className="h-screen overflow-y-auto bg-gradient-to-br from-slate-50 via-white to-amber-50 text-slate-900">
       <div className="relative overflow-hidden">
@@ -295,7 +334,7 @@ export default function PlanningPage() {
               Plan template builder
             </h1>
             <p className="mt-2 max-w-xl text-sm text-slate-600">
-              Paste plan JSON with triples to generate draggable templates for the planning canvas.
+              Paste plan JSON with task metadata and triples to generate draggable templates for the planning canvas.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
@@ -338,7 +377,7 @@ export default function PlanningPage() {
               <div>
                 <h2 className="text-lg font-semibold text-slate-900">JSON intake</h2>
                 <p className="mt-1 text-xs text-slate-600">
-                  Accepts {`{ plans: [...] }`}, an array, or a single plan object with triples.
+                  Accepts {`{ plans: [...] }`}, an array, or a single plan with task_id, sub_tasks, and triples.
                 </p>
               </div>
               <span className="pill-tag pill-tag-amber">
@@ -437,7 +476,7 @@ export default function PlanningPage() {
                       <div className="mt-3 space-y-1 text-[11px] text-slate-600">
                         {plan.triples.slice(0, 3).map((triple, idx) => (
                           <p key={`${plan.id}-triple-${idx}`}>
-                            {triple.from} -&gt; {triple.to}
+                            {resolveNodeLabel(plan, triple.from)} -&gt; {resolveNodeLabel(plan, triple.to)}
                           </p>
                         ))}
                         {plan.triples.length > 3 && (

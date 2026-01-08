@@ -2,42 +2,234 @@
 // Workflow Editor Page - Main canvas page component
 // =============================================================================
 
-import { useCallback, useMemo, useRef, useState } from "react";
-import { Sidebar, Toolbar } from "./components/ui";
-import { AgentCanvasView, PlanCanvasView } from "./components/canvas";
-import { BlockDetailsModal, ToolDetailsModal, EvalsModal } from "./components/modals";
-import { usePanZoom, useWorkspace } from "./hooks";
-import { usePlanBench } from "./hooks/usePlanBench";
-import { usePlanWorkflow } from "./hooks/usePlanWorkflow";
-import { useWorkflowImport } from "./hooks/useWorkflowImport";
-import { useWorkflowDownload } from "./hooks/useWorkflowDownload";
-import { useNodeHandles } from "./hooks/useNodeHandles";
-import { useBlockIO } from "./hooks/useBlockIO";
-import { useCanvasDrop } from "./hooks/useCanvasDrop";
-import { useCanvasDragHandlers } from "./hooks/useCanvasDragHandlers";
-import { useCanvasLinking } from "./hooks/useCanvasLinking";
-import { useCanvasSelection } from "./hooks/useCanvasSelection";
-import { useWorkspaceActions } from "./hooks/useWorkspaceActions";
-import { useWorkflowHotkeys } from "./hooks/useWorkflowHotkeys";
-import { useIdCounters } from "./hooks/useIdCounters";
-import { useSidebarDragHandlers } from "./hooks/useSidebarDragHandlers";
-import { useHandleVisibility } from "./hooks/useHandleVisibility";
-import { useWorkflowReset } from "./hooks/useWorkflowReset";
-import { TOOL_PALETTE, EVAL_OPTIONS, AGENT_REGISTRY_AGENTS } from "../../shared/constants";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Sidebar, Toolbar } from "../../components/ui";
+import { AgentCanvasView, PlanCanvasView } from "../../components/canvas";
+import { BlockDetailsModal, ToolDetailsModal, EvalsModal } from "../../components/modals";
+import AgentViewLoadingScreen from "./AgentViewLoadingScreen";
+import PlanViewLoadingScreen from "./PlanViewLoadingScreen";
+import { usePanZoom, useWorkspace } from "../../hooks";
+import { usePlanBench } from "../../hooks/usePlanBench";
+import { usePlanWorkflow } from "../../hooks/usePlanWorkflow";
+import { useWorkflowImport } from "../../hooks/useWorkflowImport";
+import { useWorkflowDownload } from "../../hooks/useWorkflowDownload";
+import { useNodeHandles } from "../../hooks/useNodeHandles";
+import { useBlockIO } from "../../hooks/useBlockIO";
+import { useCanvasDrop } from "../../hooks/useCanvasDrop";
+import { useCanvasDragHandlers } from "../../hooks/useCanvasDragHandlers";
+import { useCanvasLinking } from "../../hooks/useCanvasLinking";
+import { useCanvasSelection } from "../../hooks/useCanvasSelection";
+import { useWorkspaceActions } from "../../hooks/useWorkspaceActions";
+import { useWorkflowHotkeys } from "../../hooks/useWorkflowHotkeys";
+import { useIdCounters } from "../../hooks/useIdCounters";
+import { useSidebarDragHandlers } from "../../hooks/useSidebarDragHandlers";
+import { useHandleVisibility } from "../../hooks/useHandleVisibility";
+import { useWorkflowReset } from "../../hooks/useWorkflowReset";
+import {
+  TOOL_PALETTE,
+  EVAL_OPTIONS,
+  AGENT_REGISTRY_AGENTS,
+  PLAN_WORKSPACE_STORAGE_KEY,
+} from "../../shared/constants";
+import { isRecord } from "../../shared/utils";
 import { readCustomAgents } from "../../shared/utils/customAgents";
 import { readCustomPlans } from "../../shared/utils/customPlans";
 import type { PlanningBlock, ViewMode } from "../../shared/types";
 
+type PlanConnection = { from: string; to: string };
+
+type PlanContextSnapshot = {
+  plans: PlanningBlock[];
+  planConnections: PlanConnection[];
+  activePlanId: string | null;
+  parentPlanId: string | null;
+};
+
+type PlanWorkspaceSnapshot = {
+  plans: PlanningBlock[];
+  planConnections: PlanConnection[];
+  activePlanId: string | null;
+  viewMode: ViewMode;
+  nextPlanId: number;
+  planStack?: PlanContextSnapshot[];
+};
+
+const getNextPlanId = (plans: PlanningBlock[], fallback = 1) => {
+  const maxPlanId = plans.reduce((max, plan) => {
+    if (!plan.id.startsWith("plan-")) return max;
+    const next = Number.parseInt(plan.id.slice(5), 10);
+    return Number.isFinite(next) ? Math.max(max, next) : max;
+  }, 0);
+  return Math.max(fallback, maxPlanId + 1);
+};
+
+const normalizePlanConnections = (plans: PlanningBlock[], connections: PlanConnection[]) => {
+  const planIds = new Set(plans.map((plan) => plan.id));
+  return connections.filter((conn) => planIds.has(conn.from) && planIds.has(conn.to));
+};
+
+const readPlanContextSnapshot = (value: unknown): PlanContextSnapshot | null => {
+  if (!isRecord(value)) return null;
+  const rawPlans = Array.isArray(value.plans) ? value.plans : [];
+  const plans = rawPlans.filter(
+    (plan): plan is PlanningBlock =>
+      isRecord(plan) && typeof plan.id === "string"
+  );
+  const rawConnections = Array.isArray(value.planConnections)
+    ? value.planConnections
+    : Array.isArray(value.connections)
+      ? value.connections
+      : [];
+  const connections = rawConnections.filter(
+    (conn): conn is PlanConnection =>
+      isRecord(conn) && typeof conn.from === "string" && typeof conn.to === "string"
+  );
+  const planConnections = normalizePlanConnections(plans, connections);
+  const activePlanId =
+    typeof value.activePlanId === "string" && plans.some((plan) => plan.id === value.activePlanId)
+      ? value.activePlanId
+      : null;
+  const parentPlanId =
+    typeof value.parentPlanId === "string" && plans.some((plan) => plan.id === value.parentPlanId)
+      ? value.parentPlanId
+      : null;
+  return {
+    plans,
+    planConnections,
+    activePlanId,
+    parentPlanId,
+  };
+};
+
+const readPlanWorkspaceSnapshot = (): PlanWorkspaceSnapshot | null => {
+  if (typeof window === "undefined" || typeof localStorage === "undefined") return null;
+  const saved = localStorage.getItem(PLAN_WORKSPACE_STORAGE_KEY);
+  if (!saved) return null;
+  try {
+    const parsed: unknown = JSON.parse(saved);
+    if (!isRecord(parsed)) return null;
+    const rawPlans = Array.isArray(parsed.plans) ? parsed.plans : [];
+    const plans = rawPlans.filter(
+      (plan): plan is PlanningBlock =>
+        isRecord(plan) && typeof plan.id === "string"
+    );
+    const rawConnections = Array.isArray(parsed.planConnections)
+      ? parsed.planConnections
+      : Array.isArray(parsed.connections)
+        ? parsed.connections
+        : [];
+    const connections = rawConnections.filter(
+      (conn): conn is PlanConnection =>
+        isRecord(conn) && typeof conn.from === "string" && typeof conn.to === "string"
+    );
+    const planConnections = normalizePlanConnections(plans, connections);
+    const viewMode =
+      parsed.viewMode === "plan" || parsed.viewMode === "agent" ? parsed.viewMode : "agent";
+    const activePlanId =
+      typeof parsed.activePlanId === "string" && plans.some((plan) => plan.id === parsed.activePlanId)
+        ? parsed.activePlanId
+        : null;
+    const nextPlanIdFallback = getNextPlanId(plans);
+    const nextPlanId =
+      typeof parsed.nextPlanId === "number" && Number.isFinite(parsed.nextPlanId)
+        ? Math.max(parsed.nextPlanId, nextPlanIdFallback)
+        : nextPlanIdFallback;
+    const rawStack = Array.isArray(parsed.planStack) ? parsed.planStack : [];
+    const planStack = rawStack
+      .map((entry) => readPlanContextSnapshot(entry))
+      .filter((entry): entry is PlanContextSnapshot => Boolean(entry));
+    return {
+      plans,
+      planConnections,
+      activePlanId,
+      viewMode,
+      nextPlanId,
+      planStack,
+    };
+  } catch {
+    return null;
+  }
+};
+
 export default function WorkflowEditorPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [viewMode, setViewMode] = useState<ViewMode>("agent");
-  const [plans, setPlans] = useState<PlanningBlock[]>([]);
-  const nextPlanIdRef = useRef(1);
-  const [planCanvasKey, setPlanCanvasKey] = useState(0);
-  const [activePlanId, setActivePlanId] = useState<string | null>(null);
+  const initialPlanSnapshot = useMemo(() => readPlanWorkspaceSnapshot(), []);
+  const [viewMode, setViewMode] = useState<ViewMode>(() => initialPlanSnapshot?.viewMode ?? "agent");
 
-  const [planConnections, setPlanConnections] = useState<Array<{ from: string; to: string }>>([]);
+  const STARTUP_LOADING_MS = 900;
+  const VIEW_SWITCH_LOADING_MS = 650;
+  const startupLoadingKey = "c3an_workflow_startup_loading_shown";
+
+  const [showStartupLoading, setShowStartupLoading] = useState(() => {
+    try {
+      return sessionStorage.getItem(startupLoadingKey) !== "1";
+    } catch {
+      return true;
+    }
+  });
+
+  const [isViewSwitchLoading, setIsViewSwitchLoading] = useState(false);
+  const [pendingViewMode, setPendingViewMode] = useState<ViewMode | null>(null);
+  const viewSwitchTimeoutRef = useRef<number | null>(null);
+  const [plans, setPlans] = useState<PlanningBlock[]>(() => initialPlanSnapshot?.plans ?? []);
+  const nextPlanIdRef = useRef(
+    initialPlanSnapshot?.nextPlanId ?? getNextPlanId(initialPlanSnapshot?.plans ?? [])
+  );
+  const [planCanvasKey, setPlanCanvasKey] = useState(0);
+  const [activePlanId, setActivePlanId] = useState<string | null>(
+    () => initialPlanSnapshot?.activePlanId ?? null
+  );
+
+  useEffect(() => {
+    if (!showStartupLoading) return;
+
+    // Per request: on first load, show a loading page and land in agent view.
+    setViewMode("agent");
+
+    const timeout = window.setTimeout(() => {
+      try {
+        sessionStorage.setItem(startupLoadingKey, "1");
+      } catch {
+        // ignore
+      }
+      setShowStartupLoading(false);
+    }, STARTUP_LOADING_MS);
+
+    return () => window.clearTimeout(timeout);
+  }, [showStartupLoading]);
+
+  const beginViewSwitchLoading = useCallback((nextMode: ViewMode) => {
+    if (viewSwitchTimeoutRef.current !== null) {
+      window.clearTimeout(viewSwitchTimeoutRef.current);
+      viewSwitchTimeoutRef.current = null;
+    }
+
+    setPendingViewMode(nextMode);
+    setIsViewSwitchLoading(true);
+
+    viewSwitchTimeoutRef.current = window.setTimeout(() => {
+      setViewMode(nextMode);
+      setIsViewSwitchLoading(false);
+      setPendingViewMode(null);
+      viewSwitchTimeoutRef.current = null;
+    }, VIEW_SWITCH_LOADING_MS);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (viewSwitchTimeoutRef.current !== null) {
+        window.clearTimeout(viewSwitchTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const [planConnections, setPlanConnections] = useState<PlanConnection[]>(
+    () => initialPlanSnapshot?.planConnections ?? []
+  );
+  const [planStack, setPlanStack] = useState<PlanContextSnapshot[]>(
+    () => initialPlanSnapshot?.planStack ?? []
+  );
   const planLinkFromRef = useRef<string | null>(null);
 
   // Agent-view-only IO: when the user uploads a plan JSON while in agent view,
@@ -153,16 +345,150 @@ export default function WorkflowEditorPage() {
     agentPlanTemplateRef,
   });
 
+  const handleEnterPlanNode = useCallback(
+    (plan: PlanningBlock) => {
+      const nestedPlans = plan.sub_plans?.plans ?? [];
+      if (nestedPlans.length > 0) {
+        setPlanStack((prev) => [
+          ...prev,
+          {
+            plans,
+            planConnections,
+            activePlanId,
+            parentPlanId: plan.id,
+          },
+        ]);
+        setPlans(nestedPlans);
+        setPlanConnections(plan.sub_plans?.connections ?? []);
+        setActivePlanId(null);
+        planLinkFromRef.current = null;
+        setViewMode("plan");
+        clearWorkspaceUIState();
+        return;
+      }
+      handleEnterPlanWorkflow(plan);
+    },
+    [
+      activePlanId,
+      clearWorkspaceUIState,
+      handleEnterPlanWorkflow,
+      planConnections,
+      plans,
+      setActivePlanId,
+      setPlanConnections,
+      setPlanStack,
+      setPlans,
+      setViewMode,
+    ]
+  );
+
+  const handlePlanBack = useCallback(() => {
+    setPlanStack((prev) => {
+      if (!prev.length) return prev;
+      const nextStack = prev.slice(0, -1);
+      const parentContext = prev[prev.length - 1];
+      const parentPlanId = parentContext.parentPlanId;
+      setPlans((currentPlans) => {
+        if (!parentPlanId) return parentContext.plans;
+        return parentContext.plans.map((plan) =>
+          plan.id === parentPlanId
+            ? {
+                ...plan,
+                sub_plans: {
+                  plans: currentPlans,
+                  connections: planConnections,
+                },
+              }
+            : plan
+        );
+      });
+      setPlanConnections(parentContext.planConnections);
+      setActivePlanId(parentContext.activePlanId);
+      planLinkFromRef.current = null;
+      setViewMode("plan");
+      clearWorkspaceUIState();
+      return nextStack;
+    });
+  }, [
+    clearWorkspaceUIState,
+    planConnections,
+    setActivePlanId,
+    setPlanConnections,
+    setPlanStack,
+    setPlans,
+    setViewMode,
+  ]);
+
   usePlanBench({
     applyPlanJson,
     nextPlanIdRef,
     planLinkFromRef,
     setPlans,
     setPlanConnections,
+    setPlanStack,
     setActivePlanId,
     setViewMode,
     setActivePanel,
   });
+
+  useEffect(() => {
+    const activePlan = activePlanId ? plans.find((plan) => plan.id === activePlanId) : null;
+    if (!activePlan) return;
+    const hasNewSchema = Boolean(activePlan.task_id || activePlan.main_task || activePlan.sub_tasks);
+    agentPlanTemplateRef.current = {
+      ...(hasNewSchema ? { task_id: activePlan.task_id ?? activePlan.id } : { plan_id: activePlan.id }),
+      ...(activePlan.main_task ? { main_task: activePlan.main_task } : {}),
+      ...(activePlan.sub_tasks ? { sub_tasks: activePlan.sub_tasks } : {}),
+      query: activePlan.query,
+      triples: activePlan.triples,
+    };
+  }, [activePlanId, plans]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof localStorage === "undefined") return;
+    const plansForStorage =
+      activePlanId && viewMode === "agent"
+        ? plans.map((plan) =>
+            plan.id === activePlanId
+              ? { ...plan, workflow: buildPlanWorkflowSnapshot() }
+              : plan
+          )
+        : plans;
+    const planConnectionsForStorage = normalizePlanConnections(plansForStorage, planConnections);
+    const planStackForStorage = planStack.map((entry) => {
+      const normalizedConnections = normalizePlanConnections(entry.plans, entry.planConnections);
+      const normalizedActivePlanId =
+        entry.activePlanId && entry.plans.some((plan) => plan.id === entry.activePlanId)
+          ? entry.activePlanId
+          : null;
+      const normalizedParentPlanId =
+        entry.parentPlanId && entry.plans.some((plan) => plan.id === entry.parentPlanId)
+          ? entry.parentPlanId
+          : null;
+      return {
+        ...entry,
+        activePlanId: normalizedActivePlanId,
+        parentPlanId: normalizedParentPlanId,
+        planConnections: normalizedConnections,
+      };
+    });
+    const snapshot: PlanWorkspaceSnapshot = {
+      plans: plansForStorage,
+      planConnections: planConnectionsForStorage,
+      activePlanId,
+      viewMode,
+      nextPlanId: nextPlanIdRef.current,
+      planStack: planStackForStorage,
+    };
+    localStorage.setItem(PLAN_WORKSPACE_STORAGE_KEY, JSON.stringify(snapshot));
+  }, [
+    activePlanId,
+    buildPlanWorkflowSnapshot,
+    planConnections,
+    plans,
+    planStack,
+    viewMode,
+  ]);
 
   const handleC3ANClick = useCallback(() => {
     window.open("https://c3an.aiisc.ai/", "_blank", "noopener,noreferrer");
@@ -314,7 +640,15 @@ export default function WorkflowEditorPage() {
     handleRemoveConnection,
   });
 
-  const { downloadLabel, handleDownload } = useWorkflowDownload({ viewMode, activePlanId, plans, availableAgents, buildPlanWorkflowSnapshot });
+  const { downloadLabel, handleDownload } = useWorkflowDownload({
+    viewMode,
+    activePlanId,
+    plans,
+    planConnections,
+    buildPlanWorkflowSnapshot,
+    planStackDepth: planStack.length,
+    agentPlanTemplateRef,
+  });
 
   const { handleReset } = useWorkflowReset({
     reset,
@@ -322,6 +656,7 @@ export default function WorkflowEditorPage() {
     setPlans,
     setPlanCanvasKey,
     setActivePlanId,
+    setPlanStack,
     agentPlanTemplateRef,
     setSelectedEvals,
   });
@@ -342,6 +677,16 @@ export default function WorkflowEditorPage() {
 
   return (
     <div className={`relative h-screen w-screen overflow-hidden ${appThemeClass}`}>
+      {showStartupLoading ? (
+        <AgentViewLoadingScreen theme={theme} />
+      ) : isViewSwitchLoading ? (
+        (pendingViewMode ?? viewMode) === "plan" ? (
+          <PlanViewLoadingScreen theme={theme} />
+        ) : (
+          <AgentViewLoadingScreen theme={theme} />
+        )
+      ) : null}
+
       <Sidebar
         activePanel={activePanel}
         theme={theme}
@@ -361,7 +706,12 @@ export default function WorkflowEditorPage() {
             saveActivePlanWorkflow();
             planLinkFromRef.current = null;
           }
-          setViewMode(mode);
+          // Show a brief loading screen on any view switch.
+          if (!showStartupLoading && mode !== viewMode) {
+            beginViewSwitchLoading(mode);
+          } else {
+            setViewMode(mode);
+          }
           setModalBlockId(null);
           setModalToolId(null);
           clearWorkspaceUIState();
@@ -375,6 +725,9 @@ export default function WorkflowEditorPage() {
         theme={theme}
         fileInputRef={fileInputRef}
         downloadLabel={downloadLabel}
+        onPlanBackClick={
+          viewMode === "plan" && planStack.length > 0 ? handlePlanBack : undefined
+        }
         onC3ANClick={handleC3ANClick}
         onAboutClick={() => setActivePanel((prev) => (prev === "settings" ? null : "settings"))}
         onPlanningClick={() => {
@@ -392,7 +745,7 @@ export default function WorkflowEditorPage() {
       />
 
       <main className="relative z-0 h-full w-full">
-        {viewMode === "plan" ? (
+        {showStartupLoading || isViewSwitchLoading ? null : viewMode === "plan" ? (
           <PlanCanvasView
             key={planCanvasKey}
             theme={theme}
@@ -404,7 +757,7 @@ export default function WorkflowEditorPage() {
             setActivePlanId={setActivePlanId}
             activePlanId={activePlanId}
             nextPlanIdRef={nextPlanIdRef}
-            onEnterWorkflow={handleEnterPlanWorkflow}
+            onEnterWorkflow={handleEnterPlanNode}
           />
         ) : (
           <AgentCanvasView
