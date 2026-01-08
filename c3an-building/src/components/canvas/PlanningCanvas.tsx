@@ -51,11 +51,17 @@ export default function PlanningCanvas({
   const [localLink, setLocalLink] = useState<PlanLinkState>(null);
   const activeLink = localLink ?? linking;
 
+  const getEventElement = useCallback((target: EventTarget | null) => {
+    if (target instanceof Element) return target;
+    if (target && "parentElement" in target) return target.parentElement as Element | null;
+    return null;
+  }, []);
+
   const allowPan = useCallback((event: PointerEvent) => {
-    const target = event.target as HTMLElement | null;
+    const target = getEventElement(event.target);
     if (target?.closest("[data-block],[data-connector]")) return false;
     return true;
-  }, []);
+  }, [getEventElement]);
 
   const isPanDisabled = useCallback(() => Boolean(linking || localLink), [linking, localLink]);
 
@@ -248,8 +254,9 @@ export default function PlanningCanvas({
   }, [onCompleteLink]);
 
   const handlePlanPointerDown = (plan: PlanningBlock) => (e: React.PointerEvent<HTMLDivElement>) => {
-    const isConnector = (e.target as HTMLElement | null)?.closest("[data-connector]");
-    const isInteractive = (e.target as HTMLElement | null)?.closest("button, a, input, textarea, [role='button'], [data-interactive]");
+    const target = getEventElement(e.target);
+    const isConnector = target?.closest("[data-connector]");
+    const isInteractive = target?.closest("button, a, input, textarea, [role='button'], [data-interactive]");
     if (activeLink && !isConnector) {
       onCancelLink?.();
     }
@@ -278,7 +285,7 @@ export default function PlanningCanvas({
     setDraggingPlanId(null);
     planDragOffsetRef.current = { x: 0, y: 0 };
     (e.currentTarget as HTMLElement | null)?.releasePointerCapture?.(e.pointerId);
-    const target = e.target as HTMLElement | null;
+    const target = getEventElement(e.target);
     const isConnector = target?.closest("[data-connector]");
     const isInteractive = target?.closest("button, a, input, textarea, [role='button'], [data-interactive]");
     if (isConnector || isInteractive) return;
