@@ -564,6 +564,7 @@ export default function PlanningPage() {
   const [parseError, setParseError] = useState<string | null>(null);
   const [plainTextInput, setPlainTextInput] = useState(SAMPLE_PLAIN_TEXT);
   const [plainTextError, setPlainTextError] = useState<string | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
   const [customPlans, setCustomPlans] = useState<PlanTemplate[]>(() => readCustomPlans());
   const [lastAdded, setLastAdded] = useState<PlanTemplate[]>([]);
 
@@ -573,14 +574,17 @@ export default function PlanningPage() {
     if (!jsonInput.trim()) {
       setParseError("Paste JSON to generate plan templates.");
       setLastAdded([]);
+      setIsGenerating(false);
       return;
     }
+    setIsGenerating(true);
     try {
       const parsed = JSON.parse(jsonInput) as unknown;
       const entries = extractPlans(parsed);
       if (entries.length === 0) {
         setParseError("No plans found. Provide an array or { plans: [...] }.");
         setLastAdded([]);
+        setIsGenerating(false);
         return;
       }
       const nextUsed = new Set(usedIds);
@@ -594,6 +598,7 @@ export default function PlanningPage() {
       if (normalized.length === 0 || payloads.length === 0) {
         setParseError("No valid plans found in the input.");
         setLastAdded([]);
+        setIsGenerating(false);
         return;
       }
 
@@ -607,6 +612,7 @@ export default function PlanningPage() {
     } catch (error) {
       setParseError(error instanceof Error ? `Invalid JSON: ${error.message}` : "Invalid JSON.");
       setLastAdded([]);
+      setIsGenerating(false);
     }
   };
 
@@ -677,7 +683,15 @@ export default function PlanningPage() {
   };
 
   return (
-    <div className="h-screen overflow-y-auto bg-gradient-to-br from-slate-50 via-white to-amber-50 text-slate-900">
+    <div className="relative h-screen overflow-y-auto bg-gradient-to-br from-slate-50 via-white to-amber-50 text-slate-900">
+      {isGenerating && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-white/80 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-4 rounded-2xl border border-slate-200 bg-white/90 px-6 py-5 shadow-lg">
+            <div className="h-10 w-10 animate-spin rounded-full border-4 border-slate-200 border-t-amber-500" />
+            <div className="text-sm font-semibold text-slate-700">Generating plan...</div>
+          </div>
+        </div>
+      )}
       <div className="relative overflow-hidden">
         <div className="pointer-events-none absolute -top-32 right-10 h-72 w-72 rounded-full bg-amber-200/40 blur-3xl" />
         <div className="pointer-events-none absolute -bottom-32 left-10 h-72 w-72 rounded-full bg-emerald-200/40 blur-3xl" />

@@ -142,51 +142,42 @@ export function usePlanBench(args: {
         typeof window === "undefined"
           ? startX
           : centerX - ((orderedIds.length - 1) * subPlanGapX) / 2;
-      const defaultGapY = 200;
-      const branchGapY = 260;
-      const aggregateGapY = 160;
-      const inboundOps = new Map<string, Array<PlanningBlock["triples"][number]["op"]>>();
-      const outboundOps = new Map<string, Array<PlanningBlock["triples"][number]["op"]>>();
-      const pushOp = (
-        map: Map<string, Array<PlanningBlock["triples"][number]["op"]>>,
-        key: string,
-        op: PlanningBlock["triples"][number]["op"]
-      ) => {
-        const list = map.get(key);
-        if (list) {
-          if (!list.includes(op)) list.push(op);
+      const orderedIndex = new Map<string, number>();
+      orderedIds.forEach((nodeId, index) => {
+        orderedIndex.set(nodeId, index);
+      });
+      const branchTargetsBySource = new Map<string, string[]>();
+      const pushBranchTarget = (source: string, target: string) => {
+        const existing = branchTargetsBySource.get(source);
+        if (existing) {
+          if (!existing.includes(target)) existing.push(target);
         } else {
-          map.set(key, [op]);
+          branchTargetsBySource.set(source, [target]);
         }
       };
       triples.forEach((triple) => {
         const from = String(triple?.from ?? "").trim();
         const to = String(triple?.to ?? "").trim();
-        const op = triple?.op ?? "seq";
         if (!from || !to) return;
-        pushOp(outboundOps, from, op);
-        pushOp(inboundOps, to, op);
+        if (triple?.op !== "brn") return;
+        pushBranchTarget(from, to);
       });
-      const spacingById = orderedIds.map((nodeId) => {
-        const inbound = inboundOps.get(nodeId) ?? [];
-        const outbound = outboundOps.get(nodeId) ?? [];
-        if (inbound.includes("brn") || outbound.includes("brn")) return branchGapY;
-        if (inbound.includes("agg") || outbound.includes("agg")) return aggregateGapY;
-        return defaultGapY;
-      });
-      let totalHeight = 0;
-      for (let i = 1; i < spacingById.length; i += 1) {
-        totalHeight += (spacingById[i - 1] + spacingById[i]) / 2;
+      const branchOffsets = new Map<string, number>();
+      if (branchTargetsBySource.size > 0) {
+        const branchGapY = 140;
+        branchTargetsBySource.forEach((targets) => {
+          const sortedTargets = [...targets].sort((a, b) => {
+            return (orderedIndex.get(a) ?? 0) - (orderedIndex.get(b) ?? 0);
+          });
+          if (sortedTargets.length <= 1) return;
+          const totalSpan = (sortedTargets.length - 1) * branchGapY;
+          const startOffset = -totalSpan / 2;
+          sortedTargets.forEach((target, index) => {
+            if (branchOffsets.has(target)) return;
+            branchOffsets.set(target, startOffset + index * branchGapY);
+          });
+        });
       }
-      const subPlanStartY = subPlanY - totalHeight / 2;
-      const yById = new Map<string, number>();
-      let cursorY = subPlanStartY;
-      orderedIds.forEach((nodeId, index) => {
-        if (index > 0) {
-          cursorY += (spacingById[index - 1] + spacingById[index]) / 2;
-        }
-        yById.set(nodeId, cursorY);
-      });
 
       const subPlanBlocks = orderedIds
         .map((nodeId, index) => {
@@ -196,7 +187,7 @@ export function usePlanBench(args: {
         const plan: PlanningBlock = {
           id: nodeId,
           x: subPlanStartX + index * subPlanGapX,
-          y: yById.get(nodeId) ?? subPlanY,
+          y: subPlanY + (branchOffsets.get(nodeId) ?? 0),
           name,
           query: description,
           triples: [],
