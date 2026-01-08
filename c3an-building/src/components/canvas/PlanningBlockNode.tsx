@@ -129,7 +129,17 @@ export default function PlanningBlockNode({
 
         <button
           className="mt-4 inline-flex items-center gap-1 rounded-full bg-slate-900 px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-white shadow-sm"
-          onClick={onEnterWorkflow}
+          data-interactive
+          onPointerDown={(e) => {
+            e.stopPropagation();
+          }}
+          onPointerUp={(e) => {
+            e.stopPropagation();
+          }}
+          onClick={(e) => {
+            e.stopPropagation();
+            onEnterWorkflow();
+          }}
         >
           {hasSubPlans ? "View Subplans →" : "Enter Workflow →"}
         </button>
