@@ -6,6 +6,7 @@ type Props = {
   spacing?: number;
   dotColor?: string;
   theme?: "light" | "dark";
+  preset?: "grid" | "aurora" | "blueprint";
   className?: string;
   style?: CSSProperties;
 };

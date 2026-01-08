@@ -15,6 +15,45 @@ import type {
 } from "../../shared/types";
 import { TOOL_PORT_OFFSET } from "../../shared/constants";
 
+const countToolsConnectedToBlock = (blockId: string, connections: Connection[]): number => {
+  const directToolIds = connections
+    .filter(
+      (c) =>
+        c.from.type === "tool" &&
+        c.to.type === "block" &&
+        c.to.id === blockId &&
+        (c.to.inputIndex ?? 0) >= TOOL_PORT_OFFSET
+    )
+    .map((c) => c.from.id);
+
+  if (directToolIds.length === 0) return 0;
+
+  const incomingByToolId = new Map<string, Set<string>>();
+  connections.forEach((c) => {
+    if (c.from.type !== "tool") return;
+    if (c.to.type !== "tool") return;
+    const toId = c.to.id;
+    const set = incomingByToolId.get(toId);
+    if (set) set.add(c.from.id);
+    else incomingByToolId.set(toId, new Set([c.from.id]));
+  });
+
+  const seen = new Set<string>();
+  const stack = [...directToolIds];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (!current || seen.has(current)) continue;
+    seen.add(current);
+    const incoming = incomingByToolId.get(current);
+    if (!incoming) continue;
+    incoming.forEach((upstreamId) => {
+      if (!seen.has(upstreamId)) stack.push(upstreamId);
+    });
+  }
+
+  return seen.size;
+};
+
 type DragHandlers = {
   onPointerDown: (id: string) => (event: ReactPointerEvent<HTMLDivElement>) => void;
   onPointerMove: (id: string) => (event: ReactPointerEvent<HTMLDivElement>) => void;
@@ -143,9 +182,7 @@ export default function AgentCanvasView({
 
         {blocks.map((block) => {
           const handles = getBlockHandles(block);
-          const toolCount = connections.filter(
-            (c) => c.to.type === "block" && c.to.id === block.id && (c.to.inputIndex ?? 0) >= TOOL_PORT_OFFSET
-          ).length;
+          const toolCount = countToolsConnectedToBlock(block.id, connections);
 
           return (
             <AgentBlock

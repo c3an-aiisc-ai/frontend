@@ -123,7 +123,7 @@ export default function App() {
   const linkingRef = useRef(false);
   // Kevin 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { containerRef, transform, reset } = usePanZoom({
+  const { containerRef, containerEl, transform, reset } = usePanZoom({
     initial: { x: 0, y: 0, zoom: 1 },
     shouldAllowPan: (event) => {
       if (linkingRef.current) return false;
@@ -291,7 +291,7 @@ export default function App() {
 
   const toWorldPoint = useCallback(
     (clientX: number, clientY: number) => {
-      const el = containerRef.current;
+      const el = containerEl;
       if (!el) return null;
       const rect = el.getBoundingClientRect();
       const localX = clientX - rect.left;
@@ -301,7 +301,7 @@ export default function App() {
         y: (localY - transform.y) / transform.zoom,
       };
     },
-    [containerRef, transform.x, transform.y, transform.zoom],
+    [containerEl, transform.x, transform.y, transform.zoom],
   );
 
   const handleBlockDragStart = useCallback((event: DragEvent<HTMLDivElement>) => {
@@ -350,7 +350,7 @@ export default function App() {
   const handleCanvasDrop = useCallback(
     (event: DragEvent<HTMLDivElement>) => {
       event.preventDefault();
-      const el = containerRef.current;
+      const el = containerEl;
       if (!el) return;
 
       const payloadRaw =
@@ -463,7 +463,7 @@ export default function App() {
         ]);
       }
     },
-    [agentPresets, containerRef, toolPalette, transform.x, transform.y, transform.zoom],
+    [agentPresets, containerEl, toolPalette, transform.x, transform.y, transform.zoom],
   );
 
   const handleGenerateAgentsFromJson = useCallback(() => {
@@ -2651,10 +2651,41 @@ export default function App() {
             draggingBlockId === block.id ||
             linkingActive ||
             hoveredBlockId === block.id;
-          const toolIds = connections
-            .filter((conn) => conn.from.type === "tool" && conn.to.type === "block" && conn.to.id === block.id)
-            .map((conn) => conn.from.id);
-          const toolCount = new Set(toolIds).size;
+
+              const directToolIds = connections
+                .filter(
+                  (conn) =>
+                    conn.from.type === "tool" &&
+                    conn.to.type === "block" &&
+                    conn.to.id === block.id &&
+                    (conn.to.inputIndex ?? 0) >= TOOL_PORT_OFFSET
+                )
+                .map((conn) => conn.from.id);
+
+              const incomingByToolId = new Map<string, Set<string>>();
+              connections.forEach((conn) => {
+                if (conn.from.type !== "tool") return;
+                if (conn.to.type !== "tool") return;
+                const toId = conn.to.id;
+                const set = incomingByToolId.get(toId);
+                if (set) set.add(conn.from.id);
+                else incomingByToolId.set(toId, new Set([conn.from.id]));
+              });
+
+              const seenTools = new Set<string>();
+              const stack = [...directToolIds];
+              while (stack.length > 0) {
+                const current = stack.pop();
+                if (!current || seenTools.has(current)) continue;
+                seenTools.add(current);
+                const incoming = incomingByToolId.get(current);
+                if (!incoming) continue;
+                incoming.forEach((upstreamId) => {
+                  if (!seenTools.has(upstreamId)) stack.push(upstreamId);
+                });
+              }
+
+              const toolCount = seenTools.size;
           const handles = getBlockHandles(block);
           return (
             <div

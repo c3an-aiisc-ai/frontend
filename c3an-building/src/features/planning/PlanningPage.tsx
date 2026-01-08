@@ -4,6 +4,11 @@ import { parsePlanningJSON } from "../../shared/planning/parsePlan";
 import { readCustomPlans, writeCustomPlans } from "../../shared/utils/customPlans";
 import { PENDING_PLAN_STORAGE_KEY } from "../../shared/constants";
 import { buildUniqueId, isRecord, slugify } from "../../shared/utils";
+import {
+  buildKimoDemoPlanPayload,
+  extractDemoDataAssetsFromFiles,
+  isKimoDemoTaskDescription,
+} from "../workflow/demoWorkflow";
 
 const SAMPLE_JSON = `{
   "task_id": "task-7821",
@@ -103,28 +108,7 @@ const SAMPLE_JSON = `{
   ]
 }`;
 
-const SAMPLE_PLAIN_TEXT = `Task ID: task-7821
-Main task: Plan and execute a product launch campaign
-
-Subtasks:
-- Market Research | Analyze target audience and competitive landscape | knowledge: kg-market-data, kg-competitor-intel | skills: market_analysis, data_interpretation
-- Define Positioning | Create unique value proposition and messaging framework | knowledge: kg-brand-guidelines, kg-customer-personas | skills: brand_strategy, copywriting
-- Design Creative Assets | Develop visual identity and marketing materials | knowledge: kg-brand-guidelines, kg-design-templates | skills: graphic_design, video_production
-- Build Landing Page | Create conversion-optimized product landing page | knowledge: kg-web-standards, kg-seo-best-practices | skills: web_development, ux_design
-- Setup Email Campaign | Configure automated email sequences | knowledge: kg-email-templates, kg-marketing-automation | skills: email_marketing, automation
-- Launch Social Media | Execute social media campaign across platforms | knowledge: kg-social-playbook, kg-content-calendar | skills: social_media_marketing, content_creation
-- Monitor and Optimize | Track KPIs and make data-driven adjustments | knowledge: kg-analytics-framework, kg-kpi-benchmarks | skills: analytics, optimization
-
-Triples:
-- 1 -> 2 (seq)
-- 2 -> 3 (brn)
-- 2 -> 4 (brn)
-- 2 -> 5 (brn)
-- 3 -> 6 (seq)
-- 4 -> 7 (agg)
-- 5 -> 7 (agg)
-- 6 -> 7 (agg)
-`;
+const SAMPLE_PLAIN_TEXT = `Develop a conversational chatbot that alerts an engineer when an anomaly occurs in the manufacturing pipeline, suggests relevant mitigation strategies from existing manuals, and can answer any engineer’s questions related to the pipeline or the anomaly. The chatbot should also predict future anomalies using historical data.`;
 
 type PlainTextTask = {
   id?: string;
@@ -299,7 +283,7 @@ function parseTripleLine(
   if (!from) unresolved.push(fromToken);
   if (!to) unresolved.push(toToken);
   if (unresolved.length) return { triple: null, unresolved };
-  return { triple: { from, op, to }, unresolved: [] };
+  return { triple: { from: from!, op, to: to! }, unresolved: [] };
 }
 
 function parsePlainTextPlan(input: string): PlainTextParseResult {
@@ -542,10 +526,13 @@ function normalizePlanPayload(value: unknown, index: number): Record<string, unk
   return payload;
 }
 
-function queuePlansForBench(plans: Record<string, unknown>[]) {
+function queuePlansForBench(plans: Record<string, unknown>[], dataAssets?: unknown[]) {
   if (typeof window === "undefined" || typeof localStorage === "undefined") return;
   try {
-    localStorage.setItem(PENDING_PLAN_STORAGE_KEY, JSON.stringify({ mode: "plan", plans }));
+    localStorage.setItem(
+      PENDING_PLAN_STORAGE_KEY,
+      JSON.stringify({ mode: "plan", plans, data_assets: Array.isArray(dataAssets) ? dataAssets : [] })
+    );
   } catch {
     // Ignore storage failures (e.g., quota or private mode).
   }
@@ -560,7 +547,7 @@ function extractPlans(value: unknown): unknown[] {
 }
 
 export default function PlanningPage() {
-  const [jsonInput, setJsonInput] = useState(SAMPLE_JSON);
+  const [jsonInput, setJsonInput] = useState("");
   const [parseError, setParseError] = useState<string | null>(null);
   const [plainTextInput, setPlainTextInput] = useState(SAMPLE_PLAIN_TEXT);
   const [plainTextError, setPlainTextError] = useState<string | null>(null);
@@ -639,8 +626,11 @@ export default function PlanningPage() {
         writeCustomPlans(nextPlans);
         setLastAdded(normalized);
         setParseError(null);
-        queuePlansForBench(payloads);
-        window.location.hash = "#/workflow";
+        void (async () => {
+          const dataAssets = await extractDemoDataAssetsFromFiles(dataFiles);
+          queuePlansForBench(payloads, dataAssets);
+          window.location.hash = "#/workflow";
+        })();
       } catch (error) {
         setParseError(error instanceof Error ? `Invalid JSON: ${error.message}` : "Invalid JSON.");
         setLastAdded([]);
@@ -656,6 +646,15 @@ export default function PlanningPage() {
       const finish = () => stopLoadingAfterMinimum(startedAt);
       if (!plainTextInput.trim()) {
         setPlainTextError("Paste plain text to build JSON.");
+        finish();
+        return;
+      }
+
+      if (isKimoDemoTaskDescription(plainTextInput)) {
+        const plan = buildKimoDemoPlanPayload(plainTextInput);
+        setJsonInput(JSON.stringify(plan, null, 2));
+        setPlainTextError(null);
+        setParseError(null);
         finish();
         return;
       }
@@ -805,7 +804,7 @@ export default function PlanningPage() {
                 <div>
                   <h2 className="text-lg font-semibold text-slate-900">Task description</h2>
                   <p className="mt-1 text-xs text-slate-600">
-                    Add a main task, list subtasks, then add triples. Generate JSON to populate the intake below.
+                    Describe the task in natural language. Generate JSON to populate the generator below.
                   </p>
                 </div>
                 <span className="pill-tag pill-tag-amber">
@@ -849,9 +848,9 @@ export default function PlanningPage() {
             <section className="panel bg-white/80">
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <h2 className="text-lg font-semibold text-slate-900">JSON intake</h2>
+                  <h2 className="text-lg font-semibold text-slate-900">JSON generator</h2>
                   <p className="mt-1 text-xs text-slate-600">
-                    Accepts {`{ plans: [...] }`}, an array, or a single plan with task_id, sub_tasks, and triples.
+                    Generated from the task description above. You can also paste {`{ plans: [...] }`}, an array, or a single plan with task_id, sub_tasks, and triples.
                   </p>
                 </div>
                 <span className="pill-tag pill-tag-amber">
@@ -863,6 +862,7 @@ export default function PlanningPage() {
                 className="mt-4 min-h-[320px] w-full rounded-xl border border-slate-200 bg-white/90 px-3 py-2 text-xs font-mono text-slate-800 shadow-inner focus:outline-none focus:ring-2 focus:ring-amber-400"
                 value={jsonInput}
                 onChange={(event) => setJsonInput(event.target.value)}
+                placeholder='Click "Generate JSON" above to create JSON here.'
                 spellCheck={false}
               />
 
