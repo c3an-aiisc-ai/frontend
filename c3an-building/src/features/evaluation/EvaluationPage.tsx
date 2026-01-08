@@ -216,7 +216,7 @@ export default function EvaluationPage() {
               </p>
               <p className="mt-2 text-2xl font-semibold text-slate-900">{summary.metricCoverage}%</p>
               <p className="mt-1 text-xs text-slate-600">
-                {metricsInUse.size} of {evalOptions.length} metrics in use
+                {metricsInUse.size} of {EVAL_OPTIONS.length} metrics in use
               </p>
             </div>
             <div className="rounded-xl bg-emerald-50 px-4 py-3">
