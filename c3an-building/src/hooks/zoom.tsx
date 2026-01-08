@@ -136,5 +136,7 @@ export function usePanZoom({
     setTransform(initial);
   }, [initial]);
 
-  return { containerRef, containerEl, transform, setTransform: applyTransform, reset };
+  const getTransform = useCallback(() => transformRef.current, []);
+
+  return { containerRef, containerEl, transform, setTransform: applyTransform, reset, getTransform };
 }

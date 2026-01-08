@@ -6,10 +6,6 @@ import type { PlanSubTask, PlanningBlock } from "../shared/types";
 
 const formatTaskIdLabel = (taskId: string) => {
   const trimmed = taskId.trim();
-  if (!trimmed) return "";
-  if (trimmed.startsWith("task-") && trimmed.length > 5) {
-    return trimmed.slice(5);
-  }
   return trimmed;
 };
 
@@ -140,15 +136,67 @@ export function usePlanBench(args: {
         addId(String(triple?.to ?? ""));
       });
 
-      const subPlanBlocks = layoutPlans(orderedIds, (nodeId, index, x, y) => {
-        void index;
+      const subPlanGapX = gapX;
+      const subPlanY = typeof window === "undefined" ? startY : centerY;
+      const subPlanStartX =
+        typeof window === "undefined"
+          ? startX
+          : centerX - ((orderedIds.length - 1) * subPlanGapX) / 2;
+      const defaultGapY = 200;
+      const branchGapY = 260;
+      const aggregateGapY = 160;
+      const inboundOps = new Map<string, Array<PlanningBlock["triples"][number]["op"]>>();
+      const outboundOps = new Map<string, Array<PlanningBlock["triples"][number]["op"]>>();
+      const pushOp = (
+        map: Map<string, Array<PlanningBlock["triples"][number]["op"]>>,
+        key: string,
+        op: PlanningBlock["triples"][number]["op"]
+      ) => {
+        const list = map.get(key);
+        if (list) {
+          if (!list.includes(op)) list.push(op);
+        } else {
+          map.set(key, [op]);
+        }
+      };
+      triples.forEach((triple) => {
+        const from = String(triple?.from ?? "").trim();
+        const to = String(triple?.to ?? "").trim();
+        const op = triple?.op ?? "seq";
+        if (!from || !to) return;
+        pushOp(outboundOps, from, op);
+        pushOp(inboundOps, to, op);
+      });
+      const spacingById = orderedIds.map((nodeId) => {
+        const inbound = inboundOps.get(nodeId) ?? [];
+        const outbound = outboundOps.get(nodeId) ?? [];
+        if (inbound.includes("brn") || outbound.includes("brn")) return branchGapY;
+        if (inbound.includes("agg") || outbound.includes("agg")) return aggregateGapY;
+        return defaultGapY;
+      });
+      let totalHeight = 0;
+      for (let i = 1; i < spacingById.length; i += 1) {
+        totalHeight += (spacingById[i - 1] + spacingById[i]) / 2;
+      }
+      const subPlanStartY = subPlanY - totalHeight / 2;
+      const yById = new Map<string, number>();
+      let cursorY = subPlanStartY;
+      orderedIds.forEach((nodeId, index) => {
+        if (index > 0) {
+          cursorY += (spacingById[index - 1] + spacingById[index]) / 2;
+        }
+        yById.set(nodeId, cursorY);
+      });
+
+      const subPlanBlocks = orderedIds
+        .map((nodeId, index) => {
         const task = taskById.get(nodeId);
         const name = task?.name?.trim() || nodeId;
         const description = task?.description?.trim() || "";
         const plan: PlanningBlock = {
           id: nodeId,
-          x,
-          y,
+          x: subPlanStartX + index * subPlanGapX,
+          y: yById.get(nodeId) ?? subPlanY,
           name,
           query: description,
           triples: [],
@@ -157,7 +205,8 @@ export function usePlanBench(args: {
           ...(task ? { sub_tasks: [task] } : {}),
         };
         return plan;
-      });
+      })
+      .filter((plan): plan is PlanningBlock => Boolean(plan));
 
       return {
         plans: subPlanBlocks,

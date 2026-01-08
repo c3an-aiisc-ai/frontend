@@ -497,7 +497,7 @@ export default function WorkflowEditorPage() {
   const { handleAgentDragStart, handlePlanDragStart, handleToolDragStart } = useSidebarDragHandlers();
 
 
-  const { containerRef, containerEl, transform, reset } = usePanZoom({
+  const { containerRef, containerEl, transform, setTransform, reset, getTransform } = usePanZoom({
     initial: { x: 0, y: 0, zoom: 1 },
     shouldAllowPan: (event) => {
       if (linkingRef.current) return false;
@@ -522,6 +522,45 @@ export default function WorkflowEditorPage() {
       };
     },
     [containerEl, transform.x, transform.y, transform.zoom]
+  );
+
+  const toWorldPointDuringDrag = useCallback(
+    (clientX: number, clientY: number) => {
+      const el = containerEl;
+      if (!el) return null;
+      const rect = el.getBoundingClientRect();
+      const margin = 80;
+      const maxSpeed = 18;
+      const base = getTransform();
+      let dx = 0;
+      let dy = 0;
+      const left = clientX - rect.left;
+      const right = rect.right - clientX;
+      const top = clientY - rect.top;
+      const bottom = rect.bottom - clientY;
+      if (left < margin) {
+        dx = Math.min(maxSpeed, ((margin - left) / margin) * maxSpeed);
+      } else if (right < margin) {
+        dx = -Math.min(maxSpeed, ((margin - right) / margin) * maxSpeed);
+      }
+      if (top < margin) {
+        dy = Math.min(maxSpeed, ((margin - top) / margin) * maxSpeed);
+      } else if (bottom < margin) {
+        dy = -Math.min(maxSpeed, ((margin - bottom) / margin) * maxSpeed);
+      }
+      const nextX = base.x + dx;
+      const nextY = base.y + dy;
+      if (dx || dy) {
+        setTransform({ x: nextX, y: nextY, zoom: base.zoom });
+      }
+      const localX = clientX - rect.left;
+      const localY = clientY - rect.top;
+      return {
+        x: (localX - nextX) / base.zoom,
+        y: (localY - nextY) / base.zoom,
+      };
+    },
+    [containerEl, getTransform, setTransform]
   );
 
   const { getBlockHandles, getToolHandles } = useNodeHandles({
@@ -566,6 +605,7 @@ export default function WorkflowEditorPage() {
     toolDragOffsetRef,
     linkingRef,
     toWorldPoint,
+    toWorldPointDuringDrag,
   });
 
   const {

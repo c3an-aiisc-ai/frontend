@@ -20,6 +20,7 @@ export function useCanvasDragHandlers(args: {
   toolDragOffsetRef: React.MutableRefObject<{ x: number; y: number }>;
   linkingRef: React.MutableRefObject<boolean>;
   toWorldPoint: (clientX: number, clientY: number) => { x: number; y: number } | null;
+  toWorldPointDuringDrag?: (clientX: number, clientY: number) => { x: number; y: number } | null;
 }) {
   const {
     blocks,
@@ -35,6 +36,7 @@ export function useCanvasDragHandlers(args: {
     toolDragOffsetRef,
     linkingRef,
     toWorldPoint,
+    toWorldPointDuringDrag,
   } = args;
 
   const makeDragHandlers = useCallback(
@@ -64,7 +66,7 @@ export function useCanvasDragHandlers(args: {
         (id: string) => (e: ReactPointerEvent<HTMLDivElement>) => {
           if (getDraggingId() !== id) return;
           if (linkingRef.current) return;
-          const world = toWorldPoint(e.clientX, e.clientY);
+          const world = (toWorldPointDuringDrag ?? toWorldPoint)(e.clientX, e.clientY);
           if (!world) return;
           setItem((prev) =>
             prev.map((item) =>

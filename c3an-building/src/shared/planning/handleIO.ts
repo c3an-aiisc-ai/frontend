@@ -74,6 +74,65 @@ export function hydrateAgentViewFromPlan(plan: PlanningBlock): AgentViewHydratio
 	const blocks: AgentBlock[] = [];
 	const connections: Connection[] = [];
 
+	const mergeUnique = (base: string[], additions: string[], seed: string[] = []) => {
+		const seen = new Set([...seed, ...base]);
+		const merged = [...base];
+		additions.forEach((item) => {
+			const trimmed = item.trim();
+			if (!trimmed || seen.has(trimmed)) return;
+			merged.push(trimmed);
+			seen.add(trimmed);
+		});
+		return merged;
+	};
+
+	const taskDescriptionByLabel = new Map<string, string>();
+	plan.sub_tasks?.forEach((task) => {
+		const description = typeof task.description === "string" ? task.description.trim() : "";
+		if (!description) return;
+		const id = task.sub_task_id?.trim();
+		if (id) taskDescriptionByLabel.set(id.toLowerCase(), description);
+		const name = task.name?.trim();
+		if (name) taskDescriptionByLabel.set(name.toLowerCase(), description);
+	});
+
+	const skillMetadataByLabel = new Map<
+		string,
+		{ label: string; description: string; knowledgeDependencies: string[] }
+	>();
+	const skillOrder: string[] = [];
+	const shouldUseSkillAgents =
+		(plan.sub_tasks?.length ?? 0) === 1 &&
+		(plan.triples?.length ?? 0) === 0 &&
+		Array.isArray(plan.sub_tasks?.[0]?.required_skills) &&
+		plan.sub_tasks?.[0]?.required_skills?.length > 0;
+
+	if (shouldUseSkillAgents) {
+		const task = plan.sub_tasks?.[0];
+		if (task) {
+			const description = typeof task.description === "string" ? task.description.trim() : "";
+			const knowledgeDependencies = Array.isArray(task.knowledge_dependencies)
+				? task.knowledge_dependencies.map((item) => String(item).trim()).filter(Boolean)
+				: [];
+			const skills = Array.isArray(task.required_skills) ? task.required_skills : [];
+			const seen = new Set<string>();
+			skills.forEach((skill) => {
+				const label = String(skill).trim();
+				if (!label) return;
+				const key = label.toLowerCase();
+				if (!seen.has(key)) {
+					skillOrder.push(label);
+					seen.add(key);
+				}
+				skillMetadataByLabel.set(key, {
+					label,
+					description,
+					knowledgeDependencies,
+				});
+			});
+		}
+	}
+
 	const blockIdByKey = new Map<string, string>();
 	const indexByKey = new Map<string, number>();
 	const indexById = new Map<string, number>();
@@ -81,7 +140,11 @@ export function hydrateAgentViewFromPlan(plan: PlanningBlock): AgentViewHydratio
 	let blockCount = 0;
 
 	const ensureBlock = (label: string) => {
+		const normalizedLabel = label.trim().toLowerCase();
 		const resolved = findAgentRegistryEntryByIdOrName(label);
+		const skillMeta = skillMetadataByLabel.get(normalizedLabel);
+		const fallbackDescription =
+			skillMeta?.description ?? taskDescriptionByLabel.get(normalizedLabel) ?? "";
 		const key = resolved?.id ?? label;
 
 		const existing = blockIdByKey.get(key);
@@ -95,7 +158,9 @@ export function hydrateAgentViewFromPlan(plan: PlanningBlock): AgentViewHydratio
 
 		const input = resolved ? listMandatoryOptional(resolved.input_data_streams) : { mandatory: [], optional: [] };
 		const output = resolved ? listMandatoryOptional(resolved.output_data_streams) : { mandatory: [], optional: [] };
-		const inputNames = [...input.mandatory, ...input.optional];
+		const knowledgeDependencies = skillMeta?.knowledgeDependencies ?? [];
+		const optionalInputs = mergeUnique(input.optional, knowledgeDependencies, input.mandatory);
+		const inputNames = [...input.mandatory, ...optionalInputs];
 		const outputNames = [...output.mandatory, ...output.optional];
 
 		const inputCount = Math.min(MAX_IO, Math.max(MIN_IO, inputNames.length || 1));
@@ -109,7 +174,7 @@ export function hydrateAgentViewFromPlan(plan: PlanningBlock): AgentViewHydratio
 			y: START_Y,
 			agentId: resolved?.id,
 			name: resolved?.name ?? label,
-			description: resolved?.description ?? "",
+			description: resolved?.description ?? fallbackDescription,
 			inputCount,
 			outputCount,
 			inputRequired: Array.from({ length: inputCount }, (_, i) => i < mandatoryInputCount),
@@ -124,7 +189,23 @@ export function hydrateAgentViewFromPlan(plan: PlanningBlock): AgentViewHydratio
 		return id;
 	};
 
-	const triples = normalizeTriples(plan);
+	if (shouldUseSkillAgents) {
+		skillOrder.forEach((label) => {
+			ensureBlock(label);
+		});
+	} else {
+		plan.sub_tasks?.forEach((task) => {
+			const label = task.name?.trim() || task.sub_task_id?.trim();
+			if (label) ensureBlock(label);
+		});
+	}
+
+	const triples = shouldUseSkillAgents
+		? skillOrder.slice(0, -1).map((skill, index) => ({
+			from: skill,
+			to: skillOrder[index + 1],
+		}))
+		: normalizeTriples(plan);
 
 	// Allocate input slots per target based on distinct inbound sources.
 	const inboundOrder = new Map<string, string[]>();
