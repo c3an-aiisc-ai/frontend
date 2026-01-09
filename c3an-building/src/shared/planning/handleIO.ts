@@ -343,6 +343,11 @@ type PlanSubPlanBundle = {
 	sub_plans: PlanSubTaskFromBlock[];
 };
 
+type PlanSubPlanDownload = {
+	sub_tasks: PlanSubTaskFromBlock[];
+	triples: PlanningBlock["triples"];
+};
+
 const normalizeStringList = (value: string[] | undefined) =>
 	Array.isArray(value) ? value.map((item) => String(item).trim()).filter(Boolean) : [];
 
@@ -431,6 +436,47 @@ function buildPlanSubPlanBundle(plans: PlanningBlock[]): PlanSubPlanBundle {
 		extracted.push(task);
 	});
 	return { sub_plans: extracted };
+}
+
+function buildSubPlanDownload(
+	plans: PlanningBlock[],
+	connections: Array<{ from: string; to: string }>
+): PlanSubPlanDownload {
+	const subTasks: PlanSubTaskFromBlock[] = [];
+	const idByPlanId = new Map<string, string>();
+	const seenIds = new Set<string>();
+
+	plans.forEach((plan) => {
+		const existing = plan.sub_tasks?.[0];
+		const mappedId = String(existing?.sub_task_id ?? plan.task_id ?? plan.id).trim() || plan.id;
+		const name = String(existing?.name ?? plan.name ?? mappedId).trim() || mappedId;
+		const description =
+			typeof existing?.description === "string"
+				? existing.description.trim()
+				: plan.query?.trim() ?? "";
+
+		idByPlanId.set(plan.id, mappedId);
+
+		if (seenIds.has(mappedId)) return;
+		const next: PlanSubTaskFromBlock = { sub_task_id: mappedId, name };
+		if (description) next.description = description;
+		seenIds.add(mappedId);
+		subTasks.push(next);
+	});
+
+	const triples: PlanningBlock["triples"] = [];
+	const seenTriples = new Set<string>();
+	(connections ?? []).forEach((conn) => {
+		const from = String(idByPlanId.get(conn.from) ?? conn.from ?? "").trim();
+		const to = String(idByPlanId.get(conn.to) ?? conn.to ?? "").trim();
+		if (!from || !to) return;
+		const key = `${from}::${to}`;
+		if (seenTriples.has(key)) return;
+		seenTriples.add(key);
+		triples.push({ from, op: normalizePlanOp("seq"), to });
+	});
+
+	return { sub_tasks: subTasks, triples };
 }
 
 export function buildWorkflowTriplesFromAgentWorkflow(args: {
@@ -530,6 +576,7 @@ export function buildToolBindingsFromAgentWorkflow(args: {
 		const toolNames = Array.from(seen)
 			.map((id) => toolById.get(id)?.name?.trim() || id)
 			.filter(Boolean);
+		toolNames.sort((a, b) => a.localeCompare(b));
 		if (toolNames.length === 0) return;
 
 		const key =
@@ -909,7 +956,7 @@ export function useWorkflowDownload(args: {
 	const handleDownload = useCallback(() => {
 		if (viewMode === "plan") {
 			if (planStackDepth > 0) {
-				const payload = buildPlanSubPlanBundle(plans);
+				const payload = buildSubPlanDownload(plans, planConnections);
 				downloadWorkflow(payload, "plans.json");
 				return;
 			}

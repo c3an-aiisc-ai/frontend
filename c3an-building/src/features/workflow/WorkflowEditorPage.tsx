@@ -414,13 +414,9 @@ export default function WorkflowEditorPage() {
   const loadingViewMode = isSubplanLoading ? "plan" : (pendingViewMode ?? viewMode);
 
   const handlePlanBack = useCallback(() => {
-    if (subplanLoadingTimeoutRef.current !== null) {
-      window.clearTimeout(subplanLoadingTimeoutRef.current);
-      subplanLoadingTimeoutRef.current = null;
-    }
-    setIsSubplanLoading(false);
-    setPlanCanvasKey((prev) => prev + 1);
     if (!planStack.length) return;
+    beginSubplanLoading();
+    setPlanCanvasKey((prev) => prev + 1);
     const parentContext = planStack[planStack.length - 1];
     const nextStack = planStack.slice(0, -1);
     const parentPlanId = parentContext.parentPlanId;
@@ -445,17 +441,16 @@ export default function WorkflowEditorPage() {
     setViewMode("plan");
     clearWorkspaceUIState();
   }, [
+    beginSubplanLoading,
     clearWorkspaceUIState,
     planConnections,
     planStack,
     setActivePlanId,
-    setIsSubplanLoading,
     setPlanCanvasKey,
     setPlanConnections,
     setPlanStack,
     setPlans,
     setViewMode,
-    subplanLoadingTimeoutRef,
   ]);
 
   const handleAgentBack = useCallback(() => {

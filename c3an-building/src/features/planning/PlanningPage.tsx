@@ -812,14 +812,6 @@ export default function PlanningPage() {
             <button
               className="btn-pill btn-pill-light"
               onClick={() => {
-                window.location.hash = "#/evaluation";
-              }}
-            >
-              Evaluation
-            </button>
-            <button
-              className="btn-pill btn-pill-light"
-              onClick={() => {
                 window.location.hash = "#/agentgen";
               }}
             >
