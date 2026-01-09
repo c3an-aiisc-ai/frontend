@@ -2,12 +2,14 @@
 // Tool Details Modal Component
 // =============================================================================
 
-import type { ToolNode, Connection } from "../../shared/types";
+import type { ToolNode, Connection, AgentBlock } from "../../shared/types";
 import { iconPaths } from "../../shared/assets";
+import { TOOL_PORT_OFFSET } from "../../shared/constants";
 
 type Props = {
   tool: ToolNode;
   connections: Connection[];
+  blocks: AgentBlock[];
   onClose: () => void;
   onToggleInputRequired: (toolId: string, index: number) => void;
   onToggleOutputRequired: (toolId: string, index: number) => void;
@@ -16,6 +18,7 @@ type Props = {
 export default function ToolDetailsModal({
   tool,
   connections,
+  blocks,
   onClose,
   onToggleInputRequired,
   onToggleOutputRequired,
@@ -26,6 +29,23 @@ export default function ToolDetailsModal({
   const outbound = connections.filter(
     (c) => c.from.type === "tool" && c.from.id === tool.id
   );
+  const connectedAgentIds = Array.from(
+    new Set(
+      connections
+        .filter(
+          (c) =>
+            c.from.type === "tool" &&
+            c.from.id === tool.id &&
+            c.to.type === "block" &&
+            (c.to.inputIndex ?? 0) >= TOOL_PORT_OFFSET
+        )
+        .map((c) => c.to.id)
+    )
+  );
+  const connectedAgentNames = connectedAgentIds.map((id) => {
+    const block = blocks.find((b) => b.id === id);
+    return block?.name ?? id;
+  });
 
   return (
     <div
@@ -61,6 +81,17 @@ export default function ToolDetailsModal({
           <span className="pill-tag text-xs bg-indigo-50 text-indigo-700">
             Tool
           </span>
+        </div>
+
+        <div className="mt-4 panel-sm">
+          <p className="label-xs">Connected Agents</p>
+          {connectedAgentNames.length ? (
+            <p className="mt-2 text-sm text-slate-800">
+              {connectedAgentNames.join(", ")}
+            </p>
+          ) : (
+            <p className="mt-2 text-sm text-slate-500">No agent connections yet.</p>
+          )}
         </div>
 
         {/* Inputs/Outputs Grid */}

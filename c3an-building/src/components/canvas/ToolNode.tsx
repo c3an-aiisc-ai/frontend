@@ -97,6 +97,13 @@ export default function ToolNode({
             />
           </button>
 
+          <span
+            className="pill-tag pill-tag-sky pointer-events-none absolute left-2 top-2 px-2 py-0.5 text-[9px]"
+            aria-hidden="true"
+          >
+            Tool
+          </span>
+
           <p className="text-base font-semibold text-slate-900">{tool.name}</p>
           
           <div className="flex items-center gap-2">

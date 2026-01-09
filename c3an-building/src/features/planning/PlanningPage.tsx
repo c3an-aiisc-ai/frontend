@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import type { PlanSubTask, PlanTemplate, PlanTriple } from "../../shared/types/planning";
 import { parsePlanningJSON } from "../../shared/planning/parsePlan";
 import { readCustomPlans, writeCustomPlans } from "../../shared/utils/customPlans";
-import { PENDING_PLAN_STORAGE_KEY } from "../../shared/constants";
+import { PENDING_PLAN_STORAGE_KEY, PLANNING_JSON_STORAGE_KEY } from "../../shared/constants";
 import { buildUniqueId, isRecord, slugify } from "../../shared/utils";
 import {
   buildKimoDemoPlanPayload,
@@ -538,6 +538,24 @@ function queuePlansForBench(plans: Record<string, unknown>[], dataAssets?: unkno
   }
 }
 
+function readStoredJsonInput(): string {
+  if (typeof window === "undefined" || typeof localStorage === "undefined") return "";
+  try {
+    return localStorage.getItem(PLANNING_JSON_STORAGE_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function writeStoredJsonInput(value: string): void {
+  if (typeof window === "undefined" || typeof localStorage === "undefined") return;
+  try {
+    localStorage.setItem(PLANNING_JSON_STORAGE_KEY, value);
+  } catch {
+    // Ignore storage failures (e.g., quota or private mode).
+  }
+}
+
 function extractPlans(value: unknown): unknown[] {
   if (Array.isArray(value)) return value;
   if (isRecord(value) && Array.isArray(value.plans)) return value.plans;
@@ -547,7 +565,7 @@ function extractPlans(value: unknown): unknown[] {
 }
 
 export default function PlanningPage() {
-  const [jsonInput, setJsonInput] = useState("");
+  const [jsonInput, setJsonInput] = useState(() => readStoredJsonInput());
   const [parseError, setParseError] = useState<string | null>(null);
   const [plainTextInput, setPlainTextInput] = useState(SAMPLE_PLAIN_TEXT);
   const [plainTextError, setPlainTextError] = useState<string | null>(null);
@@ -558,6 +576,11 @@ export default function PlanningPage() {
   const [dataFileError, setDataFileError] = useState<string | null>(null);
   const [customPlans, setCustomPlans] = useState<PlanTemplate[]>(() => readCustomPlans());
   const [lastAdded, setLastAdded] = useState<PlanTemplate[]>([]);
+
+  const updateJsonInput = (value: string) => {
+    setJsonInput(value);
+    writeStoredJsonInput(value);
+  };
 
   const usedIds = useMemo(() => new Set(customPlans.map((plan) => plan.id)), [customPlans]);
 
@@ -588,6 +611,40 @@ export default function PlanningPage() {
     }
   };
 
+  const applyPlanPayloads = (parsed: unknown): boolean => {
+    const entries = extractPlans(parsed);
+    if (entries.length === 0) {
+      setParseError("No plans found. Provide an array or { plans: [...] }.");
+      setLastAdded([]);
+      return false;
+    }
+    const nextUsed = new Set(usedIds);
+    const normalized = entries
+      .map((entry, index) => normalizePlanTemplate(entry, index, nextUsed))
+      .filter((entry): entry is PlanTemplate => Boolean(entry));
+    const payloads = entries
+      .map((entry, index) => normalizePlanPayload(entry, index))
+      .filter((entry): entry is Record<string, unknown> => Boolean(entry));
+
+    if (normalized.length === 0 || payloads.length === 0) {
+      setParseError("No valid plans found in the input.");
+      setLastAdded([]);
+      return false;
+    }
+
+    const nextPlans = [...customPlans, ...normalized];
+    setCustomPlans(nextPlans);
+    writeCustomPlans(nextPlans);
+    setLastAdded(normalized);
+    setParseError(null);
+    void (async () => {
+      const dataAssets = await extractDemoDataAssetsFromFiles(dataFiles);
+      queuePlansForBench(payloads, dataAssets);
+      window.location.hash = "#/workflow";
+    })();
+    return true;
+  };
+
   const handleGenerate = () => {
     startLoading("Generating plan...");
     setTimeout(() => {
@@ -599,38 +656,9 @@ export default function PlanningPage() {
       }
       try {
         const parsed = JSON.parse(jsonInput) as unknown;
-        const entries = extractPlans(parsed);
-        if (entries.length === 0) {
-          setParseError("No plans found. Provide an array or { plans: [...] }.");
-          setLastAdded([]);
+        if (!applyPlanPayloads(parsed)) {
           stopLoading();
-          return;
         }
-        const nextUsed = new Set(usedIds);
-        const normalized = entries
-          .map((entry, index) => normalizePlanTemplate(entry, index, nextUsed))
-          .filter((entry): entry is PlanTemplate => Boolean(entry));
-        const payloads = entries
-          .map((entry, index) => normalizePlanPayload(entry, index))
-          .filter((entry): entry is Record<string, unknown> => Boolean(entry));
-
-        if (normalized.length === 0 || payloads.length === 0) {
-          setParseError("No valid plans found in the input.");
-          setLastAdded([]);
-          stopLoading();
-          return;
-        }
-
-        const nextPlans = [...customPlans, ...normalized];
-        setCustomPlans(nextPlans);
-        writeCustomPlans(nextPlans);
-        setLastAdded(normalized);
-        setParseError(null);
-        void (async () => {
-          const dataAssets = await extractDemoDataAssetsFromFiles(dataFiles);
-          queuePlansForBench(payloads, dataAssets);
-          window.location.hash = "#/workflow";
-        })();
       } catch (error) {
         setParseError(error instanceof Error ? `Invalid JSON: ${error.message}` : "Invalid JSON.");
         setLastAdded([]);
@@ -641,7 +669,7 @@ export default function PlanningPage() {
 
   const handleGenerateFromText = () => {
     const startedAt = Date.now();
-    startLoading("Generating JSON...");
+    startLoading("Generating plan...");
     setTimeout(() => {
       const finish = () => stopLoadingAfterMinimum(startedAt);
       if (!plainTextInput.trim()) {
@@ -650,12 +678,24 @@ export default function PlanningPage() {
         return;
       }
 
-      if (isKimoDemoTaskDescription(plainTextInput)) {
-        const plan = buildKimoDemoPlanPayload(plainTextInput);
-        setJsonInput(JSON.stringify(plan, null, 2));
+      const runWorkflow = (plan: {
+        task_id: string;
+        main_task: string;
+        sub_tasks: PlanSubTask[];
+        triples: PlanTriple[];
+      }) => {
+        const json = JSON.stringify(plan, null, 2);
+        updateJsonInput(json);
         setPlainTextError(null);
         setParseError(null);
-        finish();
+        if (!applyPlanPayloads(plan)) {
+          finish();
+        }
+      };
+
+      if (isKimoDemoTaskDescription(plainTextInput)) {
+        const plan = buildKimoDemoPlanPayload(plainTextInput);
+        runWorkflow(plan);
         return;
       }
       const parsed = parsePlainTextPlan(plainTextInput);
@@ -664,10 +704,7 @@ export default function PlanningPage() {
         finish();
         return;
       }
-      setJsonInput(JSON.stringify(parsed.plan, null, 2));
-      setPlainTextError(null);
-      setParseError(null);
-      finish();
+      runWorkflow(parsed.plan);
     }, 0);
   };
 
@@ -695,12 +732,12 @@ export default function PlanningPage() {
   };
 
   const handleUseSample = () => {
-    setJsonInput(SAMPLE_JSON);
+    updateJsonInput(SAMPLE_JSON);
     setParseError(null);
   };
 
   const handleClearInput = () => {
-    setJsonInput("");
+    updateJsonInput("");
     setParseError(null);
     setLastAdded([]);
   };
@@ -804,7 +841,7 @@ export default function PlanningPage() {
                 <div>
                   <h2 className="text-lg font-semibold text-slate-900">Task description</h2>
                   <p className="mt-1 text-xs text-slate-600">
-                    Describe the task in natural language. Generate JSON to populate the generator below.
+                    Describe the task in natural language. Generate Plan to populate the generator below.
                   </p>
                 </div>
                 <span className="pill-tag pill-tag-amber">
@@ -828,7 +865,7 @@ export default function PlanningPage() {
                   className="btn-sm btn-sm-solid-amber px-4"
                   onClick={handleGenerateFromText}
                 >
-                  Generate JSON
+                  Generate Plan
                 </button>
                 <button
                   className="btn-sm btn-sm-outline"
@@ -848,7 +885,7 @@ export default function PlanningPage() {
             <section className="panel bg-white/80">
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <h2 className="text-lg font-semibold text-slate-900">JSON generator</h2>
+                  <h2 className="text-lg font-semibold text-slate-900">Generate workflow</h2>
                   <p className="mt-1 text-xs text-slate-600">
                     Generated from the task description above. You can also paste {`{ plans: [...] }`}, an array, or a single plan with task_id, sub_tasks, and triples.
                   </p>
@@ -861,8 +898,8 @@ export default function PlanningPage() {
               <textarea
                 className="mt-4 min-h-[320px] w-full rounded-xl border border-slate-200 bg-white/90 px-3 py-2 text-xs font-mono text-slate-800 shadow-inner focus:outline-none focus:ring-2 focus:ring-amber-400"
                 value={jsonInput}
-                onChange={(event) => setJsonInput(event.target.value)}
-                placeholder='Click "Generate JSON" above to create JSON here.'
+                onChange={(event) => updateJsonInput(event.target.value)}
+                placeholder='Click "Generate Plan" above to create JSON here.'
                 spellCheck={false}
               />
 

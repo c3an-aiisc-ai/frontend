@@ -5,6 +5,7 @@ type Props = {
   theme: Theme;
   plans: PlanningBlock[];
   connections: Array<{ from: string; to: string }>;
+  planPillLabel?: string;
   planLinkFromRef: React.MutableRefObject<string | null>;
   setPlans: React.Dispatch<React.SetStateAction<PlanningBlock[]>>;
   setPlanConnections: React.Dispatch<React.SetStateAction<Array<{ from: string; to: string }>>>;
@@ -18,6 +19,7 @@ export default function PlanCanvasView({
   theme,
   plans,
   connections,
+  planPillLabel,
   planLinkFromRef,
   setPlans,
   setPlanConnections,
@@ -31,6 +33,7 @@ export default function PlanCanvasView({
       theme={theme}
       plans={plans}
       connections={connections}
+      planPillLabel={planPillLabel}
       onStartLink={(fromId) => {
         planLinkFromRef.current = fromId;
       }}

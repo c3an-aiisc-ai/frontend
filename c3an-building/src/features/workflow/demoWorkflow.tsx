@@ -237,99 +237,108 @@ export function buildDemoWorkflowSnapshotForSubTask(args: {
 		connections.push({ ...conn, id: `conn-${nextConn++}` });
 	};
 
-	const leftX = 140;
 	const midX = 460;
-	const rightX = 760;
 	const topY = 160;
-	const dataToolStartY = topY - 20;
-	const dataToolGapY = 150;
-	const toolStackX = midX + 20;
-	const toolStartY = topY + 190;
-	const toolGapY = 170;
+	const blockWidth = 220;
+	const toolWidth = 180;
+	const toolGap = 28;
+	const toolRowGap = 40;
+	const blockBaseHeight = 120;
+	const blockTopPadding = 18;
+	const blockSlotGap = 28;
 
-	const placeDataTools = (kinds: DemoDataAssetKind[], startY = dataToolStartY) => {
-		const matching = dataAssets.filter((a) => kinds.includes(a.kind));
-		return matching.map((asset, index) => {
-			const toolId = pushTool(
-				toolNodeFromPreset("Data Asset", leftX, startY + index * dataToolGapY, {
-					name: asset.label,
-					tagline: asset.kind,
-				})
-			);
-			return toolId;
-		});
+	type ToolRowItem = {
+		preset: string;
+		overrides?: Partial<Pick<ToolNode, "name" | "tagline">>;
+	};
+
+	const buildDataToolItems = (kinds: DemoDataAssetKind[]): ToolRowItem[] =>
+		dataAssets
+			.filter((asset) => kinds.includes(asset.kind))
+			.map((asset) => ({
+				preset: "Data Asset",
+				overrides: { name: asset.label, tagline: asset.kind },
+			}));
+
+	const getBlockHeight = (block: AgentBlock) => {
+		const maxSlots = Math.max(block.inputCount ?? 1, block.outputCount ?? 1);
+		if (maxSlots <= 1) return blockBaseHeight;
+		return Math.max(blockBaseHeight, blockTopPadding * 2 + blockSlotGap * (maxSlots - 1));
+	};
+
+	const placeToolsInRow = (block: AgentBlock, items: ToolRowItem[]) => {
+		if (!items.length) return [];
+		const rowY = block.y + getBlockHeight(block) + toolRowGap;
+		const blockCenter = block.x + blockWidth / 2;
+		const totalWidth = items.length * toolWidth + (items.length - 1) * toolGap;
+		const startX = blockCenter - totalWidth / 2;
+		return items.map((item, index) =>
+			pushTool(
+				toolNodeFromPreset(
+					item.preset,
+					startX + index * (toolWidth + toolGap),
+					rowY,
+					item.overrides
+				)
+			)
+		);
 	};
 
 	if (subTaskId === "ST-1") {
-		const blockId = pushBlock(blockFromRegistry("anomaly-prediction-agent", midX, topY));
+		const block = blockFromRegistry("anomaly-prediction-agent", midX, topY);
+		const blockId = pushBlock(block);
 
-		// Data inputs
-		const dataToolIds = placeDataTools(["timeseries", "images"]);
-		dataToolIds.forEach((toolId) => {
+		const toolItems: ToolRowItem[] = [
+			...buildDataToolItems(["timeseries", "images"]),
+			{ preset: "CNN Model" },
+			{ preset: "LSTM Model" },
+		];
+		const toolIds = placeToolsInRow(block, toolItems);
+		toolIds.forEach((toolId) => {
 			pushConn({
 				from: { type: "tool", id: toolId, port: 0 },
 				to: { type: "block", id: blockId, inputIndex: TOOL_PORT_OFFSET },
 			});
 		});
-
-		// Model tools (directly to block tool slot)
-		const cnnId = pushTool(toolNodeFromPreset("CNN Model", toolStackX, toolStartY));
-		const lstmId = pushTool(toolNodeFromPreset("LSTM Model", toolStackX, toolStartY + toolGapY));
-		pushConn({
-			from: { type: "tool", id: lstmId, port: 0 },
-			to: { type: "block", id: blockId, inputIndex: TOOL_PORT_OFFSET },
-		});
-		pushConn({
-			from: { type: "tool", id: cnnId, port: 0 },
-			to: { type: "block", id: blockId, inputIndex: TOOL_PORT_OFFSET },
-		});
 	} else if (subTaskId === "ST-2") {
-		const blockId = pushBlock(blockFromRegistry("manuals-guide-agent", midX, topY));
+		const block = blockFromRegistry("manuals-guide-agent", midX, topY);
+		const blockId = pushBlock(block);
 
-		// Data (manual PDF)
-		const [manualToolId] = placeDataTools(["manual"]);
-		if (manualToolId) {
+		const toolItems: ToolRowItem[] = [
+			...buildDataToolItems(["manual"]),
+			{ preset: "PDF Parser" },
+			{ preset: "Embedding Model" },
+			{ preset: "Vector Store" },
+		];
+		const toolIds = placeToolsInRow(block, toolItems);
+		toolIds.forEach((toolId) => {
 			pushConn({
-				from: { type: "tool", id: manualToolId, port: 0 },
+				from: { type: "tool", id: toolId, port: 0 },
 				to: { type: "block", id: blockId, inputIndex: TOOL_PORT_OFFSET },
 			});
-		}
-
-		// Retrieval tools (directly to block tool slot)
-		const pdfId = pushTool(toolNodeFromPreset("PDF Parser", toolStackX, toolStartY));
-		const embedId = pushTool(toolNodeFromPreset("Embedding Model", toolStackX, toolStartY + toolGapY));
-		const storeId = pushTool(toolNodeFromPreset("Vector Store", toolStackX, toolStartY + toolGapY * 2));
-		pushConn({
-			from: { type: "tool", id: embedId, port: 0 },
-			to: { type: "block", id: blockId, inputIndex: TOOL_PORT_OFFSET },
-		});
-		pushConn({
-			from: { type: "tool", id: storeId, port: 0 },
-			to: { type: "block", id: blockId, inputIndex: TOOL_PORT_OFFSET },
-		});
-		pushConn({
-			from: { type: "tool", id: pdfId, port: 0 },
-			to: { type: "block", id: blockId, inputIndex: TOOL_PORT_OFFSET },
 		});
 	} else if (subTaskId === "ST-3") {
-		const blockId = pushBlock(blockFromRegistry("conversational-chatbot-agent", midX, topY));
+		const block = blockFromRegistry("conversational-chatbot-agent", midX, topY);
+		const blockId = pushBlock(block);
 
-		// Optional: include the anomaly forecast if present
 		const forecastAsset = dataAssets.find((a) => a.kind === "timeseries");
-		if (forecastAsset) {
-			const forecastId = pushTool(
-				toolNodeFromPreset("Data Asset", leftX, dataToolStartY + 30, { name: forecastAsset.label, tagline: "context" })
-			);
+		const toolItems: ToolRowItem[] = [
+			...(forecastAsset
+				? [
+						{
+							preset: "Data Asset",
+							overrides: { name: forecastAsset.label, tagline: "context" },
+						},
+				  ]
+				: []),
+			{ preset: "Chat Orchestrator" },
+		];
+		const toolIds = placeToolsInRow(block, toolItems);
+		toolIds.forEach((toolId) => {
 			pushConn({
-				from: { type: "tool", id: forecastId, port: 0 },
+				from: { type: "tool", id: toolId, port: 0 },
 				to: { type: "block", id: blockId, inputIndex: TOOL_PORT_OFFSET },
 			});
-		}
-
-		const chatToolId = pushTool(toolNodeFromPreset("Chat Orchestrator", rightX, toolStartY));
-		pushConn({
-			from: { type: "tool", id: chatToolId, port: 0 },
-			to: { type: "block", id: blockId, inputIndex: TOOL_PORT_OFFSET },
 		});
 	}
 

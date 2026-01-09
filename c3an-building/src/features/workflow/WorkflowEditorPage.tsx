@@ -368,6 +368,9 @@ export default function WorkflowEditorPage() {
       const nestedPlans = plan.sub_plans?.plans ?? [];
       if (nestedPlans.length > 0) {
         beginSubplanLoading();
+        setPlanCanvasKey((prev) => prev + 1);
+        const nextPlans = nestedPlans.map((entry) => ({ ...entry }));
+        const nextConnections = [...(plan.sub_plans?.connections ?? [])];
         setPlanStack((prev) => [
           ...prev,
           {
@@ -377,8 +380,8 @@ export default function WorkflowEditorPage() {
             parentPlanId: plan.id,
           },
         ]);
-        setPlans(nestedPlans);
-        setPlanConnections(plan.sub_plans?.connections ?? []);
+        setPlans(nextPlans);
+        setPlanConnections(nextConnections);
         setActivePlanId(null);
         planLinkFromRef.current = null;
         setViewMode("plan");
@@ -400,6 +403,7 @@ export default function WorkflowEditorPage() {
       planStack.length,
       plans,
       setActivePlanId,
+      setPlanCanvasKey,
       setPlanConnections,
       setPlanStack,
       setPlans,
@@ -410,40 +414,74 @@ export default function WorkflowEditorPage() {
   const loadingViewMode = isSubplanLoading ? "plan" : (pendingViewMode ?? viewMode);
 
   const handlePlanBack = useCallback(() => {
-    setPlanStack((prev) => {
-      if (!prev.length) return prev;
-      const nextStack = prev.slice(0, -1);
-      const parentContext = prev[prev.length - 1];
-      const parentPlanId = parentContext.parentPlanId;
-      setPlans((currentPlans) => {
-        if (!parentPlanId) return parentContext.plans;
-        return parentContext.plans.map((plan) =>
-          plan.id === parentPlanId
-            ? {
-                ...plan,
-                sub_plans: {
-                  plans: currentPlans,
-                  connections: planConnections,
-                },
-              }
-            : plan
-        );
-      });
-      setPlanConnections(parentContext.planConnections);
-      setActivePlanId(parentContext.activePlanId);
-      planLinkFromRef.current = null;
-      setViewMode("plan");
-      clearWorkspaceUIState();
-      return nextStack;
+    if (subplanLoadingTimeoutRef.current !== null) {
+      window.clearTimeout(subplanLoadingTimeoutRef.current);
+      subplanLoadingTimeoutRef.current = null;
+    }
+    setIsSubplanLoading(false);
+    setPlanCanvasKey((prev) => prev + 1);
+    if (!planStack.length) return;
+    const parentContext = planStack[planStack.length - 1];
+    const nextStack = planStack.slice(0, -1);
+    const parentPlanId = parentContext.parentPlanId;
+    setPlans((currentPlans) => {
+      if (!parentPlanId) return parentContext.plans;
+      return parentContext.plans.map((plan) =>
+        plan.id === parentPlanId
+          ? {
+              ...plan,
+              sub_plans: {
+                plans: currentPlans,
+                connections: planConnections,
+              },
+            }
+          : plan
+      );
     });
+    setPlanConnections([...parentContext.planConnections]);
+    setActivePlanId(parentContext.activePlanId);
+    setPlanStack(nextStack);
+    planLinkFromRef.current = null;
+    setViewMode("plan");
+    clearWorkspaceUIState();
   }, [
     clearWorkspaceUIState,
     planConnections,
+    planStack,
     setActivePlanId,
+    setIsSubplanLoading,
+    setPlanCanvasKey,
     setPlanConnections,
     setPlanStack,
     setPlans,
     setViewMode,
+    subplanLoadingTimeoutRef,
+  ]);
+
+  const handleAgentBack = useCallback(() => {
+    if (planStack.length === 0) return;
+    setActivePanel((prev) => (prev === "tools" ? "blocks" : prev));
+    saveActivePlanWorkflow();
+    planLinkFromRef.current = null;
+    setModalBlockId(null);
+    setModalToolId(null);
+    clearWorkspaceUIState();
+    if (!showStartupLoading && viewMode !== "plan") {
+      beginViewSwitchLoading("plan");
+    } else {
+      setViewMode("plan");
+    }
+  }, [
+    beginViewSwitchLoading,
+    clearWorkspaceUIState,
+    planStack.length,
+    saveActivePlanWorkflow,
+    setActivePanel,
+    setModalBlockId,
+    setModalToolId,
+    setViewMode,
+    showStartupLoading,
+    viewMode,
   ]);
 
   usePlanBench({
@@ -543,12 +581,13 @@ export default function WorkflowEditorPage() {
       const rect = el.getBoundingClientRect();
       const localX = clientX - rect.left;
       const localY = clientY - rect.top;
+      const base = getTransform();
       return {
-        x: (localX - transform.x) / transform.zoom,
-        y: (localY - transform.y) / transform.zoom,
+        x: (localX - base.x) / base.zoom,
+        y: (localY - base.y) / base.zoom,
       };
     },
-    [containerEl, transform.x, transform.y, transform.zoom]
+    [containerEl, getTransform]
   );
 
   const { getBlockHandles, getToolHandles } = useNodeHandles({
@@ -785,6 +824,14 @@ export default function WorkflowEditorPage() {
 
   const modalBlock = modalBlockId ? blocks.find((b) => b.id === modalBlockId) ?? null : null;
   const modalTool = modalToolId ? tools.find((t) => t.id === modalToolId) ?? null : null;
+  const toolbarBackHandler =
+    planStack.length > 0
+      ? viewMode === "plan"
+        ? handlePlanBack
+        : viewMode === "agent"
+          ? handleAgentBack
+          : undefined
+      : undefined;
 
   return (
     <div className={`relative h-screen w-screen overflow-hidden ${appThemeClass}`}>
@@ -836,9 +883,7 @@ export default function WorkflowEditorPage() {
         theme={theme}
         fileInputRef={fileInputRef}
         downloadLabel={downloadLabel}
-        onPlanBackClick={
-          viewMode === "plan" && planStack.length > 0 ? handlePlanBack : undefined
-        }
+        onPlanBackClick={toolbarBackHandler}
         onC3ANClick={handleC3ANClick}
         onAboutClick={() => setActivePanel((prev) => (prev === "settings" ? null : "settings"))}
         onPlanningClick={() => {
@@ -862,6 +907,7 @@ export default function WorkflowEditorPage() {
             theme={theme}
             plans={plans}
             connections={planConnections}
+            planPillLabel={planStack.length > 0 ? "Subtask" : "Plan"}
             planLinkFromRef={planLinkFromRef}
             setPlans={setPlans}
             setPlanConnections={setPlanConnections}
@@ -926,11 +972,9 @@ export default function WorkflowEditorPage() {
         <BlockDetailsModal
           block={modalBlock}
           registryAgents={availableAgents}
-          toolPalette={toolPalette}
-          modalToolChoice={modalToolChoice}
+          tools={tools}
+          connections={connections}
           onClose={() => setModalBlockId(null)}
-          onToolChoiceChange={setModalToolChoice}
-          onAddTool={addToolToBlock}
           onToggleInputRequired={toggleInputRequired}
           onToggleOutputRequired={toggleOutputRequired}
           getBlockMode={getBlockMode}
@@ -941,6 +985,7 @@ export default function WorkflowEditorPage() {
         <ToolDetailsModal
           tool={modalTool}
           connections={connections}
+          blocks={blocks}
           onClose={() => setModalToolId(null)}
           onToggleInputRequired={toggleToolInputRequired}
           onToggleOutputRequired={toggleToolOutputRequired}

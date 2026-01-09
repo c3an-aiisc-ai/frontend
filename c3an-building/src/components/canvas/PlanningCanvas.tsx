@@ -17,6 +17,7 @@ type Props = {
   onEnterWorkflow: (plan: PlanningBlock) => void;
   onSelectPlan?: (plan: PlanningBlock) => void;
   plans: PlanningBlock[];
+  planPillLabel?: string;
   onDropPlanBlock?: (point: { x: number; y: number }, payload?: PlanDropPayload) => void;
   onPlanMove?: (id: string, x: number, y: number) => void;
   connections?: { from: string; to: string }[];
@@ -33,6 +34,7 @@ export default function PlanningCanvas({
   onEnterWorkflow,
   onSelectPlan,
   plans,
+  planPillLabel,
   onDropPlanBlock,
   onPlanMove,
   connections = [],
@@ -378,6 +380,7 @@ export default function PlanningCanvas({
               key={plan.id}
               plan={plan}
               modeOverride={getPlanMode(plan.id)}
+              pillLabel={plan.sub_plans?.plans?.length ? "Plan" : planPillLabel}
               onEnterWorkflow={() => onEnterWorkflow(plan)}
               toWorldPoint={toWorldPoint}
               linkingFrom={activeLink?.from === plan.id}

@@ -123,3 +123,4 @@ export const CUSTOM_AGENT_STORAGE_KEY = "c3an-custom-agents";
 export const CUSTOM_PLAN_STORAGE_KEY = "c3an-custom-plans";
 export const PENDING_PLAN_STORAGE_KEY = "c3an-pending-plan";
 export const PLAN_WORKSPACE_STORAGE_KEY = "c3an-plan-workspace";
+export const PLANNING_JSON_STORAGE_KEY = "c3an-planning-json";

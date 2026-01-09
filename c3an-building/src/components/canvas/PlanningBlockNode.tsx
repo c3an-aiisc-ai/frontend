@@ -7,6 +7,7 @@ import type { PlanningBlock } from "../../shared/types/planning";
 type Props = {
   plan: PlanningBlock;
   modeOverride?: "sequential" | "branch" | "aggregate" | null;
+  pillLabel?: string;
   onEnterWorkflow: () => void;
   onMove: (x: number, y: number) => void;
   toWorldPoint: (
@@ -29,6 +30,7 @@ type Props = {
 export default function PlanningBlockNode({
   plan,
   modeOverride,
+  pillLabel = "Plan",
   onEnterWorkflow,
   onMove,
   toWorldPoint,
@@ -108,7 +110,7 @@ export default function PlanningBlockNode({
           </div>
           <div className="flex items-center gap-2">
             <span className="rounded-full bg-amber-50 px-2 py-1 text-[10px] font-semibold uppercase text-amber-700 ring-1 ring-amber-100">
-              Plan
+              {pillLabel}
             </span>
             {onRemove && (
               <button

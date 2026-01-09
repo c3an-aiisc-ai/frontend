@@ -41,6 +41,9 @@ export default function Toolbar({
   onResetClick,
   onFileUpload,
 }: Props) {
+  void onC3ANClick;
+  void onEvalsClick;
+  void onUploadClick;
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const menuId = useId().replace(/:/g, "");
@@ -85,15 +88,12 @@ export default function Toolbar({
             Back
           </button>
         )}
-        <button className={actionButtonClass} onClick={onC3ANClick}>
-          C3AN
-        </button>
         <button className={actionButtonClass} onClick={onAboutClick}>
           About
         </button>
         {onPlanningClick && (
           <button className={actionButtonClass} onClick={onPlanningClick}>
-            Planning
+            PlanGen
           </button>
         )}
         {onEvaluationClick && (
@@ -106,14 +106,8 @@ export default function Toolbar({
             AgentGen
           </button>
         )}
-        <button className={actionButtonClass} onClick={onEvalsClick}>
-          Evals
-        </button>
         <button className={actionButtonClass} onClick={onDownloadClick}>
           {downloadText}
-        </button>
-        <button className={actionButtonClass} onClick={onUploadClick}>
-          Upload JSON
         </button>
         <button className={actionButtonClass} onClick={onRunClick}>
           Run
@@ -143,15 +137,12 @@ export default function Toolbar({
                 Back
               </button>
             )}
-            <button className={menuItemClass} onClick={() => handleMenuAction(onC3ANClick)} role="menuitem">
-              C3AN
-            </button>
             <button className={menuItemClass} onClick={() => handleMenuAction(onAboutClick)} role="menuitem">
               About
             </button>
             {onPlanningClick && (
               <button className={menuItemClass} onClick={() => handleMenuAction(onPlanningClick)} role="menuitem">
-                Planning
+                PlanGen
               </button>
             )}
             {onEvaluationClick && (
@@ -164,14 +155,8 @@ export default function Toolbar({
                 AgentGen
               </button>
             )}
-            <button className={menuItemClass} onClick={() => handleMenuAction(onEvalsClick)} role="menuitem">
-              Evals
-            </button>
             <button className={menuItemClass} onClick={() => handleMenuAction(onDownloadClick)} role="menuitem">
               {downloadText}
-            </button>
-            <button className={menuItemClass} onClick={() => handleMenuAction(onUploadClick)} role="menuitem">
-              Upload JSON
             </button>
             <button className={menuItemClass} onClick={() => handleMenuAction(onRunClick)} role="menuitem">
               Run

@@ -15,7 +15,7 @@ import type {
 } from "../../shared/types";
 import { TOOL_PORT_OFFSET } from "../../shared/constants";
 
-const countToolsConnectedToBlock = (blockId: string, connections: Connection[]): number => {
+const getToolIdsConnectedToBlock = (blockId: string, connections: Connection[]): Set<string> => {
   const directToolIds = connections
     .filter(
       (c) =>
@@ -26,7 +26,7 @@ const countToolsConnectedToBlock = (blockId: string, connections: Connection[]):
     )
     .map((c) => c.from.id);
 
-  if (directToolIds.length === 0) return 0;
+  if (directToolIds.length === 0) return new Set();
 
   const incomingByToolId = new Map<string, Set<string>>();
   connections.forEach((c) => {
@@ -51,7 +51,7 @@ const countToolsConnectedToBlock = (blockId: string, connections: Connection[]):
     });
   }
 
-  return seen.size;
+  return seen;
 };
 
 type DragHandlers = {
@@ -182,7 +182,7 @@ export default function AgentCanvasView({
 
         {blocks.map((block) => {
           const handles = getBlockHandles(block);
-          const toolCount = countToolsConnectedToBlock(block.id, connections);
+          const toolCount = getToolIdsConnectedToBlock(block.id, connections).size;
 
           return (
             <AgentBlock
