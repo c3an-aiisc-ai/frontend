@@ -123,7 +123,7 @@ export default function App() {
   const linkingRef = useRef(false);
   // Kevin 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { containerRef, transform, reset } = usePanZoom({
+  const { containerRef, containerEl, transform, reset } = usePanZoom({
     initial: { x: 0, y: 0, zoom: 1 },
     shouldAllowPan: (event) => {
       if (linkingRef.current) return false;
@@ -291,7 +291,7 @@ export default function App() {
 
   const toWorldPoint = useCallback(
     (clientX: number, clientY: number) => {
-      const el = containerRef.current;
+      const el = containerEl;
       if (!el) return null;
       const rect = el.getBoundingClientRect();
       const localX = clientX - rect.left;
@@ -301,7 +301,7 @@ export default function App() {
         y: (localY - transform.y) / transform.zoom,
       };
     },
-    [containerRef, transform.x, transform.y, transform.zoom],
+    [containerEl, transform.x, transform.y, transform.zoom],
   );
 
   const handleBlockDragStart = useCallback((event: DragEvent<HTMLDivElement>) => {
@@ -350,7 +350,7 @@ export default function App() {
   const handleCanvasDrop = useCallback(
     (event: DragEvent<HTMLDivElement>) => {
       event.preventDefault();
-      const el = containerRef.current;
+      const el = containerEl;
       if (!el) return;
 
       const payloadRaw =
@@ -2353,7 +2353,7 @@ export default function App() {
           onDrop={handleCanvasDrop}
           onPointerDownCapture={handleCanvasPointerDown}
         >
-          <Background transform={transform} theme={theme} preset={backgroundPreset} />
+          <Background transform={transform} theme={theme} />
           <div
             style={{
               position: "absolute",

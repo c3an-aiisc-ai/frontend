@@ -1,6 +1,6 @@
 // used to handle the zoom and movement and pass to the background
 import { useCallback, useEffect, useRef, useState } from "react";
-import { canvasConfig } from "../../../config";
+import { canvasConfig } from "../config";
 
 export type Transform = { x: number; y: number; zoom: number };
 

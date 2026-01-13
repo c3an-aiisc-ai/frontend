@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
 import type { Transform } from "../hooks/zoom";
-import { canvasConfig } from "../../../config";
+import { canvasConfig } from "../config";
 
 type Props = {
   transform?: Transform;

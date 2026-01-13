@@ -11,7 +11,7 @@ const getRoute = (): RouteKey => {
 };
 
 export default function App() {
-  const [route, setRoute] = useState<Route>(() => getRoute());
+  const [route, setRoute] = useState<RouteKey>(() => getRoute());
 
   useEffect(() => {
     const handleChange = () => setRoute(getRoute());
