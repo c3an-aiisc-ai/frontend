@@ -1,0 +1,7 @@
+{
+  "buildCommand": "cd c3an-building && npm install && npm run build",
+  "outputDirectory": "c3an-building/dist",
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/" }
+  ]
+}

@@ -1,41 +1,68 @@
-# C3AN Frontend Repo Map
+# C3AN Frontend
 
-This README focuses on the folder structure and what each area is responsible for.
+Visual workflow editor for building and orchestrating AI agent systems.
 
-**Top Level**
-- `c3an-building/` Frontend workspace root.
-- `c3an-building/dist/` Build output (generated).
-- `c3an-building/node_modules/` Installed dependencies (generated).
-- `c3an-building/public/` Static assets served as-is.
-- `c3an-building/scripts/` Repo utilities (e.g., unused source scan).
-- `c3an-building/src/` Application source (details below).
+## Overview
 
-**src**
-- `src/app/` App shell and top-level layout wiring.
-- `src/features/` Feature pages and their local components, hooks, and utilities.
-- `src/shared/` Cross-feature types, constants, registries, and helpers.
-- `src/styles/` Extracted component styles for readability.
-- `src/main.tsx` App entry point and bootstrapping.
-- `src/index.css` Global styles.
-- `src/App.tsx` Root component.
-- `src/App.css` App-level styles.
+C3AN is a canvas-based application that enables users to design multi-agent workflows through a drag-and-drop interface. Users can compose agent blocks, connect them with tools, and define evaluation metrics—all within an interactive visual environment.
 
-**src/features**
-- `src/features/workflow/` Workflow editor and canvas interactions.
-- `src/features/workflow/components/` Editor UI building blocks.
-- `src/features/workflow/components/canvas/` Nodes, connectors, and canvas visuals.
-- `src/features/workflow/components/modals/` Block/tool/evals modals.
-- `src/features/workflow/components/ui/` Sidebar, toolbar, and panels.
-- `src/features/workflow/hooks/` Editor state, drag/zoom/link, IO hooks.
-- `src/features/workflow/utils/` Workflow IO helpers and plan download shaping.
-- `src/features/planning/` Planning page and plan JSON intake/preview.
-- `src/features/agent-gen/` Agent generator page and JSON intake.
-- `src/features/evaluation/` Evaluation page UI and supporting components.
+### Core Capabilities
 
-**src/shared**
-- `src/shared/assets/` Icon assets used by the UI.
-- `src/shared/constants/` Registries, presets, and shared constants.
-- `src/shared/constants/registries/` JSON registries for agents.
-- `src/shared/planning/` Plan parsing and hydration utilities.
-- `src/shared/types/` Shared TypeScript types.
-- `src/shared/utils/` Generic helpers and custom agent/plan storage.
+| Feature | Description |
+|---------|-------------|
+| **Workflow Editor** | Drag-and-drop canvas for building agent pipelines |
+| **Planning View** | High-level task decomposition and dependency mapping |
+| **Agent Blocks** | Configurable AI agent nodes with typed inputs/outputs |
+| **Tool Integration** | Connect external tools and services to agent workflows |
+| **Evaluation System** | Define metrics and mappings for workflow assessment |
+
+## Quick Start
+
+```bash
+cd c3an-building
+npm install
+npm run dev
+```
+
+The app runs at `http://localhost:5173` by default.
+
+## Project Structure
+
+```
+c3an-building/
+├── src/
+│   ├── features/        # Page-level features (workflow, planning, evaluation)
+│   ├── components/      # Reusable UI components (canvas, modals, sidebar)
+│   ├── hooks/           # Custom React hooks for state and interactions
+│   ├── shared/          # Types, constants, and utilities
+│   └── styles/          # Global and component styles
+├── public/              # Static assets
+└── scripts/             # Build utilities
+```
+
+## Tech Stack
+
+- **React 19** — UI framework
+- **TypeScript** — Type safety
+- **Vite** — Build tooling
+- **Tailwind CSS** — Styling
+
+## Scripts
+
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Start development server |
+| `npm run build` | Production build |
+| `npm run preview` | Preview production build |
+| `npm run lint` | Run ESLint |
+
+## Architecture
+
+The application follows a feature-based architecture:
+
+1. **Features** contain page components and feature-specific logic
+2. **Components** are shared across features (canvas nodes, modals, UI elements)
+3. **Hooks** encapsulate reusable stateful logic (drag handling, zoom, linking)
+4. **Shared** provides types, constants, and utilities used throughout
+
+See [c3an-building/src/README.md](c3an-building/src/README.md) for detailed source documentation.
