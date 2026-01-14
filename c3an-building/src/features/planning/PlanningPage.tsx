@@ -1,9 +1,14 @@
 import { useMemo, useState } from "react";
-import type { PlanTemplate } from "../../shared/types/planning";
+import type { PlanSubTask, PlanTemplate, PlanTriple } from "../../shared/types/planning";
 import { parsePlanningJSON } from "../../shared/planning/parsePlan";
 import { readCustomPlans, writeCustomPlans } from "../../shared/utils/customPlans";
-import { PENDING_PLAN_STORAGE_KEY } from "../../shared/constants";
+import { PENDING_PLAN_STORAGE_KEY, PLANNING_JSON_STORAGE_KEY } from "../../shared/constants";
 import { buildUniqueId, isRecord, slugify } from "../../shared/utils";
+import {
+  buildKimoDemoPlanPayload,
+  extractDemoDataAssetsFromFiles,
+  isKimoDemoTaskDescription,
+} from "../workflow/demoWorkflow";
 
 const SAMPLE_JSON = `{
   "task_id": "task-7821",
@@ -103,6 +108,317 @@ const SAMPLE_JSON = `{
   ]
 }`;
 
+const SAMPLE_PLAIN_TEXT = `Develop a conversational chatbot that alerts an engineer when an anomaly occurs in the manufacturing pipeline, suggests relevant mitigation strategies from existing manuals, and can answer any engineer’s questions related to the pipeline or the anomaly. The chatbot should also predict future anomalies using historical data.`;
+
+type PlainTextTask = {
+  id?: string;
+  name: string;
+  description?: string;
+  knowledge_dependencies?: string[];
+  required_skills?: string[];
+};
+
+type PlainTextParseResult =
+  | { plan: { task_id: string; main_task: string; sub_tasks: PlanSubTask[]; triples: PlanTriple[] } }
+  | { error: string };
+
+const FIELD_SEPARATORS = /[,;]/g;
+
+function parseList(value: string): string[] {
+  return value
+    .split(FIELD_SEPARATORS)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function stripLinePrefix(value: string): string {
+  return value.replace(/^\s*(?:[-*+]\s+|\d+\.\s+)/, "").trim();
+}
+
+function looksLikeTaskId(value: string): boolean {
+  return /^(st|task|plan)-[a-z0-9-]+$/i.test(value.trim());
+}
+
+function looksLikeTripleLine(line: string): boolean {
+  if (line.includes("->")) return true;
+  return /\S+\s+(seq|brn|agg)\s+\S+/i.test(line);
+}
+
+function splitSegments(value: string): string[] {
+  if (value.includes("|")) {
+    return value
+      .split("|")
+      .map((segment) => segment.trim())
+      .filter(Boolean);
+  }
+  if (value.includes(" - ")) {
+    const [head, ...rest] = value.split(" - ");
+    return [head.trim(), rest.join(" - ").trim()].filter(Boolean);
+  }
+  return [value.trim()].filter(Boolean);
+}
+
+function parseTaskLine(line: string): PlainTextTask | null {
+  const cleaned = stripLinePrefix(line);
+  if (!cleaned) return null;
+  if (cleaned.includes("->")) return null;
+
+  const segments = splitSegments(cleaned);
+  const task: PlainTextTask = { name: "" };
+
+  segments.forEach((segment) => {
+    const trimmed = segment.trim();
+    if (!trimmed) return;
+    const lower = trimmed.toLowerCase();
+    const value = trimmed.includes(":") ? trimmed.split(":").slice(1).join(":").trim() : "";
+
+    if (lower.startsWith("id:") || lower.startsWith("task id:") || lower.startsWith("sub_task_id:")) {
+      if (value) task.id = value;
+      return;
+    }
+    if (lower.startsWith("name:")) {
+      if (value) task.name = value;
+      return;
+    }
+    if (lower.startsWith("description:") || lower.startsWith("desc:")) {
+      if (value) task.description = value;
+      return;
+    }
+    if (
+      lower.startsWith("knowledge:") ||
+      lower.startsWith("deps:") ||
+      lower.startsWith("dependencies:") ||
+      lower.startsWith("kg:")
+    ) {
+      if (value) task.knowledge_dependencies = parseList(value);
+      return;
+    }
+    if (
+      lower.startsWith("skills:") ||
+      lower.startsWith("required skills:") ||
+      lower.startsWith("required:") ||
+      lower.startsWith("req:")
+    ) {
+      if (value) task.required_skills = parseList(value);
+      return;
+    }
+
+    if (!task.id && looksLikeTaskId(trimmed) && segments.length > 1) {
+      task.id = trimmed;
+      return;
+    }
+    if (!task.name) {
+      task.name = trimmed;
+      return;
+    }
+    if (!task.description) {
+      task.description = trimmed;
+      return;
+    }
+    task.description = `${task.description} ${trimmed}`.trim();
+  });
+
+  if (!task.name) return null;
+  return task;
+}
+
+type TaskLookup = {
+  byIndex: Map<number, string>;
+  byId: Map<string, string>;
+  byName: Map<string, string>;
+};
+
+function resolveTaskRef(value: string, lookup: TaskLookup): string | null {
+  const cleaned = value.trim();
+  if (!cleaned) return null;
+  const normalized = cleaned.replace(/^#/, "");
+  if (/^\d+$/.test(normalized)) {
+    const index = Number(normalized);
+    return lookup.byIndex.get(index) ?? null;
+  }
+  const key = normalized.toLowerCase();
+  return lookup.byId.get(key) ?? lookup.byName.get(key) ?? null;
+}
+
+function parseTripleLine(
+  line: string,
+  lookup: TaskLookup
+): { triple: PlanTriple | null; unresolved: string[] } {
+  const cleaned = stripLinePrefix(line);
+  if (!cleaned) return { triple: null, unresolved: [] };
+
+  let fromToken = "";
+  let toToken = "";
+  let op: PlanTriple["op"] = "seq";
+
+  if (cleaned.includes("->")) {
+    const [fromRaw, toRaw] = cleaned.split("->");
+    fromToken = fromRaw?.trim() ?? "";
+    let right = toRaw?.trim() ?? "";
+    const opMatch = right.match(/\((seq|brn|agg)\)/i);
+    if (opMatch) {
+      op = opMatch[1].toLowerCase() as PlanTriple["op"];
+      right = right.replace(opMatch[0], "").trim();
+    } else {
+      const inlineOp = right.match(/\b(seq|brn|agg)\b/i);
+      if (inlineOp) {
+        op = inlineOp[1].toLowerCase() as PlanTriple["op"];
+        right = right.replace(inlineOp[0], "").trim();
+      }
+    }
+    toToken = right;
+  } else {
+    const opMatch = cleaned.match(/\b(seq|brn|agg)\b/i);
+    if (!opMatch) return { triple: null, unresolved: [] };
+    op = opMatch[1].toLowerCase() as PlanTriple["op"];
+    const parts = cleaned.split(new RegExp(`\\b${opMatch[1]}\\b`, "i"));
+    fromToken = parts[0]?.trim() ?? "";
+    toToken = parts.slice(1).join(opMatch[1]).trim();
+  }
+
+  if (!fromToken || !toToken) return { triple: null, unresolved: [] };
+  const unresolved: string[] = [];
+  const from = resolveTaskRef(fromToken, lookup);
+  const to = resolveTaskRef(toToken, lookup);
+  if (!from) unresolved.push(fromToken);
+  if (!to) unresolved.push(toToken);
+  if (unresolved.length) return { triple: null, unresolved };
+  return { triple: { from: from!, op, to: to! }, unresolved: [] };
+}
+
+function parsePlainTextPlan(input: string): PlainTextParseResult {
+  const lines = input
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => Boolean(line))
+    .filter((line) => !line.startsWith("#"));
+
+  let mainTask = "";
+  let taskId = "";
+  const taskLines: string[] = [];
+  const tripleLines: string[] = [];
+  let mode: "tasks" | "triples" = "tasks";
+
+  lines.forEach((line) => {
+    const lower = line.toLowerCase();
+    if (lower.startsWith("task id:") || lower.startsWith("plan id:") || lower.startsWith("id:")) {
+      taskId = line.split(":").slice(1).join(":").trim();
+      return;
+    }
+    if (lower.startsWith("main task:") || lower.startsWith("main:") || lower.startsWith("plan:")) {
+      mainTask = line.split(":").slice(1).join(":").trim();
+      return;
+    }
+    if (lower.startsWith("subtasks:") || lower.startsWith("tasks:")) {
+      mode = "tasks";
+      return;
+    }
+    if (
+      lower.startsWith("triples:") ||
+      lower.startsWith("connections:") ||
+      lower.startsWith("edges:")
+    ) {
+      mode = "triples";
+      return;
+    }
+
+    const tripleHint = looksLikeTripleLine(line);
+    if (mode === "triples" || (mode === "tasks" && tripleHint && taskLines.length > 0)) {
+      tripleLines.push(line);
+    } else {
+      taskLines.push(line);
+    }
+  });
+
+  const rawTasks = taskLines
+    .map((line) => parseTaskLine(line))
+    .filter((entry): entry is PlainTextTask => Boolean(entry));
+
+  if (rawTasks.length === 0) {
+    return { error: "Add at least one task line under Subtasks." };
+  }
+
+  if (!mainTask) {
+    mainTask = rawTasks[0]?.name ?? "";
+  }
+  if (!mainTask) {
+    return { error: "Add a main task line such as \"Main task: ...\"." };
+  }
+
+  const subTasks: PlanSubTask[] = rawTasks.map((task, index) => {
+    const subTaskId = task.id?.trim() || `st-${String(index + 1).padStart(3, "0")}`;
+    const subTask: PlanSubTask = {
+      sub_task_id: subTaskId,
+      name: task.name.trim(),
+    };
+    if (task.description) subTask.description = task.description;
+    if (task.knowledge_dependencies?.length) {
+      subTask.knowledge_dependencies = task.knowledge_dependencies;
+    }
+    if (task.required_skills?.length) {
+      subTask.required_skills = task.required_skills;
+    }
+    return subTask;
+  });
+
+  const lookup: TaskLookup = {
+    byIndex: new Map(),
+    byId: new Map(),
+    byName: new Map(),
+  };
+  subTasks.forEach((task, index) => {
+    lookup.byIndex.set(index + 1, task.sub_task_id);
+    lookup.byId.set(task.sub_task_id.toLowerCase(), task.sub_task_id);
+    lookup.byName.set(task.name.trim().toLowerCase(), task.sub_task_id);
+  });
+
+  if (tripleLines.length === 0) {
+    return { error: "Add triple lines under a Triples: section." };
+  }
+
+  const triples: PlanTriple[] = [];
+  const unresolved = new Set<string>();
+  const invalidLines: string[] = [];
+  tripleLines.forEach((line) => {
+    const result = parseTripleLine(line, lookup);
+    if (result.unresolved.length) {
+      result.unresolved.forEach((entry) => unresolved.add(entry));
+      return;
+    }
+    if (!result.triple) {
+      invalidLines.push(line);
+      return;
+    }
+    triples.push(result.triple);
+  });
+
+  if (unresolved.size > 0) {
+    return {
+      error: `Unknown task references in triples: ${Array.from(unresolved).join(", ")}.`,
+    };
+  }
+  if (invalidLines.length > 0) {
+    return {
+      error: `Could not parse triple lines: ${invalidLines.join(" | ")}.`,
+    };
+  }
+
+  if (triples.length === 0) {
+    return { error: "Provide at least one triple to connect tasks." };
+  }
+
+  const resolvedTaskId = taskId || `task-${slugify(mainTask) || "plan"}`;
+
+  return {
+    plan: {
+      task_id: resolvedTaskId,
+      main_task: mainTask,
+      sub_tasks: subTasks,
+      triples,
+    },
+  };
+}
+
 
 function normalizePlanTemplate(
   value: unknown,
@@ -132,7 +448,7 @@ function normalizePlanTemplate(
       : typeof record.id === "string"
         ? record.id.trim()
         : "");
-  const name = rawName || rawMainTask || rawId || `Plan ${index + 1}`;
+  const name = rawName || rawTaskId || rawMainTask || rawId || `Plan ${index + 1}`;
   const query =
     typeof record.query === "string"
       ? record.query.trim()
@@ -210,10 +526,31 @@ function normalizePlanPayload(value: unknown, index: number): Record<string, unk
   return payload;
 }
 
-function queuePlansForBench(plans: Record<string, unknown>[]) {
+function queuePlansForBench(plans: Record<string, unknown>[], dataAssets?: unknown[]) {
   if (typeof window === "undefined" || typeof localStorage === "undefined") return;
   try {
-    localStorage.setItem(PENDING_PLAN_STORAGE_KEY, JSON.stringify({ mode: "plan", plans }));
+    localStorage.setItem(
+      PENDING_PLAN_STORAGE_KEY,
+      JSON.stringify({ mode: "plan", plans, data_assets: Array.isArray(dataAssets) ? dataAssets : [] })
+    );
+  } catch {
+    // Ignore storage failures (e.g., quota or private mode).
+  }
+}
+
+function readStoredJsonInput(): string {
+  if (typeof window === "undefined" || typeof localStorage === "undefined") return "";
+  try {
+    return localStorage.getItem(PLANNING_JSON_STORAGE_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function writeStoredJsonInput(value: string): void {
+  if (typeof window === "undefined" || typeof localStorage === "undefined") return;
+  try {
+    localStorage.setItem(PLANNING_JSON_STORAGE_KEY, value);
   } catch {
     // Ignore storage failures (e.g., quota or private mode).
   }
@@ -228,61 +565,179 @@ function extractPlans(value: unknown): unknown[] {
 }
 
 export default function PlanningPage() {
-  const [jsonInput, setJsonInput] = useState(SAMPLE_JSON);
+  const [jsonInput, setJsonInput] = useState(() => readStoredJsonInput());
   const [parseError, setParseError] = useState<string | null>(null);
+  const [plainTextInput, setPlainTextInput] = useState(SAMPLE_PLAIN_TEXT);
+  const [plainTextError, setPlainTextError] = useState<string | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [loadingLabel, setLoadingLabel] = useState("Generating plan...");
+  const MIN_LOADING_MS = 300;
+  const [dataFiles, setDataFiles] = useState<File[]>([]);
+  const [dataFileError, setDataFileError] = useState<string | null>(null);
   const [customPlans, setCustomPlans] = useState<PlanTemplate[]>(() => readCustomPlans());
   const [lastAdded, setLastAdded] = useState<PlanTemplate[]>([]);
 
+  const updateJsonInput = (value: string) => {
+    setJsonInput(value);
+    writeStoredJsonInput(value);
+  };
+
   const usedIds = useMemo(() => new Set(customPlans.map((plan) => plan.id)), [customPlans]);
 
-  const handleGenerate = () => {
-    if (!jsonInput.trim()) {
-      setParseError("Paste JSON to generate plan templates.");
-      setLastAdded([]);
-      return;
-    }
-    try {
-      const parsed = JSON.parse(jsonInput) as unknown;
-      const entries = extractPlans(parsed);
-      if (entries.length === 0) {
-        setParseError("No plans found. Provide an array or { plans: [...] }.");
-        setLastAdded([]);
-        return;
-      }
-      const nextUsed = new Set(usedIds);
-      const normalized = entries
-        .map((entry, index) => normalizePlanTemplate(entry, index, nextUsed))
-        .filter((entry): entry is PlanTemplate => Boolean(entry));
-      const payloads = entries
-        .map((entry, index) => normalizePlanPayload(entry, index))
-        .filter((entry): entry is Record<string, unknown> => Boolean(entry));
+  const formatFileSize = (size: number) => {
+    if (!Number.isFinite(size)) return "";
+    if (size < 1024) return `${size} B`;
+    const kb = size / 1024;
+    if (kb < 1024) return `${kb.toFixed(1)} KB`;
+    return `${(kb / 1024).toFixed(1)} MB`;
+  };
 
-      if (normalized.length === 0 || payloads.length === 0) {
-        setParseError("No valid plans found in the input.");
-        setLastAdded([]);
-        return;
-      }
+  const startLoading = (label: string) => {
+    setLoadingLabel(label);
+    setIsGenerating(true);
+  };
 
-      const nextPlans = [...customPlans, ...normalized];
-      setCustomPlans(nextPlans);
-      writeCustomPlans(nextPlans);
-      setLastAdded(normalized);
-      setParseError(null);
-      queuePlansForBench(payloads);
-      window.location.hash = "#/workflow";
-    } catch (error) {
-      setParseError(error instanceof Error ? `Invalid JSON: ${error.message}` : "Invalid JSON.");
-      setLastAdded([]);
+  const stopLoading = () => {
+    setIsGenerating(false);
+  };
+
+  const stopLoadingAfterMinimum = (startedAt: number) => {
+    const elapsed = Date.now() - startedAt;
+    const remaining = MIN_LOADING_MS - elapsed;
+    if (remaining > 0) {
+      window.setTimeout(stopLoading, remaining);
+    } else {
+      stopLoading();
     }
   };
 
+  const applyPlanPayloads = (parsed: unknown): boolean => {
+    const entries = extractPlans(parsed);
+    if (entries.length === 0) {
+      setParseError("No plans found. Provide an array or { plans: [...] }.");
+      setLastAdded([]);
+      return false;
+    }
+    const nextUsed = new Set(usedIds);
+    const normalized = entries
+      .map((entry, index) => normalizePlanTemplate(entry, index, nextUsed))
+      .filter((entry): entry is PlanTemplate => Boolean(entry));
+    const payloads = entries
+      .map((entry, index) => normalizePlanPayload(entry, index))
+      .filter((entry): entry is Record<string, unknown> => Boolean(entry));
+
+    if (normalized.length === 0 || payloads.length === 0) {
+      setParseError("No valid plans found in the input.");
+      setLastAdded([]);
+      return false;
+    }
+
+    const nextPlans = [...customPlans, ...normalized];
+    setCustomPlans(nextPlans);
+    writeCustomPlans(nextPlans);
+    setLastAdded(normalized);
+    setParseError(null);
+    void (async () => {
+      const dataAssets = await extractDemoDataAssetsFromFiles(dataFiles);
+      queuePlansForBench(payloads, dataAssets);
+      window.location.hash = "#/workflow";
+    })();
+    return true;
+  };
+
+  const handleGenerate = () => {
+    startLoading("Generating plan...");
+    setTimeout(() => {
+      if (!jsonInput.trim()) {
+        setParseError("Paste JSON to generate plan templates.");
+        setLastAdded([]);
+        stopLoading();
+        return;
+      }
+      try {
+        const parsed = JSON.parse(jsonInput) as unknown;
+        if (!applyPlanPayloads(parsed)) {
+          stopLoading();
+        }
+      } catch (error) {
+        setParseError(error instanceof Error ? `Invalid JSON: ${error.message}` : "Invalid JSON.");
+        setLastAdded([]);
+        stopLoading();
+      }
+    }, 0);
+  };
+
+  const handleGenerateFromText = () => {
+    const startedAt = Date.now();
+    startLoading("Generating plan...");
+    setTimeout(() => {
+      const finish = () => stopLoadingAfterMinimum(startedAt);
+      if (!plainTextInput.trim()) {
+        setPlainTextError("Paste plain text to build JSON.");
+        finish();
+        return;
+      }
+
+      const runWorkflow = (plan: {
+        task_id: string;
+        main_task: string;
+        sub_tasks: PlanSubTask[];
+        triples: PlanTriple[];
+      }) => {
+        const json = JSON.stringify(plan, null, 2);
+        updateJsonInput(json);
+        setPlainTextError(null);
+        setParseError(null);
+        if (!applyPlanPayloads(plan)) {
+          finish();
+        }
+      };
+
+      if (isKimoDemoTaskDescription(plainTextInput)) {
+        const plan = buildKimoDemoPlanPayload(plainTextInput);
+        runWorkflow(plan);
+        return;
+      }
+      const parsed = parsePlainTextPlan(plainTextInput);
+      if ("error" in parsed) {
+        setPlainTextError(parsed.error);
+        finish();
+        return;
+      }
+      runWorkflow(parsed.plan);
+    }, 0);
+  };
+
+  const handleUsePlainSample = () => {
+    setPlainTextInput(SAMPLE_PLAIN_TEXT);
+    setPlainTextError(null);
+  };
+
+  const handleClearPlainText = () => {
+    setPlainTextInput("");
+    setPlainTextError(null);
+  };
+
+  const handleDataFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? []);
+    if (files.length === 0) return;
+    setDataFiles(files);
+    setDataFileError(null);
+    event.currentTarget.value = "";
+  };
+
+  const handleClearDataFiles = () => {
+    setDataFiles([]);
+    setDataFileError(null);
+  };
+
   const handleUseSample = () => {
-    setJsonInput(SAMPLE_JSON);
+    updateJsonInput(SAMPLE_JSON);
     setParseError(null);
   };
 
   const handleClearInput = () => {
-    setJsonInput("");
+    updateJsonInput("");
     setParseError(null);
     setLastAdded([]);
   };
@@ -318,7 +773,15 @@ export default function PlanningPage() {
   };
 
   return (
-    <div className="h-screen overflow-y-auto bg-gradient-to-br from-slate-50 via-white to-amber-50 text-slate-900">
+    <div className="relative h-screen overflow-y-auto bg-gradient-to-br from-slate-50 via-white to-amber-50 text-slate-900">
+      {isGenerating && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-white/80 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-4 rounded-2xl border border-slate-200 bg-white/90 px-6 py-5 shadow-lg">
+            <div className="h-10 w-10 animate-spin rounded-full border-4 border-slate-200 border-t-amber-500" />
+            <div className="text-sm font-semibold text-slate-700">{loadingLabel}</div>
+          </div>
+        </div>
+      )}
       <div className="relative overflow-hidden">
         <div className="pointer-events-none absolute -top-32 right-10 h-72 w-72 rounded-full bg-amber-200/40 blur-3xl" />
         <div className="pointer-events-none absolute -bottom-32 left-10 h-72 w-72 rounded-full bg-emerald-200/40 blur-3xl" />
@@ -349,14 +812,6 @@ export default function PlanningPage() {
             <button
               className="btn-pill btn-pill-light"
               onClick={() => {
-                window.location.hash = "#/evaluation";
-              }}
-            >
-              Evaluation
-            </button>
-            <button
-              className="btn-pill btn-pill-light"
-              onClick={() => {
                 window.location.hash = "#/agentgen";
               }}
             >
@@ -372,136 +827,241 @@ export default function PlanningPage() {
         </header>
 
         <div className="mt-10 grid gap-6 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
-          <section className="panel bg-white/80">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h2 className="text-lg font-semibold text-slate-900">JSON intake</h2>
-                <p className="mt-1 text-xs text-slate-600">
-                  Accepts {`{ plans: [...] }`}, an array, or a single plan with task_id, sub_tasks, and triples.
-                </p>
+          <div className="space-y-6">
+            <section className="panel bg-white/80">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-900">Task description</h2>
+                  <p className="mt-1 text-xs text-slate-600">
+                    Describe the task in natural language. Generate Plan to populate the generator below.
+                  </p>
+                </div>
+                <span className="pill-tag pill-tag-amber">
+                  TEXT
+                </span>
               </div>
-              <span className="pill-tag pill-tag-amber">
-                JSON
-              </span>
-            </div>
 
-            <textarea
-              className="mt-4 min-h-[320px] w-full rounded-xl border border-slate-200 bg-white/90 px-3 py-2 text-xs font-mono text-slate-800 shadow-inner focus:outline-none focus:ring-2 focus:ring-amber-400"
-              value={jsonInput}
-              onChange={(event) => setJsonInput(event.target.value)}
-              spellCheck={false}
-            />
+              <textarea
+                className="mt-4 min-h-[280px] w-full rounded-xl border border-slate-200 bg-white/90 px-3 py-2 text-sm text-slate-800 shadow-inner focus:outline-none focus:ring-2 focus:ring-amber-400"
+                value={plainTextInput}
+                onChange={(event) => setPlainTextInput(event.target.value)}
+                spellCheck={false}
+              />
 
-            {parseError && <p className="mt-3 text-xs font-semibold text-rose-600">{parseError}</p>}
+              {plainTextError && (
+                <p className="mt-3 text-xs font-semibold text-rose-600">{plainTextError}</p>
+              )}
 
-            {lastAdded.length > 0 && (
-              <p className="mt-3 text-xs font-semibold text-amber-600">
-                Added {lastAdded.length} plan{lastAdded.length === 1 ? "" : "s"} to the sidebar palette.
-              </p>
-            )}
-
-            <div className="mt-4 flex flex-wrap items-center gap-2">
-              <button
-                className="btn-sm btn-sm-solid-amber px-4"
-                onClick={handleGenerate}
-              >
-                Generate plan
-              </button>
-              <button
-                className="btn-sm btn-sm-outline"
-                onClick={handleUseSample}
-              >
-                Use sample
-              </button>
-              <button
-                className="btn-sm btn-sm-outline"
-                onClick={handleClearInput}
-              >
-                Clear
-              </button>
-            </div>
-          </section>
-
-          <section className="panel bg-white/80">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <h2 className="text-lg font-semibold text-slate-900">Custom plan templates</h2>
-                <p className="mt-1 text-xs text-slate-600">
-                  These plans appear in the Blocks sidebar when you switch to plan view.
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold text-slate-600">
-                <span className="badge">Plans: {customPlans.length}</span>
-                <span className="badge">Triples: {planStats.totalTriples}</span>
-                <span className="badge">Nodes: {planStats.nodeCount}</span>
-              </div>
-            </div>
-
-            {customPlans.length === 0 ? (
-              <div className="mt-6 empty-state p-6 text-center text-sm text-slate-500">
-                No custom plans yet. Generate some from JSON to populate the palette.
-              </div>
-            ) : (
-              <div className="mt-6 space-y-3 max-h-[420px] overflow-y-auto pr-2">
-                {customPlans.map((plan, index) => (
-                  <div
-                    key={`${plan.id}-${index}`}
-                    className="card"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-semibold text-slate-900">{plan.name}</p>
-                        <p className="mt-1 text-xs text-slate-600">
-                          {plan.query || "No query provided."}
-                        </p>
-                      </div>
-                      <button
-                        className="text-xs font-semibold text-rose-600 hover:text-rose-500"
-                        onClick={() => handleRemovePlan(plan.id)}
-                      >
-                        Delete
-                      </button>
-                    </div>
-
-                    <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] font-semibold text-slate-600">
-                      <span className="badge-tight bg-amber-50 text-amber-700">
-                        {plan.triples.length} triples
-                      </span>
-                      <span className="badge-tight text-slate-700">
-                        ID: {plan.id}
-                      </span>
-                    </div>
-
-                    {plan.triples.length > 0 && (
-                      <div className="mt-3 space-y-1 text-[11px] text-slate-600">
-                        {plan.triples.slice(0, 3).map((triple, idx) => (
-                          <p key={`${plan.id}-triple-${idx}`}>
-                            {resolveNodeLabel(plan, triple.from)} -&gt; {resolveNodeLabel(plan, triple.to)}
-                          </p>
-                        ))}
-                        {plan.triples.length > 3 && (
-                          <p className="text-[10px] text-slate-400">
-                            +{plan.triples.length - 3} more triples
-                          </p>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {customPlans.length > 0 && (
-              <div className="mt-4 flex justify-end">
+              <div className="mt-4 flex flex-wrap items-center gap-2">
                 <button
-                  className="btn-sm btn-sm-rose"
-                  onClick={handleClearPlans}
+                  className="btn-sm btn-sm-solid-amber px-4"
+                  onClick={handleGenerateFromText}
                 >
-                  Clear custom plans
+                  Generate Plan
+                </button>
+                <button
+                  className="btn-sm btn-sm-outline"
+                  onClick={handleUsePlainSample}
+                >
+                  Use sample
+                </button>
+                <button
+                  className="btn-sm btn-sm-outline"
+                  onClick={handleClearPlainText}
+                >
+                  Clear
                 </button>
               </div>
-            )}
-          </section>
+            </section>
+
+            <section className="panel bg-white/80">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-900">Generate workflow</h2>
+                  <p className="mt-1 text-xs text-slate-600">
+                    Generated from the task description above. You can also paste {`{ plans: [...] }`}, an array, or a single plan with task_id, sub_tasks, and triples.
+                  </p>
+                </div>
+                <span className="pill-tag pill-tag-amber">
+                  JSON
+                </span>
+              </div>
+
+              <textarea
+                className="mt-4 min-h-[320px] w-full rounded-xl border border-slate-200 bg-white/90 px-3 py-2 text-xs font-mono text-slate-800 shadow-inner focus:outline-none focus:ring-2 focus:ring-amber-400"
+                value={jsonInput}
+                onChange={(event) => updateJsonInput(event.target.value)}
+                placeholder='Click "Generate Plan" above to create JSON here.'
+                spellCheck={false}
+              />
+
+              {parseError && <p className="mt-3 text-xs font-semibold text-rose-600">{parseError}</p>}
+
+              {lastAdded.length > 0 && (
+                <p className="mt-3 text-xs font-semibold text-amber-600">
+                  Added {lastAdded.length} plan{lastAdded.length === 1 ? "" : "s"} to the sidebar palette.
+                </p>
+              )}
+
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                <button
+                  className="btn-sm btn-sm-solid-amber px-4"
+                  onClick={handleGenerate}
+                >
+                  Generate plan
+                </button>
+                <button
+                  className="btn-sm btn-sm-outline"
+                  onClick={handleUseSample}
+                >
+                  Use sample
+                </button>
+                <button
+                  className="btn-sm btn-sm-outline"
+                  onClick={handleClearInput}
+                >
+                  Clear
+                </button>
+              </div>
+            </section>
+          </div>
+
+          <div className="space-y-6">
+            <section className="panel bg-white/80">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-900">Data files</h2>
+                  <p className="mt-1 text-xs text-slate-600">
+                    Upload supporting data files to keep track of inputs for this plan.
+                  </p>
+                </div>
+                <span className="pill-tag pill-tag-amber">
+                  FILES
+                </span>
+              </div>
+
+              <div className="mt-4 rounded-xl border border-dashed border-slate-200 bg-white/90 px-4 py-6 text-center text-xs text-slate-600">
+                <p className="font-semibold text-slate-700">Drag and drop is coming soon.</p>
+                <p className="mt-1">For now, use the file picker below.</p>
+              </div>
+
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                <label className="btn-sm btn-sm-solid-amber px-4 cursor-pointer">
+                  Upload files
+                  <input
+                    type="file"
+                    multiple
+                    className="hidden"
+                    onChange={handleDataFileChange}
+                  />
+                </label>
+                <button
+                  className="btn-sm btn-sm-outline"
+                  onClick={handleClearDataFiles}
+                >
+                  Clear files
+                </button>
+              </div>
+
+              {dataFileError && (
+                <p className="mt-3 text-xs font-semibold text-rose-600">{dataFileError}</p>
+              )}
+
+              {dataFiles.length > 0 ? (
+                <div className="mt-4 space-y-2 text-xs text-slate-700">
+                  {dataFiles.map((file) => (
+                    <div key={`${file.name}-${file.size}`} className="flex items-center justify-between gap-2">
+                      <span className="truncate">{file.name}</span>
+                      <span className="text-[11px] text-slate-500">{formatFileSize(file.size)}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-4 text-xs text-slate-500">No files uploaded yet.</p>
+              )}
+            </section>
+
+            <section className="panel bg-white/80">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-900">Custom plan templates</h2>
+                  <p className="mt-1 text-xs text-slate-600">
+                    These plans appear in the Blocks sidebar when you switch to plan view.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold text-slate-600">
+                  <span className="badge">Plans: {customPlans.length}</span>
+                  <span className="badge">Triples: {planStats.totalTriples}</span>
+                  <span className="badge">Nodes: {planStats.nodeCount}</span>
+                </div>
+              </div>
+
+              {customPlans.length === 0 ? (
+                <div className="mt-6 empty-state p-6 text-center text-sm text-slate-500">
+                  No custom plans yet. Generate some from JSON to populate the palette.
+                </div>
+              ) : (
+                <div className="mt-6 space-y-3 max-h-[420px] overflow-y-auto pr-2">
+                  {customPlans.map((plan, index) => (
+                    <div
+                      key={`${plan.id}-${index}`}
+                      className="card"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-900">{plan.name}</p>
+                          <p className="mt-1 text-xs text-slate-600">
+                            {plan.query || "No query provided."}
+                          </p>
+                        </div>
+                        <button
+                          className="text-xs font-semibold text-rose-600 hover:text-rose-500"
+                          onClick={() => handleRemovePlan(plan.id)}
+                        >
+                          Delete
+                        </button>
+                      </div>
+
+                      <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] font-semibold text-slate-600">
+                        <span className="badge-tight bg-amber-50 text-amber-700">
+                          {plan.triples.length} triples
+                        </span>
+                        <span className="badge-tight text-slate-700">
+                          ID: {plan.id}
+                        </span>
+                      </div>
+
+                      {plan.triples.length > 0 && (
+                        <div className="mt-3 space-y-1 text-[11px] text-slate-600">
+                          {plan.triples.slice(0, 3).map((triple, idx) => (
+                            <p key={`${plan.id}-triple-${idx}`}>
+                              {resolveNodeLabel(plan, triple.from)} -&gt; {resolveNodeLabel(plan, triple.to)}
+                            </p>
+                          ))}
+                          {plan.triples.length > 3 && (
+                            <p className="text-[10px] text-slate-400">
+                              +{plan.triples.length - 3} more triples
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {customPlans.length > 0 && (
+                <div className="mt-4 flex justify-end">
+                  <button
+                    className="btn-sm btn-sm-rose"
+                    onClick={handleClearPlans}
+                  >
+                    Clear custom plans
+                  </button>
+                </div>
+              )}
+            </section>
+          </div>
         </div>
       </div>
     </div>

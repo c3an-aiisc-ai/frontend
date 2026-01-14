@@ -10,6 +10,10 @@ export type PlanSubTask = {
   description?: string;
   knowledge_dependencies?: string[];
   required_skills?: string[];
+  // Keep both casings for JSON compatibility with demo/task-decomposition payloads.
+  // Canonical export format for this app is `Tools`.
+  Tools?: string[];
+  tools?: string[];
 };
 
 export type PlanConnections = Array<{ from: string; to: string }>;

@@ -50,6 +50,48 @@
       }
     },
     {
+      "id": "anomaly-prediction-agent",
+      "name": "AnomalyPredictor",
+      "description": "Detects and classifies anomalies in real time from multimodal manufacturing sensor data.",
+      "capabilities": ["multimodal anomaly detection", "anomaly classification", "real-time inference"],
+      "input_data_streams": {
+        "mandatory": ["sensor_data"],
+        "optional": ["historical_data"]
+      },
+      "output_data_streams": {
+        "mandatory": ["anomaly_report"],
+        "optional": ["future_anomaly_forecast"]
+      }
+    },
+    {
+      "id": "manuals-guide-agent",
+      "name": "ManualsGuide",
+      "description": "Retrieves relevant mitigation and troubleshooting steps from manufacturing manuals.",
+      "capabilities": ["retrieval", "mitigation guidance"],
+      "input_data_streams": {
+        "mandatory": ["anomaly_report"],
+        "optional": []
+      },
+      "output_data_streams": {
+        "mandatory": ["mitigation_steps"],
+        "optional": []
+      }
+    },
+    {
+      "id": "conversational-chatbot-agent",
+      "name": "ConversationalChatbot",
+      "description": "Combines anomaly prediction and manual-guided mitigation within an interactive conversational interface.",
+      "capabilities": ["dialog orchestration", "agent integration"],
+      "input_data_streams": {
+        "mandatory": ["user_query", "anomaly_report", "mitigation_steps"],
+        "optional": []
+      },
+      "output_data_streams": {
+        "mandatory": ["final_answer"],
+        "optional": []
+      }
+    },
+    {
       "id": "fusion-agent",
       "name": "FusionModel",
       "description": "Integrates outputs from multiple modalities to generate fused representations.",

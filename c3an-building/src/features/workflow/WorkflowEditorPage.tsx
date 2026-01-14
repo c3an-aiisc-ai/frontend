@@ -11,8 +11,7 @@ import PlanViewLoadingScreen from "./PlanViewLoadingScreen";
 import { usePanZoom, useWorkspace } from "../../hooks";
 import { usePlanBench } from "../../hooks/usePlanBench";
 import { usePlanWorkflow } from "../../hooks/usePlanWorkflow";
-import { useWorkflowImport } from "../../hooks/useWorkflowImport";
-import { useWorkflowDownload } from "../../hooks/useWorkflowDownload";
+import { useWorkflowDownload, useWorkflowImport } from "../../shared/planning/handleIO";
 import { useNodeHandles } from "../../hooks/useNodeHandles";
 import { useBlockIO } from "../../hooks/useBlockIO";
 import { useCanvasDrop } from "../../hooks/useCanvasDrop";
@@ -172,6 +171,8 @@ export default function WorkflowEditorPage() {
   const [isViewSwitchLoading, setIsViewSwitchLoading] = useState(false);
   const [pendingViewMode, setPendingViewMode] = useState<ViewMode | null>(null);
   const viewSwitchTimeoutRef = useRef<number | null>(null);
+  const [isSubplanLoading, setIsSubplanLoading] = useState(false);
+  const subplanLoadingTimeoutRef = useRef<number | null>(null);
   const [plans, setPlans] = useState<PlanningBlock[]>(() => initialPlanSnapshot?.plans ?? []);
   const nextPlanIdRef = useRef(
     initialPlanSnapshot?.nextPlanId ?? getNextPlanId(initialPlanSnapshot?.plans ?? [])
@@ -216,10 +217,27 @@ export default function WorkflowEditorPage() {
     }, VIEW_SWITCH_LOADING_MS);
   }, []);
 
+  const beginSubplanLoading = useCallback(() => {
+    if (subplanLoadingTimeoutRef.current !== null) {
+      window.clearTimeout(subplanLoadingTimeoutRef.current);
+      subplanLoadingTimeoutRef.current = null;
+    }
+
+    setIsSubplanLoading(true);
+
+    subplanLoadingTimeoutRef.current = window.setTimeout(() => {
+      setIsSubplanLoading(false);
+      subplanLoadingTimeoutRef.current = null;
+    }, VIEW_SWITCH_LOADING_MS);
+  }, [VIEW_SWITCH_LOADING_MS]);
+
   useEffect(() => {
     return () => {
       if (viewSwitchTimeoutRef.current !== null) {
         window.clearTimeout(viewSwitchTimeoutRef.current);
+      }
+      if (subplanLoadingTimeoutRef.current !== null) {
+        window.clearTimeout(subplanLoadingTimeoutRef.current);
       }
     };
   }, []);
@@ -349,6 +367,10 @@ export default function WorkflowEditorPage() {
     (plan: PlanningBlock) => {
       const nestedPlans = plan.sub_plans?.plans ?? [];
       if (nestedPlans.length > 0) {
+        beginSubplanLoading();
+        setPlanCanvasKey((prev) => prev + 1);
+        const nextPlans = nestedPlans.map((entry) => ({ ...entry }));
+        const nextConnections = [...(plan.sub_plans?.connections ?? [])];
         setPlanStack((prev) => [
           ...prev,
           {
@@ -358,23 +380,30 @@ export default function WorkflowEditorPage() {
             parentPlanId: plan.id,
           },
         ]);
-        setPlans(nestedPlans);
-        setPlanConnections(plan.sub_plans?.connections ?? []);
+        setPlans(nextPlans);
+        setPlanConnections(nextConnections);
         setActivePlanId(null);
         planLinkFromRef.current = null;
         setViewMode("plan");
         clearWorkspaceUIState();
         return;
       }
+      if (planStack.length > 0) {
+        beginViewSwitchLoading("agent");
+      }
       handleEnterPlanWorkflow(plan);
     },
     [
       activePlanId,
+      beginSubplanLoading,
+      beginViewSwitchLoading,
       clearWorkspaceUIState,
       handleEnterPlanWorkflow,
       planConnections,
+      planStack.length,
       plans,
       setActivePlanId,
+      setPlanCanvasKey,
       setPlanConnections,
       setPlanStack,
       setPlans,
@@ -382,41 +411,72 @@ export default function WorkflowEditorPage() {
     ]
   );
 
+  const loadingViewMode = isSubplanLoading ? "plan" : (pendingViewMode ?? viewMode);
+
   const handlePlanBack = useCallback(() => {
-    setPlanStack((prev) => {
-      if (!prev.length) return prev;
-      const nextStack = prev.slice(0, -1);
-      const parentContext = prev[prev.length - 1];
-      const parentPlanId = parentContext.parentPlanId;
-      setPlans((currentPlans) => {
-        if (!parentPlanId) return parentContext.plans;
-        return parentContext.plans.map((plan) =>
-          plan.id === parentPlanId
-            ? {
-                ...plan,
-                sub_plans: {
-                  plans: currentPlans,
-                  connections: planConnections,
-                },
-              }
-            : plan
-        );
-      });
-      setPlanConnections(parentContext.planConnections);
-      setActivePlanId(parentContext.activePlanId);
-      planLinkFromRef.current = null;
-      setViewMode("plan");
-      clearWorkspaceUIState();
-      return nextStack;
+    if (!planStack.length) return;
+    beginSubplanLoading();
+    setPlanCanvasKey((prev) => prev + 1);
+    const parentContext = planStack[planStack.length - 1];
+    const nextStack = planStack.slice(0, -1);
+    const parentPlanId = parentContext.parentPlanId;
+    setPlans((currentPlans) => {
+      if (!parentPlanId) return parentContext.plans;
+      return parentContext.plans.map((plan) =>
+        plan.id === parentPlanId
+          ? {
+              ...plan,
+              sub_plans: {
+                plans: currentPlans,
+                connections: planConnections,
+              },
+            }
+          : plan
+      );
     });
+    setPlanConnections([...parentContext.planConnections]);
+    setActivePlanId(parentContext.activePlanId);
+    setPlanStack(nextStack);
+    planLinkFromRef.current = null;
+    setViewMode("plan");
+    clearWorkspaceUIState();
   }, [
+    beginSubplanLoading,
     clearWorkspaceUIState,
     planConnections,
+    planStack,
     setActivePlanId,
+    setPlanCanvasKey,
     setPlanConnections,
     setPlanStack,
     setPlans,
     setViewMode,
+  ]);
+
+  const handleAgentBack = useCallback(() => {
+    if (planStack.length === 0) return;
+    setActivePanel((prev) => (prev === "tools" ? "blocks" : prev));
+    saveActivePlanWorkflow();
+    planLinkFromRef.current = null;
+    setModalBlockId(null);
+    setModalToolId(null);
+    clearWorkspaceUIState();
+    if (!showStartupLoading && viewMode !== "plan") {
+      beginViewSwitchLoading("plan");
+    } else {
+      setViewMode("plan");
+    }
+  }, [
+    beginViewSwitchLoading,
+    clearWorkspaceUIState,
+    planStack.length,
+    saveActivePlanWorkflow,
+    setActivePanel,
+    setModalBlockId,
+    setModalToolId,
+    setViewMode,
+    showStartupLoading,
+    viewMode,
   ]);
 
   usePlanBench({
@@ -497,7 +557,7 @@ export default function WorkflowEditorPage() {
   const { handleAgentDragStart, handlePlanDragStart, handleToolDragStart } = useSidebarDragHandlers();
 
 
-  const { containerRef, containerEl, transform, reset } = usePanZoom({
+  const { containerRef, containerEl, transform, setTransform, reset, getTransform } = usePanZoom({
     initial: { x: 0, y: 0, zoom: 1 },
     shouldAllowPan: (event) => {
       if (linkingRef.current) return false;
@@ -516,12 +576,13 @@ export default function WorkflowEditorPage() {
       const rect = el.getBoundingClientRect();
       const localX = clientX - rect.left;
       const localY = clientY - rect.top;
+      const base = getTransform();
       return {
-        x: (localX - transform.x) / transform.zoom,
-        y: (localY - transform.y) / transform.zoom,
+        x: (localX - base.x) / base.zoom,
+        y: (localY - base.y) / base.zoom,
       };
     },
-    [containerEl, transform.x, transform.y, transform.zoom]
+    [containerEl, getTransform]
   );
 
   const { getBlockHandles, getToolHandles } = useNodeHandles({
@@ -529,6 +590,89 @@ export default function WorkflowEditorPage() {
     linking,
     hoveredBlockId,
   });
+
+  const toWorldPointDuringDrag = useCallback(
+    (clientX: number, clientY: number) => {
+      const el = containerEl;
+      if (!el) return null;
+      const rect = el.getBoundingClientRect();
+      const margin = 140;
+      const maxSpeed = 22;
+      const base = getTransform();
+      let dx = 0;
+      let dy = 0;
+
+      const bounds = (() => {
+        if (draggingBlockId) {
+          const block = blocks.find((item) => item.id === draggingBlockId);
+          if (!block) return null;
+          const handles = getBlockHandles(block);
+          return {
+            left: base.x + block.x * base.zoom,
+            right: base.x + (block.x + handles.width) * base.zoom,
+            top: base.y + block.y * base.zoom,
+            bottom: base.y + (block.y + handles.height) * base.zoom,
+          };
+        }
+        if (draggingToolId) {
+          const tool = tools.find((item) => item.id === draggingToolId);
+          if (!tool) return null;
+          const handles = getToolHandles(tool);
+          return {
+            left: base.x + tool.x * base.zoom,
+            right: base.x + (tool.x + handles.width) * base.zoom,
+            top: base.y + tool.y * base.zoom,
+            bottom: base.y + (tool.y + handles.height) * base.zoom,
+          };
+        }
+        return null;
+      })();
+
+      const leftEdge = bounds?.left ?? clientX;
+      const rightEdge = bounds?.right ?? clientX;
+      const topEdge = bounds?.top ?? clientY;
+      const bottomEdge = bounds?.bottom ?? clientY;
+      const overflowRight = rightEdge - (rect.right - margin);
+      const overflowLeft = (rect.left + margin) - leftEdge;
+      const overflowBottom = bottomEdge - (rect.bottom - margin);
+      const overflowTop = (rect.top + margin) - topEdge;
+
+      if (overflowRight > 0) {
+        dx = -Math.min(maxSpeed, overflowRight);
+      } else if (overflowLeft > 0) {
+        dx = Math.min(maxSpeed, overflowLeft);
+      }
+
+      if (overflowBottom > 0) {
+        dy = -Math.min(maxSpeed, overflowBottom);
+      } else if (overflowTop > 0) {
+        dy = Math.min(maxSpeed, overflowTop);
+      }
+
+      const nextX = base.x + dx;
+      const nextY = base.y + dy;
+      if (dx || dy) {
+        setTransform({ x: nextX, y: nextY, zoom: base.zoom });
+      }
+      const localX = clientX - rect.left;
+      const localY = clientY - rect.top;
+      return {
+        x: (localX - nextX) / base.zoom,
+        y: (localY - nextY) / base.zoom,
+      };
+    },
+    [
+      blocks,
+      containerEl,
+      draggingBlockId,
+      draggingToolId,
+      getBlockHandles,
+      getToolHandles,
+      getTransform,
+      setTransform,
+      tools,
+    ]
+  );
 
   const { addToolToBlock, changeBlockInputs, changeBlockOutputs } = useBlockIO({
     blocks,
@@ -541,6 +685,10 @@ export default function WorkflowEditorPage() {
     nextConnectionIdRef,
     recalcBlockPorts,
   });
+  // Suppress unused variable warnings - these are available for future use
+  void addToolToBlock;
+  void modalToolChoice;
+  void setModalToolChoice;
 
   const { handleCanvasDragOver, handleCanvasDrop } = useCanvasDrop({
     availableAgents,
@@ -566,6 +714,7 @@ export default function WorkflowEditorPage() {
     toolDragOffsetRef,
     linkingRef,
     toWorldPoint,
+    toWorldPointDuringDrag,
   });
 
   const {
@@ -674,13 +823,21 @@ export default function WorkflowEditorPage() {
 
   const modalBlock = modalBlockId ? blocks.find((b) => b.id === modalBlockId) ?? null : null;
   const modalTool = modalToolId ? tools.find((t) => t.id === modalToolId) ?? null : null;
+  const toolbarBackHandler =
+    planStack.length > 0
+      ? viewMode === "plan"
+        ? handlePlanBack
+        : viewMode === "agent"
+          ? handleAgentBack
+          : undefined
+      : undefined;
 
   return (
     <div className={`relative h-screen w-screen overflow-hidden ${appThemeClass}`}>
       {showStartupLoading ? (
         <AgentViewLoadingScreen theme={theme} />
-      ) : isViewSwitchLoading ? (
-        (pendingViewMode ?? viewMode) === "plan" ? (
+      ) : isViewSwitchLoading || isSubplanLoading ? (
+        loadingViewMode === "plan" ? (
           <PlanViewLoadingScreen theme={theme} />
         ) : (
           <AgentViewLoadingScreen theme={theme} />
@@ -725,9 +882,7 @@ export default function WorkflowEditorPage() {
         theme={theme}
         fileInputRef={fileInputRef}
         downloadLabel={downloadLabel}
-        onPlanBackClick={
-          viewMode === "plan" && planStack.length > 0 ? handlePlanBack : undefined
-        }
+        onPlanBackClick={toolbarBackHandler}
         onC3ANClick={handleC3ANClick}
         onAboutClick={() => setActivePanel((prev) => (prev === "settings" ? null : "settings"))}
         onPlanningClick={() => {
@@ -745,12 +900,13 @@ export default function WorkflowEditorPage() {
       />
 
       <main className="relative z-0 h-full w-full">
-        {showStartupLoading || isViewSwitchLoading ? null : viewMode === "plan" ? (
+        {showStartupLoading || isViewSwitchLoading || isSubplanLoading ? null : viewMode === "plan" ? (
           <PlanCanvasView
             key={planCanvasKey}
             theme={theme}
             plans={plans}
             connections={planConnections}
+            planPillLabel={planStack.length > 0 ? "Subtask" : "Plan"}
             planLinkFromRef={planLinkFromRef}
             setPlans={setPlans}
             setPlanConnections={setPlanConnections}
@@ -815,11 +971,9 @@ export default function WorkflowEditorPage() {
         <BlockDetailsModal
           block={modalBlock}
           registryAgents={availableAgents}
-          toolPalette={toolPalette}
-          modalToolChoice={modalToolChoice}
+          tools={tools}
+          connections={connections}
           onClose={() => setModalBlockId(null)}
-          onToolChoiceChange={setModalToolChoice}
-          onAddTool={addToolToBlock}
           onToggleInputRequired={toggleInputRequired}
           onToggleOutputRequired={toggleOutputRequired}
           getBlockMode={getBlockMode}
@@ -830,6 +984,7 @@ export default function WorkflowEditorPage() {
         <ToolDetailsModal
           tool={modalTool}
           connections={connections}
+          blocks={blocks}
           onClose={() => setModalToolId(null)}
           onToggleInputRequired={toggleToolInputRequired}
           onToggleOutputRequired={toggleToolOutputRequired}

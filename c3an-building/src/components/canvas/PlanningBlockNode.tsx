@@ -7,6 +7,7 @@ import type { PlanningBlock } from "../../shared/types/planning";
 type Props = {
   plan: PlanningBlock;
   modeOverride?: "sequential" | "branch" | "aggregate" | null;
+  pillLabel?: string;
   onEnterWorkflow: () => void;
   onMove: (x: number, y: number) => void;
   toWorldPoint: (
@@ -29,6 +30,7 @@ type Props = {
 export default function PlanningBlockNode({
   plan,
   modeOverride,
+  pillLabel = "Plan",
   onEnterWorkflow,
   onMove,
   toWorldPoint,
@@ -45,7 +47,8 @@ export default function PlanningBlockNode({
   showHandles = false,
 }: Props) {
   const cardRef = useRef<HTMLDivElement | null>(null);
-  const [size, setSize] = useState<{ width: number; height: number }>({ width: 220, height: 140 });
+  const onSizeRef = useRef<Props["onSize"]>(onSize);
+  const [size, setSize] = useState<{ width: number; height: number }>({ width: 260, height: 150 });
   const effectiveMode = modeOverride ?? null;
   const hasSubPlans = Boolean(plan.sub_plans?.plans?.length);
 
@@ -54,20 +57,29 @@ export default function PlanningBlockNode({
   void toWorldPoint;
 
   useEffect(() => {
-    if (!cardRef.current || !onSize) return;
+    onSizeRef.current = onSize;
+  }, [onSize]);
+
+  useEffect(() => {
+    if (!cardRef.current) return;
+    const applySize = (width: number, height: number) => {
+      setSize((prev) => {
+        if (prev.width === width && prev.height === height) return prev;
+        return { width, height };
+      });
+      onSizeRef.current?.({ width, height });
+    };
     const observer = new ResizeObserver(([entry]) => {
       const width = Math.round(entry.contentRect.width);
       const height = Math.round(entry.contentRect.height);
-      setSize({ width, height });
-      onSize({ width, height });
+      applySize(width, height);
     });
     observer.observe(cardRef.current);
     const initialWidth = Math.round(cardRef.current.offsetWidth);
     const initialHeight = Math.round(cardRef.current.offsetHeight);
-    setSize({ width: initialWidth, height: initialHeight });
-    onSize({ width: initialWidth, height: initialHeight });
+    applySize(initialWidth, initialHeight);
     return () => observer.disconnect();
-  }, [onSize]);
+  }, []);
 
   const outputAnchor = { x: plan.x + size.width, y: plan.y + size.height / 2 };
 
@@ -84,7 +96,7 @@ export default function PlanningBlockNode({
     >
       <div
         ref={cardRef}
-        className={`plan-card group min-w-[220px] max-w-[340px] min-h-[120px] ${
+        className={`plan-card group min-h-[120px] ${
           linkingFrom || linkingTarget ? "plan-card-active" : ""
         }`}
       >
@@ -98,7 +110,7 @@ export default function PlanningBlockNode({
           </div>
           <div className="flex items-center gap-2">
             <span className="rounded-full bg-amber-50 px-2 py-1 text-[10px] font-semibold uppercase text-amber-700 ring-1 ring-amber-100">
-              Plan
+              {pillLabel}
             </span>
             {onRemove && (
               <button
@@ -119,7 +131,17 @@ export default function PlanningBlockNode({
 
         <button
           className="mt-4 inline-flex items-center gap-1 rounded-full bg-slate-900 px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-white shadow-sm"
-          onClick={onEnterWorkflow}
+          data-interactive
+          onPointerDown={(e) => {
+            e.stopPropagation();
+          }}
+          onPointerUp={(e) => {
+            e.stopPropagation();
+          }}
+          onClick={(e) => {
+            e.stopPropagation();
+            onEnterWorkflow();
+          }}
         >
           {hasSubPlans ? "View Subplans →" : "Enter Workflow →"}
         </button>

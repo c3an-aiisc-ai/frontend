@@ -3,13 +3,10 @@ import { parsePlanningJSON } from "../shared/planning/parsePlan";
 import { PENDING_PLAN_STORAGE_KEY } from "../shared/constants";
 import { isRecord } from "../shared/utils";
 import type { PlanSubTask, PlanningBlock } from "../shared/types";
+import { buildDemoWorkflowSnapshotForSubTask } from "../features/workflow/demoWorkflow";
 
 const formatTaskIdLabel = (taskId: string) => {
   const trimmed = taskId.trim();
-  if (!trimmed) return "";
-  if (trimmed.startsWith("task-") && trimmed.length > 5) {
-    return trimmed.slice(5);
-  }
   return trimmed;
 };
 
@@ -83,13 +80,14 @@ export function usePlanBench(args: {
     setViewMode,
   } = args;
 
-  const buildPlanBlocksFromPayload = useCallback((entries: unknown[]) => {
+  const buildPlanBlocksFromPayload = useCallback((entries: unknown[], dataAssets?: unknown[]) => {
+    const demoDataAssets = Array.isArray(dataAssets) ? (dataAssets as any[]) : [];
     const colCount = 2;
     const startX = 260;
     const startY = 200;
     const gapX = 380;
     const gapY = 300;
-    const cardWidth = 240;
+    const cardWidth = 260;
     const cardHeight = 150;
     const railWidth = 64;
     const centerX =
@@ -140,24 +138,96 @@ export function usePlanBench(args: {
         addId(String(triple?.to ?? ""));
       });
 
-      const subPlanBlocks = layoutPlans(orderedIds, (nodeId, index, x, y) => {
-        void index;
+      const subPlanGapX = gapX;
+      const subPlanY = typeof window === "undefined" ? startY : centerY;
+      const subPlanStartX =
+        typeof window === "undefined"
+          ? startX
+          : centerX - ((orderedIds.length - 1) * subPlanGapX) / 2;
+
+      const isKimoDemoTriad =
+        orderedIds.length === 3 &&
+        orderedIds.includes("ST-1") &&
+        orderedIds.includes("ST-2") &&
+        orderedIds.includes("ST-3");
+
+      const kimoLeftX = subPlanStartX;
+      const kimoRightX = subPlanStartX + subPlanGapX * 2;
+      const kimoStackGapY = 220;
+      const orderedIndex = new Map<string, number>();
+      orderedIds.forEach((nodeId, index) => {
+        orderedIndex.set(nodeId, index);
+      });
+      const branchTargetsBySource = new Map<string, string[]>();
+      const pushBranchTarget = (source: string, target: string) => {
+        const existing = branchTargetsBySource.get(source);
+        if (existing) {
+          if (!existing.includes(target)) existing.push(target);
+        } else {
+          branchTargetsBySource.set(source, [target]);
+        }
+      };
+      triples.forEach((triple) => {
+        const from = String(triple?.from ?? "").trim();
+        const to = String(triple?.to ?? "").trim();
+        if (!from || !to) return;
+        if (triple?.op !== "brn") return;
+        pushBranchTarget(from, to);
+      });
+      const branchOffsets = new Map<string, number>();
+      if (branchTargetsBySource.size > 0) {
+        const branchGapY = 140;
+        branchTargetsBySource.forEach((targets) => {
+          const sortedTargets = [...targets].sort((a, b) => {
+            return (orderedIndex.get(a) ?? 0) - (orderedIndex.get(b) ?? 0);
+          });
+          if (sortedTargets.length <= 1) return;
+          const totalSpan = (sortedTargets.length - 1) * branchGapY;
+          const startOffset = -totalSpan / 2;
+          sortedTargets.forEach((target, index) => {
+            if (branchOffsets.has(target)) return;
+            branchOffsets.set(target, startOffset + index * branchGapY);
+          });
+        });
+      }
+
+      const subPlanBlocks = orderedIds
+        .map((nodeId, index) => {
         const task = taskById.get(nodeId);
         const name = task?.name?.trim() || nodeId;
         const description = task?.description?.trim() || "";
+
+        // Demo behavior: auto-generate an agent workflow for ST-1..ST-3 when those IDs are present.
+        const workflow =
+          nodeId === "ST-1" || nodeId === "ST-2" || nodeId === "ST-3"
+            ? buildDemoWorkflowSnapshotForSubTask({ subTaskId: nodeId, dataAssets: demoDataAssets })
+            : undefined;
+
         const plan: PlanningBlock = {
           id: nodeId,
-          x,
-          y,
+          x: isKimoDemoTriad
+            ? nodeId === "ST-3"
+              ? kimoRightX
+              : kimoLeftX
+            : subPlanStartX + index * subPlanGapX,
+          y: isKimoDemoTriad
+            ? nodeId === "ST-1"
+              ? subPlanY - kimoStackGapY / 2
+              : nodeId === "ST-2"
+                ? subPlanY + kimoStackGapY / 2
+                : subPlanY
+            : subPlanY + (branchOffsets.get(nodeId) ?? 0),
           name,
           query: description,
           triples: [],
           task_id: nodeId,
           ...(task?.name ? { main_task: task.name } : {}),
           ...(task ? { sub_tasks: [task] } : {}),
+          ...(workflow ? { workflow } : {}),
         };
         return plan;
-      });
+      })
+      .filter((plan): plan is PlanningBlock => Boolean(plan));
 
       return {
         plans: subPlanBlocks,
@@ -295,7 +365,10 @@ export function usePlanBench(args: {
     try {
       const payload = JSON.parse(raw) as unknown;
       if (isRecord(payload) && payload.mode === "plan" && Array.isArray(payload.plans)) {
-        const nextPlans = buildPlanBlocksFromPayload(payload.plans);
+        const nextPlans = buildPlanBlocksFromPayload(
+          payload.plans,
+          Array.isArray(payload.data_assets) ? payload.data_assets : undefined
+        );
         if (nextPlans.length) {
           const maxPlan = nextPlans.reduce((max, plan) => {
             if (!plan.id.startsWith("plan-")) return max;

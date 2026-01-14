@@ -60,23 +60,36 @@ export default function Sidebar({
           {viewMode === "plan" ? "PLAN" : "AGENT"}
         </button>
 
-        {visibleTabs.map((item) => (
-          <button
-            key={item.id}
-            className={`h-12 w-12 rounded-md border border-slate-700 text-sm font-semibold transition ${
-              activePanel === item.id
-                ? "bg-white text-slate-900 shadow-sm"
-                : "bg-slate-800/70 text-white hover:bg-slate-800"
-            }`}
-            onClick={() =>
-              onPanelChange(activePanel === item.id ? null : (item.id as PanelKey))
-            }
-            aria-pressed={activePanel === item.id}
-            aria-label={item.label}
-          >
-            {item.symbol}
-          </button>
-        ))}
+        {visibleTabs.map((item) => {
+          const isActive = activePanel === item.id;
+          const isSettings = item.id === "settings";
+          return (
+            <button
+              key={item.id}
+              className={`h-12 w-12 rounded-md border border-slate-700 text-sm font-semibold transition ${
+                isActive
+                  ? "bg-white text-slate-900 shadow-sm"
+                  : "bg-slate-800/70 text-white hover:bg-slate-800"
+              }`}
+              onClick={() =>
+                onPanelChange(activePanel === item.id ? null : (item.id as PanelKey))
+              }
+              aria-pressed={isActive}
+              aria-label={item.label}
+            >
+              {isSettings ? (
+                <img
+                  src={iconPaths.settings}
+                  alt=""
+                  draggable={false}
+                  className={`mx-auto h-5 w-5 ${isActive ? "" : "invert"}`}
+                />
+              ) : (
+                item.symbol
+              )}
+            </button>
+          );
+        })}
       </div>
 
       {activePanel && (

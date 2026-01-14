@@ -2,18 +2,16 @@
 // Block Details Modal Component
 // =============================================================================
 
-import type { AgentBlock, AgentRegistryEntry, ToolPreset } from "../../shared/types";
+import type { AgentBlock, AgentRegistryEntry, Connection, ToolNode } from "../../shared/types";
 import { iconPaths } from "../../shared/assets";
 import { getRegistryAgentForBlock } from "../../shared/constants";
 
 type Props = {
   block: AgentBlock;
   registryAgents: AgentRegistryEntry[];
-  toolPalette: ToolPreset[];
-  modalToolChoice: string;
+  tools: ToolNode[];
+  connections: Connection[];
   onClose: () => void;
-  onToolChoiceChange: (choice: string) => void;
-  onAddTool: (blockId: string, toolName: string) => void;
   onToggleInputRequired: (blockId: string, index: number) => void;
   onToggleOutputRequired: (blockId: string, index: number) => void;
   getBlockMode: (block: AgentBlock) => string | null;
@@ -22,23 +20,26 @@ type Props = {
 export default function BlockDetailsModal({
   block,
   registryAgents,
-  toolPalette,
-  modalToolChoice,
+  tools,
+  connections,
   onClose,
-  onToolChoiceChange,
-  onAddTool,
   onToggleInputRequired,
   onToggleOutputRequired,
   getBlockMode,
 }: Props) {
   const registryAgent = getRegistryAgentForBlock(block, registryAgents);
-
-  // Attach-tool UI is intentionally hidden, but we keep these props wired so
-  // the feature can still exist elsewhere (and to avoid breaking callers).
-  void toolPalette;
-  void modalToolChoice;
-  void onToolChoiceChange;
-  void onAddTool;
+  const connectedToolIds = connections.reduce<string[]>((acc, conn) => {
+    if (conn.from.type === "tool" && conn.to.type === "block" && conn.to.id === block.id) {
+      if (!acc.includes(conn.from.id)) acc.push(conn.from.id);
+    }
+    if (conn.from.type === "block" && conn.from.id === block.id && conn.to.type === "tool") {
+      if (!acc.includes(conn.to.id)) acc.push(conn.to.id);
+    }
+    return acc;
+  }, []);
+  const connectedToolNames = connectedToolIds.map(
+    (toolId) => tools.find((tool) => tool.id === toolId)?.name ?? toolId
+  );
 
   return (
     <div
@@ -100,6 +101,17 @@ export default function BlockDetailsModal({
               </p>
             </div>
           </div>
+        </div>
+
+        <div className="mt-4 panel-sm">
+          <p className="label-xs">Connected Tools</p>
+          {connectedToolNames.length ? (
+            <p className="mt-2 text-sm text-slate-800">
+              {connectedToolNames.join(", ")}
+            </p>
+          ) : (
+            <p className="mt-2 text-sm text-slate-500">No tool connections yet.</p>
+          )}
         </div>
 
         {/* Inputs/Outputs Grid */}
@@ -206,8 +218,6 @@ export default function BlockDetailsModal({
             </div>
           </div>
         </div>
-
-        {/* Attach-tool UI removed */}
       </div>
     </div>
   );

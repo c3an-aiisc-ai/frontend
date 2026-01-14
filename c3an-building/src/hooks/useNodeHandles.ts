@@ -10,7 +10,6 @@ export function useNodeHandles(args: {
   const getBlockHandles = useCallback(
     (block: AgentBlock): BlockHandles => {
       const width = 220;
-      const baseHeight = 120;
       const lastRequiredInputIndex = Math.max(
         block.inputRequired?.lastIndexOf(true) ?? -1,
         (block.mandatoryInputCount ?? 0) - 1
@@ -53,6 +52,7 @@ export function useNodeHandles(args: {
         args.linking?.origin === "output" && args.linking.from.type === "tool" && args.hoveredBlockId === block.id;
       const toolSlots = hasToolConnection ? 1 : hoverIsOnBottom ? 1 : 0;
 
+      const baseHeight = 120;
       const maxSlots = Math.max(inputSlots, outputSlots);
       const topPadding = 18;
       const slotGap = 28;
