@@ -1,5 +1,9 @@
 import JSZip from "jszip";
 import {
+	AGENT_BLOCK_BASE_HEIGHT,
+	AGENT_BLOCK_SLOT_GAP,
+	AGENT_BLOCK_TOP_PADDING,
+	AGENT_BLOCK_WIDTH,
 	findAgentRegistryEntryByIdOrName,
 	getAgentRegistryEntryById,
 	listMandatoryOptional,
@@ -239,13 +243,13 @@ export function buildDemoWorkflowSnapshotForSubTask(args: {
 
 	const midX = 460;
 	const topY = 160;
-	const blockWidth = 220;
+	const blockWidth = AGENT_BLOCK_WIDTH;
 	const toolWidth = 180;
 	const toolGap = 28;
 	const toolRowGap = 40;
-	const blockBaseHeight = 120;
-	const blockTopPadding = 18;
-	const blockSlotGap = 28;
+	const blockBaseHeight = AGENT_BLOCK_BASE_HEIGHT;
+	const blockTopPadding = AGENT_BLOCK_TOP_PADDING;
+	const blockSlotGap = AGENT_BLOCK_SLOT_GAP;
 
 	type ToolRowItem = {
 		preset: string;

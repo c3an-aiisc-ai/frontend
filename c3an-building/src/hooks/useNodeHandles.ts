@@ -1,6 +1,13 @@
 import { useCallback } from "react";
 import type { AgentBlock, AnchorPoint, BlockHandles, Connection, LinkingState, ToolHandles, ToolNode } from "../shared/types";
-import { MAX_IO, TOOL_PORT_OFFSET } from "../shared/constants";
+import {
+  AGENT_BLOCK_BASE_HEIGHT,
+  AGENT_BLOCK_SLOT_GAP,
+  AGENT_BLOCK_TOP_PADDING,
+  AGENT_BLOCK_WIDTH,
+  MAX_IO,
+  TOOL_PORT_OFFSET,
+} from "../shared/constants";
 
 export function useNodeHandles(args: {
   connections: Connection[];
@@ -9,7 +16,7 @@ export function useNodeHandles(args: {
 }) {
   const getBlockHandles = useCallback(
     (block: AgentBlock): BlockHandles => {
-      const width = 220;
+      const width = AGENT_BLOCK_WIDTH;
       const lastRequiredInputIndex = Math.max(
         block.inputRequired?.lastIndexOf(true) ?? -1,
         (block.mandatoryInputCount ?? 0) - 1
@@ -52,10 +59,10 @@ export function useNodeHandles(args: {
         args.linking?.origin === "output" && args.linking.from.type === "tool" && args.hoveredBlockId === block.id;
       const toolSlots = hasToolConnection ? 1 : hoverIsOnBottom ? 1 : 0;
 
-      const baseHeight = 120;
+      const baseHeight = AGENT_BLOCK_BASE_HEIGHT;
       const maxSlots = Math.max(inputSlots, outputSlots);
-      const topPadding = 18;
-      const slotGap = 28;
+      const topPadding = AGENT_BLOCK_TOP_PADDING;
+      const slotGap = AGENT_BLOCK_SLOT_GAP;
       const height =
         maxSlots > 1
           ? Math.max(baseHeight, topPadding * 2 + slotGap * (maxSlots - 1))
@@ -81,7 +88,7 @@ export function useNodeHandles(args: {
 
       const buildBottomAnchors = (count: number) =>
         Array.from({ length: Math.max(0, count) }, (_, idx) => ({
-          anchor: { x: block.x + width / 2 + 4, y: block.y + height, dir: "down" as const },
+          anchor: { x: block.x + width / 2, y: block.y + height, dir: "down" as const },
           slot: TOOL_PORT_OFFSET + idx,
         }));
 

@@ -101,6 +101,10 @@
   @apply border border-slate-200 bg-white/90 text-slate-800 hover:bg-slate-100;
 }
 
+.toolbar-back-btn {
+  @apply px-3 py-1.5 text-xs border-0 bg-transparent shadow-none outline-none focus:outline-none focus-visible:outline-none;
+}
+
 .toolbar-menu {
   @apply absolute right-0 mt-2 w-48 rounded-xl border p-2 shadow-lg;
 }
@@ -150,7 +154,7 @@
 }
 
 .canvas-agent-card {
-  @apply relative rounded-lg border border-slate-200 bg-white/90 shadow-md backdrop-blur-sm transition-all duration-150 px-3 pt-2 pb-3 cursor-grab active:cursor-grabbing select-none;
+  @apply relative rounded-lg border border-slate-200 bg-white/90 shadow-md backdrop-blur-sm transition-all duration-150 px-2.5 pt-2 pb-2.5 cursor-grab active:cursor-grabbing select-none;
 }
 
 .canvas-agent-card-active {
@@ -194,7 +198,7 @@
 }
 
 .plan-card {
-  @apply relative w-[260px] min-w-[260px] max-w-[260px] rounded-lg border border-slate-200 bg-white/90 px-3 pt-2 pb-3 shadow-md backdrop-blur-sm transition-all duration-150 cursor-grab active:cursor-grabbing select-none;
+  @apply relative w-[232px] min-w-[232px] max-w-[232px] rounded-lg border border-slate-200 bg-white/90 px-3 pt-2 pb-2.5 shadow-md backdrop-blur-sm transition-all duration-150 cursor-grab active:cursor-grabbing select-none;
 }
 
 .plan-card-active {
@@ -202,7 +206,7 @@
 }
 
 .page-back-btn {
-  @apply inline-flex max-w-full min-w-0 items-center gap-2 rounded-full border border-slate-200 bg-white/90 px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-white whitespace-normal break-words;
+  @apply inline-flex w-fit max-w-full min-w-0 self-start shrink-0 items-center gap-1.5 rounded-full border-0 bg-transparent px-2.5 py-1 text-xs font-semibold text-slate-700 shadow-none transition hover:bg-white/80 whitespace-normal break-words outline-none focus:outline-none focus-visible:outline-none;
 }
 
 .page-shell {
@@ -216,4 +220,203 @@
 .page-actions {
   @apply flex min-w-0 flex-wrap items-center gap-3;
 }
+}
+
+@keyframes home-flow-beam {
+  0% {
+    transform: translateX(-20%) rotate(10deg);
+    opacity: 0;
+  }
+  16% {
+    opacity: 0.42;
+  }
+  58% {
+    opacity: 0.72;
+  }
+  100% {
+    transform: translateX(185%) rotate(10deg);
+    opacity: 0;
+  }
+}
+
+@keyframes home-flow-travel {
+  0% {
+    transform: translate3d(-2%, 0, 0);
+    opacity: 0;
+  }
+  8% {
+    opacity: 1;
+  }
+  48% {
+    opacity: 1;
+  }
+  88% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate3d(100%, 0, 0);
+    opacity: 0;
+  }
+}
+
+@keyframes home-flow-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes home-flow-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.16);
+  }
+  50% {
+    box-shadow: 0 0 0 14px rgba(56, 189, 248, 0);
+  }
+}
+
+.home-flow-visual {
+  position: relative;
+  overflow: hidden;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.88), rgba(241, 245, 249, 0.8)),
+    radial-gradient(circle at top right, rgba(56, 189, 248, 0.16), transparent 38%);
+}
+
+.home-angled-panel {
+  clip-path: polygon(0 0, calc(100% - 26px) 0, 100% 26px, 100% 100%, 22px 100%, 0 calc(100% - 22px));
+}
+
+.home-angled-card {
+  clip-path: polygon(0 0, calc(100% - 22px) 0, 100% 22px, 100% 100%, 16px 100%, 0 calc(100% - 16px));
+}
+
+.home-angled-stage {
+  clip-path: polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 12px 100%, 0 calc(100% - 12px));
+}
+
+.home-angled-chip {
+  clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 0 100%);
+}
+
+.home-angled-glow {
+  border-radius: 8px;
+  transform: rotate(16deg);
+}
+
+.home-flow-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(255, 255, 255, 0)),
+    linear-gradient(rgba(148, 163, 184, 0.14) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.14) 1px, transparent 1px);
+  background-size: 100% 100%, 28px 28px, 28px 28px;
+  opacity: 0.72;
+}
+
+.home-flow-beam {
+  position: absolute;
+  top: 12%;
+  left: -18%;
+  width: 34%;
+  height: 76%;
+  border-radius: 9999px;
+  background: linear-gradient(
+    90deg,
+    rgba(251, 191, 36, 0),
+    rgba(251, 191, 36, 0.14),
+    rgba(14, 165, 233, 0.2),
+    rgba(16, 185, 129, 0.14),
+    rgba(16, 185, 129, 0)
+  );
+  filter: blur(34px);
+  animation: home-flow-beam 8s linear infinite;
+}
+
+.home-flow-track {
+  position: absolute;
+  top: calc(55% - 9px);
+  left: 11%;
+  right: 12%;
+  height: 18px;
+  overflow: hidden;
+}
+
+.home-flow-track::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 2px;
+  transform: translateY(-50%);
+  background: linear-gradient(
+    90deg,
+    rgba(15, 23, 42, 0.1),
+    rgba(245, 158, 11, 0.34),
+    rgba(59, 130, 246, 0.38),
+    rgba(16, 185, 129, 0.34),
+    rgba(15, 23, 42, 0.12)
+  );
+}
+
+.home-flow-runner {
+  position: absolute;
+  inset: 0 14px 0 0;
+  opacity: 0;
+  will-change: transform, opacity;
+  animation: home-flow-travel 6.2s cubic-bezier(0.32, 0, 0.18, 1) infinite;
+}
+
+.home-flow-runner-b {
+  animation-delay: 2.06s;
+}
+
+.home-flow-runner-c {
+  animation-delay: 4.12s;
+}
+
+.home-flow-signal {
+  position: absolute;
+  top: 2px;
+  left: 0;
+  width: 14px;
+  height: 14px;
+  transform: rotate(45deg);
+  background: linear-gradient(135deg, #f59e0b, #0ea5e9 55%, #10b981);
+  box-shadow:
+    0 0 0 6px rgba(14, 165, 233, 0.1),
+    0 0 18px rgba(14, 165, 233, 0.4);
+  animation: home-flow-pulse 2.8s ease-in-out infinite;
+}
+
+.home-flow-stage {
+  position: relative;
+  animation: home-flow-float 6.8s ease-in-out infinite;
+}
+
+.home-flow-stage-solution {
+  animation:
+    home-flow-pulse 3.8s ease-in-out infinite,
+    home-flow-float 6.8s ease-in-out infinite;
+}
+
+@media (max-width: 639px) {
+  .home-flow-beam {
+    top: 22%;
+    width: 64%;
+    height: 48%;
+  }
+
+  .home-angled-panel,
+  .home-angled-card,
+  .home-angled-stage,
+  .home-angled-chip {
+    clip-path: none;
+  }
 }

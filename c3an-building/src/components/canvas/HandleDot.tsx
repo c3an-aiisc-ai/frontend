@@ -7,8 +7,8 @@ import { useCallback } from "react";
 export default function HandleDot() {
   const handleCircle = useCallback(
     () => ({
-      width: 12,
-      height: 12,
+      width: 10,
+      height: 10,
       borderRadius: "9999px",
       backgroundColor: "rgba(250, 204, 21, 0.9)",
       boxShadow:
@@ -19,8 +19,8 @@ export default function HandleDot() {
 
   const handleHalo = useCallback(
     () => ({
-      width: 18,
-      height: 18,
+      width: 16,
+      height: 16,
       borderRadius: "9999px",
       backgroundColor: "rgba(250, 204, 21, 0.12)",
       boxShadow: "0 0 0 1.5px rgba(234, 179, 8, 0.6)",

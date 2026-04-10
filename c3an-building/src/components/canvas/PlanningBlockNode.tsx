@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import HandleDot from "./HandleDot";
+import { PLAN_CARD_DEFAULT_HEIGHT, PLAN_CARD_WIDTH } from "../../shared/constants";
 import type { PlanningBlock } from "../../shared/types/planning";
 
 type Props = {
@@ -48,7 +49,10 @@ export default function PlanningBlockNode({
 }: Props) {
   const cardRef = useRef<HTMLDivElement | null>(null);
   const onSizeRef = useRef<Props["onSize"]>(onSize);
-  const [size, setSize] = useState<{ width: number; height: number }>({ width: 260, height: 150 });
+  const [size, setSize] = useState<{ width: number; height: number }>({
+    width: PLAN_CARD_WIDTH,
+    height: PLAN_CARD_DEFAULT_HEIGHT,
+  });
   const effectiveMode = modeOverride ?? null;
   const hasSubPlans = Boolean(plan.sub_plans?.plans?.length);
 
@@ -96,60 +100,72 @@ export default function PlanningBlockNode({
     >
       <div
         ref={cardRef}
-        className={`plan-card group min-h-[120px] ${
+        className={`plan-card group flex min-h-[106px] flex-col ${
           linkingFrom || linkingTarget ? "plan-card-active" : ""
         }`}
       >
-        <div className="flex items-start justify-between gap-3">
+        {onRemove && (
+          <button
+            className={`absolute -right-3.5 -top-3.5 z-10 h-7 w-7 shrink-0 rounded-full bg-slate-900 text-white text-xs font-bold shadow transition-all duration-150 ${
+              linkingFrom || linkingTarget ? "opacity-100 scale-100" : "opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100"
+            }`}
+            onClick={(e) => {
+              e.stopPropagation();
+              onRemove();
+            }}
+            aria-label="Remove plan"
+          >
+            ×
+          </button>
+        )}
+
+        <div className="flex items-start gap-3 pr-9">
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold text-slate-900 break-words whitespace-pre-wrap leading-snug">{plan.name}</p>
+            <p
+              className="truncate text-sm font-semibold text-slate-900 leading-snug"
+              title={plan.name}
+            >
+              {plan.name}
+            </p>
             {effectiveMode && (
               <p className="text-[11px] text-slate-600 leading-snug">Mode: {effectiveMode}</p>
             )}
-            <p className="mt-1 text-xs text-slate-700 break-words whitespace-pre-wrap leading-snug" title={plan.query}>{plan.query || "(no query)"}</p>
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <span className="rounded-full bg-amber-50 px-2 py-1 text-[10px] font-semibold uppercase text-amber-700 ring-1 ring-amber-100">
-              {pillLabel}
-            </span>
-            {onRemove && (
-              <button
-                className={`h-7 w-7 rounded-full bg-slate-900 text-white text-xs font-bold shadow transition-all duration-150 ${
-                  linkingFrom || linkingTarget ? "opacity-100 scale-100" : "opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100"
-                }`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onRemove();
-                }}
-                aria-label="Remove plan"
-              >
-                ×
-              </button>
-            )}
+            <p
+              className="mt-0.5 truncate text-[11px] text-slate-700 leading-snug"
+              title={plan.query}
+            >
+              {plan.query || "(no query)"}
+            </p>
           </div>
         </div>
 
-        <button
-          className="mt-4 inline-flex max-w-full min-w-0 items-center justify-center gap-1 rounded-full bg-slate-900 px-3 py-1 text-center text-[10px] font-semibold uppercase tracking-wide text-white shadow-sm whitespace-normal break-words"
-          data-interactive
-          onPointerDown={(e) => {
-            e.stopPropagation();
-          }}
-          onPointerUp={(e) => {
-            e.stopPropagation();
-          }}
-          onClick={(e) => {
-            e.stopPropagation();
-            onEnterWorkflow();
-          }}
-        >
-          {hasSubPlans ? "Open Subplans ->" : "Open Agents ->"}
-        </button>
+        <div className="mt-auto flex flex-wrap items-center justify-between gap-2 pt-3">
+          <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[9px] font-semibold uppercase text-amber-700 ring-1 ring-amber-100">
+            {pillLabel}
+          </span>
+
+          <button
+            className="inline-flex max-w-full min-w-0 items-center justify-center gap-1 rounded-full bg-slate-900 px-3 py-0.5 text-center text-[9px] font-semibold uppercase tracking-wide text-white shadow-sm whitespace-normal break-words"
+            data-interactive
+            onPointerDown={(e) => {
+              e.stopPropagation();
+            }}
+            onPointerUp={(e) => {
+              e.stopPropagation();
+            }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onEnterWorkflow();
+            }}
+          >
+            {hasSubPlans ? "Open Subplans ->" : "Open Agents ->"}
+          </button>
+        </div>
       </div>
 
       {/* Connection handles (must be direct siblings so they are always clickable) */}
       <div
-        className={`absolute top-1/2 -translate-y-1/2 -left-4 h-8 w-8 flex items-center justify-center transition-all duration-150 ${
+        className={`absolute top-1/2 -translate-y-1/2 -left-3.5 h-8 w-8 flex items-center justify-center transition-all duration-150 ${
           showHandles ? "opacity-100 scale-100 pointer-events-auto" : "opacity-0 scale-75 pointer-events-none"
         }`}
         data-connector
@@ -162,7 +178,7 @@ export default function PlanningBlockNode({
         <HandleDot />
       </div>
       <div
-        className={`absolute top-1/2 -translate-y-1/2 -right-4 h-8 w-8 flex items-center justify-center transition-all duration-150 ${
+        className={`absolute top-1/2 -translate-y-1/2 -right-3.5 h-8 w-8 flex items-center justify-center transition-all duration-150 ${
           showHandles ? "opacity-100 scale-100 pointer-events-auto" : "opacity-0 scale-75 pointer-events-none"
         }`}
         data-connector

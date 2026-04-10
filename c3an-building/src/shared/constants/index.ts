@@ -15,6 +15,14 @@ export * from "./toolRegistry";
 export const MIN_IO = 1;
 export const MAX_IO = 5;
 export const TOOL_PORT_OFFSET = 1000;
+export const AGENT_BLOCK_WIDTH = 198;
+export const AGENT_BLOCK_BASE_HEIGHT = 122;
+export const AGENT_BLOCK_TOP_PADDING = 18;
+export const AGENT_BLOCK_SLOT_GAP = 28;
+export const PLAN_CARD_WIDTH = 232;
+export const PLAN_CARD_DEFAULT_HEIGHT = 112;
+export const PLAN_CARD_GAP_X = 348;
+export const PLAN_CARD_GAP_Y = 244;
 
 // -----------------------------------------------------------------------------
 // Tool Palette Presets

@@ -36,10 +36,10 @@ export const canvasConfig = {
 
   // Plan layout settings (for auto-positioning plan blocks)
   planLayout: {
-    startX: 260,
+    startX: 228,
     startY: 200,
-    gapX: 380,
-    gapY: 300,
+    gapX: 348,
+    gapY: 244,
     columnCount: 2,
   },
 

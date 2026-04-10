@@ -5,6 +5,11 @@ import type {
   PlanningBlock,
   PlanTriple,
 } from "../types/planning";
+import {
+  PLAN_CARD_DEFAULT_HEIGHT,
+  PLAN_CARD_GAP_X,
+  PLAN_CARD_WIDTH,
+} from "../constants";
 
 type BuildSubPlanHierarchyArgs = {
   subTasks?: PlanSubTask[];
@@ -63,11 +68,11 @@ export function buildSubPlanHierarchy({
 
   if (!orderedIds.length) return undefined;
 
-  const gapX = 380;
-  const startX = 260;
+  const gapX = PLAN_CARD_GAP_X;
+  const startX = 228;
   const startY = 200;
-  const cardWidth = 260;
-  const cardHeight = 150;
+  const cardWidth = PLAN_CARD_WIDTH;
+  const cardHeight = PLAN_CARD_DEFAULT_HEIGHT;
   const railWidth = 64;
   const centerX =
     typeof window === "undefined"

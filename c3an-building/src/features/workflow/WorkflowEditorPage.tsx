@@ -475,7 +475,7 @@ export default function WorkflowEditorPage() {
   ]);
 
   const handleAgentBack = useCallback(() => {
-    if (planStack.length === 0) return;
+    if (!activePlanId && planStack.length === 0) return;
     setActivePanel((prev) => (prev === "tools" ? "blocks" : prev));
     saveActivePlanWorkflow();
     planLinkFromRef.current = null;
@@ -488,6 +488,7 @@ export default function WorkflowEditorPage() {
       setViewMode("plan");
     }
   }, [
+    activePlanId,
     beginViewSwitchLoading,
     clearWorkspaceUIState,
     planStack.length,
@@ -844,14 +845,17 @@ export default function WorkflowEditorPage() {
 
   const modalBlock = modalBlockId ? blocks.find((b) => b.id === modalBlockId) ?? null : null;
   const modalTool = modalToolId ? tools.find((t) => t.id === modalToolId) ?? null : null;
+  const hasAgentBackContext = Boolean(activePlanId) || planStack.length > 0;
   const toolbarBackHandler =
-    planStack.length > 0
-      ? viewMode === "plan"
+    viewMode === "plan"
+      ? planStack.length > 0
         ? handlePlanBack
-        : viewMode === "agent"
+        : undefined
+      : viewMode === "agent"
+        ? hasAgentBackContext
           ? handleAgentBack
           : undefined
-      : undefined;
+        : undefined;
 
   return (
     <div className={`relative h-full w-full overflow-hidden ${appThemeClass}`}>

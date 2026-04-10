@@ -88,7 +88,7 @@ export default function Toolbar({
     <div className="absolute top-4 right-4 z-30 flex max-w-[calc(100vw-7rem)] items-start gap-3 sm:right-6">
       <div className="hidden max-w-full flex-wrap justify-end gap-3 lg:flex">
         {onPlanBackClick && (
-          <button className={actionButtonClass} onClick={onPlanBackClick}>
+          <button className={`${actionButtonClass} toolbar-back-btn`} onClick={onPlanBackClick}>
             Back
           </button>
         )}
@@ -148,7 +148,7 @@ export default function Toolbar({
           <div id={menuId} className={menuPanelClass} role="menu">
             {onPlanBackClick && (
               <button
-                className={menuItemClass}
+                className={`${menuItemClass} toolbar-back-btn`}
                 onClick={() => handleMenuAction(onPlanBackClick)}
                 role="menuitem"
               >

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePanZoom } from "../../hooks";
+import { PLAN_CARD_DEFAULT_HEIGHT, PLAN_CARD_WIDTH } from "../../shared/constants";
 import { Background } from "../";
 import { PlanningBlockNode } from "./index";
 import ConnectionLines from "./ConnectionLines";
@@ -88,7 +89,7 @@ export default function PlanningCanvas({
   }, [containerEl, transform.x, transform.y, transform.zoom]);
 
   const getSize = useCallback(
-    (plan: PlanningBlock) => planSizes[plan.id] ?? { width: 260, height: 150 },
+    (plan: PlanningBlock) => planSizes[plan.id] ?? { width: PLAN_CARD_WIDTH, height: PLAN_CARD_DEFAULT_HEIGHT },
     [planSizes]
   );
 

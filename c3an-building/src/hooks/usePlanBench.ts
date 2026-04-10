@@ -5,7 +5,13 @@ import {
   buildSubPlanHierarchy,
   flattenVisiblePlanHierarchy,
 } from "../shared/planning/subPlans";
-import { PENDING_PLAN_STORAGE_KEY } from "../shared/constants";
+import {
+  PENDING_PLAN_STORAGE_KEY,
+  PLAN_CARD_DEFAULT_HEIGHT,
+  PLAN_CARD_GAP_X,
+  PLAN_CARD_GAP_Y,
+  PLAN_CARD_WIDTH,
+} from "../shared/constants";
 import { isRecord } from "../shared/utils";
 import type { PlanningBlock } from "../shared/types";
 import {
@@ -72,12 +78,12 @@ export function usePlanBench(args: {
   const buildPlanBlocksFromPayload = useCallback((entries: unknown[], dataAssets?: unknown[]) => {
     const demoDataAssets = Array.isArray(dataAssets) ? (dataAssets as DemoDataAsset[]) : [];
     const colCount = 2;
-    const startX = 260;
+    const startX = 228;
     const startY = 200;
-    const gapX = 380;
-    const gapY = 300;
-    const cardWidth = 260;
-    const cardHeight = 150;
+    const gapX = PLAN_CARD_GAP_X;
+    const gapY = PLAN_CARD_GAP_Y;
+    const cardWidth = PLAN_CARD_WIDTH;
+    const cardHeight = PLAN_CARD_DEFAULT_HEIGHT;
     const railWidth = 64;
     const centerX =
       typeof window === "undefined"

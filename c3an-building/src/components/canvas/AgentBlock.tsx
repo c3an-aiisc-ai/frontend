@@ -9,6 +9,7 @@ import type {
   LinkSource,
   LinkTarget,
 } from "../../shared/types";
+import { AGENT_BLOCK_BASE_HEIGHT } from "../../shared/constants";
 import { iconPaths } from "../../shared/assets";
 import HandleDot from "./HandleDot";
 
@@ -73,11 +74,11 @@ export default function AgentBlock({
       onPointerLeave={() => onHoverLeave(block.id)}
     >
       <div
-        className={`canvas-agent-card min-h-[120px] scale-[0.97] ${
+        className={`canvas-agent-card scale-[0.97] ${
           showConnections ? "canvas-agent-card-active" : ""
         } ${isDragging ? "scale-[1.01]" : ""}`}
         data-block
-        style={{ width: 220, height: handles.height }}
+        style={{ width: handles.width, height: handles.height, minHeight: AGENT_BLOCK_BASE_HEIGHT }}
         onPointerDown={onPointerDown(block.id)}
         onPointerMove={onPointerMove(block.id)}
         onPointerUp={onPointerUp(block.id)}
@@ -109,34 +110,36 @@ export default function AgentBlock({
         {/* Header */}
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1 flex flex-col gap-0.5">
-            <p className="text-sm font-semibold text-slate-900">{block.name}</p>
+            <p className="text-[13px] font-semibold leading-snug text-slate-900">
+              {block.name}
+            </p>
             {mode && (
               <p className="text-[11px] text-slate-600 leading-snug">
                 Mode: {mode}
               </p>
             )}
           </div>
-          <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
+          <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-emerald-700">
             Agent
           </span>
         </div>
 
         {/* Stats */}
-        <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] font-semibold text-slate-700">
-          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 ring-1 ring-emerald-100">
-            <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
+        <div className="mt-3 flex flex-wrap items-center gap-1.5 text-[10px] font-semibold text-slate-700">
+          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 ring-1 ring-emerald-100">
+            <span className="h-2 w-2 rounded-full bg-emerald-500" />
             {handles.inputAnchors.length} inputs
           </span>
-          <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2 py-1 ring-1 ring-sky-100">
-            <span className="h-2.5 w-2.5 rounded-full bg-sky-500" />
+          <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2 py-0.5 ring-1 ring-sky-100">
+            <span className="h-2 w-2 rounded-full bg-sky-500" />
             {handles.outputAnchors.length} outputs
           </span>
-          <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-1 ring-1 ring-indigo-100">
-            <span className="h-2.5 w-2.5 rounded-full bg-indigo-500" />
+          <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-0.5 ring-1 ring-indigo-100">
+            <span className="h-2 w-2 rounded-full bg-indigo-500" />
             {toolCount} tools
           </span>
           <button
-            className="inline-flex items-center gap-1 rounded-full bg-slate-900 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-white shadow-sm"
+            className="inline-flex items-center gap-1 rounded-full bg-slate-900 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-white shadow-sm"
             onPointerDown={(e) => {
               e.stopPropagation();
               e.preventDefault();
