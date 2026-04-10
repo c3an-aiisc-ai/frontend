@@ -51,9 +51,11 @@ export function useCanvasDragHandlers(args: {
   }, [toWorldPointDuringDrag]);
 
   useEffect(() => {
+    const blockRaf = blockDragRafRef;
+    const toolRaf = toolDragRafRef;
     return () => {
-      if (blockDragRafRef.current !== null) cancelAnimationFrame(blockDragRafRef.current);
-      if (toolDragRafRef.current !== null) cancelAnimationFrame(toolDragRafRef.current);
+      if (blockRaf.current !== null) cancelAnimationFrame(blockRaf.current);
+      if (toolRaf.current !== null) cancelAnimationFrame(toolRaf.current);
     };
   }, []);
 
@@ -114,91 +116,107 @@ export function useCanvasDragHandlers(args: {
     []
   );
 
-  const makeDragHandlers = useCallback(
-    <T extends DraggableItem>(
-      type: NonNullable<Selection>["type"],
-      getItem: (id: string) => DraggableItem | undefined,
-      setItem: SetState<T[]>,
-      setDragging: SetState<string | null>,
-      offsetRef: React.MutableRefObject<{ x: number; y: number }>,
-      getDraggingId: () => string | null,
-      pendingRef: React.MutableRefObject<PendingDrag | null>,
-      rafRef: React.MutableRefObject<number | null>
-    ) => ({
-      onPointerDown:
-        (id: string) => (e: ReactPointerEvent<HTMLDivElement>) => {
-          const target = e.target as HTMLElement | null;
-          if (linkingRef.current || target?.closest("[data-connector]")) return;
-          e.stopPropagation();
-          e.preventDefault();
-          setSelected({ type, id } as Selection);
-          const item = getItem(id);
-          const world = toWorldPoint(e.clientX, e.clientY);
-          if (!item || !world) return;
-          offsetRef.current = { x: world.x - item.x, y: world.y - item.y };
-          pendingRef.current = null;
-          if (rafRef.current !== null) {
-            cancelAnimationFrame(rafRef.current);
-            rafRef.current = null;
-          }
-          setDragging(id);
-          e.currentTarget.setPointerCapture?.(e.pointerId);
-        },
-      onPointerMove:
-        (id: string) => (e: ReactPointerEvent<HTMLDivElement>) => {
-          if (getDraggingId() !== id) return;
-          if (linkingRef.current) return;
-          if (e.buttons === 0) {
-            flushDragUpdate(setItem, pendingRef, rafRef);
-            setDragging((current) => (current === id ? null : current));
-            offsetRef.current = { x: 0, y: 0 };
-            e.currentTarget.releasePointerCapture?.(e.pointerId);
-            return;
-          }
-          const world = (toWorldPointDuringDragRef.current ?? toWorldPoint)(e.clientX, e.clientY);
-          if (!world) return;
-          e.preventDefault();
-          queueDragUpdate(
-            id,
-            world.x - offsetRef.current.x,
-            world.y - offsetRef.current.y,
-            setItem,
-            pendingRef,
-            rafRef
-          );
-        },
-      onPointerUp:
-        (id: string) => (e: ReactPointerEvent<HTMLDivElement>) => {
-          flushDragUpdate(setItem, pendingRef, rafRef);
-          setDragging((current) => (current === id ? null : current));
-          offsetRef.current = { x: 0, y: 0 };
+  const blockDrag = {
+    onPointerDown:
+      (id: string) => (e: ReactPointerEvent<HTMLDivElement>) => {
+        const target = e.target as HTMLElement | null;
+        if (linkingRef.current || target?.closest("[data-connector]")) return;
+        e.stopPropagation();
+        e.preventDefault();
+        setSelected({ type: "block", id } as Selection);
+        const item = blocks.find((block) => block.id === id);
+        const world = toWorldPoint(e.clientX, e.clientY);
+        if (!item || !world) return;
+        blockDragOffsetRef.current = { x: world.x - item.x, y: world.y - item.y };
+        blockDragPendingRef.current = null;
+        if (blockDragRafRef.current !== null) {
+          cancelAnimationFrame(blockDragRafRef.current);
+          blockDragRafRef.current = null;
+        }
+        setDraggingBlockId(id);
+        e.currentTarget.setPointerCapture?.(e.pointerId);
+      },
+    onPointerMove:
+      (id: string) => (e: ReactPointerEvent<HTMLDivElement>) => {
+        if (draggingBlockId !== id || linkingRef.current) return;
+        if (e.buttons === 0) {
+          flushDragUpdate(setBlocks, blockDragPendingRef, blockDragRafRef);
+          setDraggingBlockId((current) => (current === id ? null : current));
+          blockDragOffsetRef.current = { x: 0, y: 0 };
           e.currentTarget.releasePointerCapture?.(e.pointerId);
-        },
-    }),
-    [flushDragUpdate, linkingRef, queueDragUpdate, setSelected, toWorldPoint]
-  );
+          return;
+        }
+        const world = (toWorldPointDuringDragRef.current ?? toWorldPoint)(e.clientX, e.clientY);
+        if (!world) return;
+        e.preventDefault();
+        queueDragUpdate(
+          id,
+          world.x - blockDragOffsetRef.current.x,
+          world.y - blockDragOffsetRef.current.y,
+          setBlocks,
+          blockDragPendingRef,
+          blockDragRafRef
+        );
+      },
+    onPointerUp:
+      (id: string) => (e: ReactPointerEvent<HTMLDivElement>) => {
+        flushDragUpdate(setBlocks, blockDragPendingRef, blockDragRafRef);
+        setDraggingBlockId((current) => (current === id ? null : current));
+        blockDragOffsetRef.current = { x: 0, y: 0 };
+        e.currentTarget.releasePointerCapture?.(e.pointerId);
+      },
+  };
 
-  const blockDrag = makeDragHandlers(
-    "block",
-    (id) => blocks.find((b) => b.id === id),
-    setBlocks,
-    setDraggingBlockId,
-    blockDragOffsetRef,
-    () => draggingBlockId,
-    blockDragPendingRef,
-    blockDragRafRef
-  );
-
-  const toolDrag = makeDragHandlers(
-    "tool",
-    (id) => tools.find((t) => t.id === id),
-    setTools,
-    setDraggingToolId,
-    toolDragOffsetRef,
-    () => draggingToolId,
-    toolDragPendingRef,
-    toolDragRafRef
-  );
+  const toolDrag = {
+    onPointerDown:
+      (id: string) => (e: ReactPointerEvent<HTMLDivElement>) => {
+        const target = e.target as HTMLElement | null;
+        if (linkingRef.current || target?.closest("[data-connector]")) return;
+        e.stopPropagation();
+        e.preventDefault();
+        setSelected({ type: "tool", id } as Selection);
+        const item = tools.find((tool) => tool.id === id);
+        const world = toWorldPoint(e.clientX, e.clientY);
+        if (!item || !world) return;
+        toolDragOffsetRef.current = { x: world.x - item.x, y: world.y - item.y };
+        toolDragPendingRef.current = null;
+        if (toolDragRafRef.current !== null) {
+          cancelAnimationFrame(toolDragRafRef.current);
+          toolDragRafRef.current = null;
+        }
+        setDraggingToolId(id);
+        e.currentTarget.setPointerCapture?.(e.pointerId);
+      },
+    onPointerMove:
+      (id: string) => (e: ReactPointerEvent<HTMLDivElement>) => {
+        if (draggingToolId !== id || linkingRef.current) return;
+        if (e.buttons === 0) {
+          flushDragUpdate(setTools, toolDragPendingRef, toolDragRafRef);
+          setDraggingToolId((current) => (current === id ? null : current));
+          toolDragOffsetRef.current = { x: 0, y: 0 };
+          e.currentTarget.releasePointerCapture?.(e.pointerId);
+          return;
+        }
+        const world = (toWorldPointDuringDragRef.current ?? toWorldPoint)(e.clientX, e.clientY);
+        if (!world) return;
+        e.preventDefault();
+        queueDragUpdate(
+          id,
+          world.x - toolDragOffsetRef.current.x,
+          world.y - toolDragOffsetRef.current.y,
+          setTools,
+          toolDragPendingRef,
+          toolDragRafRef
+        );
+      },
+    onPointerUp:
+      (id: string) => (e: ReactPointerEvent<HTMLDivElement>) => {
+        flushDragUpdate(setTools, toolDragPendingRef, toolDragRafRef);
+        setDraggingToolId((current) => (current === id ? null : current));
+        toolDragOffsetRef.current = { x: 0, y: 0 };
+        e.currentTarget.releasePointerCapture?.(e.pointerId);
+      },
+  };
 
   return { blockDrag, toolDrag };
 }

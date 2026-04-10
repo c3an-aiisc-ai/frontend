@@ -12,14 +12,16 @@ type Props = {
   downloadLabel?: string;
   onPlanBackClick?: () => void;
   onC3ANClick: () => void;
-  onAboutClick: () => void;
+  onSettingsClick: () => void;
   onPlanningClick?: () => void;
   onEvaluationClick?: () => void;
   onAgentGenClick?: () => void;
   onEvalsClick: () => void;
   onDownloadClick: () => void;
   onUploadClick: () => void;
-  onRunClick: () => void;
+  onRunClick?: () => void;
+  runButtonLabel?: string;
+  runDisabledReason?: string;
   onResetClick: () => void;
   onFileUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
 };
@@ -30,7 +32,7 @@ export default function Toolbar({
   downloadLabel,
   onPlanBackClick,
   onC3ANClick,
-  onAboutClick,
+  onSettingsClick,
   onPlanningClick,
   onEvaluationClick,
   onAgentGenClick,
@@ -38,6 +40,8 @@ export default function Toolbar({
   onDownloadClick,
   onUploadClick,
   onRunClick,
+  runButtonLabel,
+  runDisabledReason,
   onResetClick,
   onFileUpload,
 }: Props) {
@@ -61,6 +65,9 @@ export default function Toolbar({
       : "toolbar-menu-item toolbar-menu-item-light";
 
   const downloadText = downloadLabel ?? "Download JSON";
+  const runText = runButtonLabel ?? "Run";
+  const isRunDisabled = Boolean(runDisabledReason) || !onRunClick;
+  const runButtonClass = `${actionButtonClass} ${isRunDisabled ? "cursor-not-allowed opacity-55" : ""}`;
 
   useEffect(() => {
     if (!isMenuOpen) return;
@@ -78,8 +85,8 @@ export default function Toolbar({
   };
 
   return (
-    <div className="absolute top-4 right-6 z-30 flex items-center gap-3">
-      <div className="hidden lg:flex items-center gap-3">
+    <div className="absolute top-4 right-4 z-30 flex max-w-[calc(100vw-7rem)] items-start gap-3 sm:right-6">
+      <div className="hidden max-w-full flex-wrap justify-end gap-3 lg:flex">
         {onPlanBackClick && (
           <button className={actionButtonClass} onClick={onPlanBackClick}>
             Back
@@ -88,8 +95,8 @@ export default function Toolbar({
         <button className={actionButtonClass} onClick={onC3ANClick}>
           C3AN
         </button>
-        <button className={actionButtonClass} onClick={onAboutClick}>
-          About
+        <button className={actionButtonClass} onClick={onSettingsClick}>
+          Settings
         </button>
         {onPlanningClick && (
           <button className={actionButtonClass} onClick={onPlanningClick}>
@@ -115,8 +122,13 @@ export default function Toolbar({
         <button className={actionButtonClass} onClick={onUploadClick}>
           Upload JSON
         </button>
-        <button className={actionButtonClass} onClick={onRunClick}>
-          Run
+        <button
+          className={runButtonClass}
+          onClick={onRunClick}
+          disabled={isRunDisabled}
+          title={runDisabledReason}
+        >
+          {runText}
         </button>
         <button className={actionButtonClass} onClick={onResetClick}>
           Reset
@@ -146,8 +158,8 @@ export default function Toolbar({
             <button className={menuItemClass} onClick={() => handleMenuAction(onC3ANClick)} role="menuitem">
               C3AN
             </button>
-            <button className={menuItemClass} onClick={() => handleMenuAction(onAboutClick)} role="menuitem">
-              About
+            <button className={menuItemClass} onClick={() => handleMenuAction(onSettingsClick)} role="menuitem">
+              Settings
             </button>
             {onPlanningClick && (
               <button className={menuItemClass} onClick={() => handleMenuAction(onPlanningClick)} role="menuitem">
@@ -173,9 +185,19 @@ export default function Toolbar({
             <button className={menuItemClass} onClick={() => handleMenuAction(onUploadClick)} role="menuitem">
               Upload JSON
             </button>
-            <button className={menuItemClass} onClick={() => handleMenuAction(onRunClick)} role="menuitem">
-              Run
-            </button>
+            {isRunDisabled ? (
+              <button className={`${menuItemClass} cursor-not-allowed opacity-55`} disabled title={runDisabledReason}>
+                {runText}
+              </button>
+            ) : (
+              <button
+                className={menuItemClass}
+                onClick={() => handleMenuAction(onRunClick ?? (() => undefined))}
+                role="menuitem"
+              >
+                {runText}
+              </button>
+            )}
             <button className={menuItemClass} onClick={() => handleMenuAction(onResetClick)} role="menuitem">
               Reset
             </button>

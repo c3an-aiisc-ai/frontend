@@ -1,10 +1,8 @@
 // =============================================================================
 // Routes Configuration
 // =============================================================================
-// Define application routes and their hash aliases.
-// =============================================================================
 
-export type RouteKey = "planning" | "evaluation" | "agentgen" | "editor";
+export type RouteKey = "home" | "planning" | "evaluation" | "agentgen" | "editor";
 
 export type RouteDefinition = {
   key: RouteKey;
@@ -14,6 +12,12 @@ export type RouteDefinition = {
 };
 
 export const routesConfig: Record<RouteKey, RouteDefinition> = {
+  home: {
+    key: "home",
+    path: "/",
+    aliases: ["/"],
+    label: "Home",
+  },
   planning: {
     key: "planning",
     path: "/planning",
@@ -40,28 +44,58 @@ export const routesConfig: Record<RouteKey, RouteDefinition> = {
   },
 } as const;
 
-// Navigation helper - hash paths for programmatic navigation
 export const navigationPaths = {
-  workflow: "#/workflow",
+  home: "#/",
+  editor: "#/workflow",
   planning: "#/planning",
   evaluation: "#/evaluation",
   agentgen: "#/agentgen",
 } as const;
 
-/**
- * Resolve a hash string to a route key
- */
+const PREVIOUS_ROUTE_STORAGE_KEY = "c3an_previous_route";
+
+export function normalizeHashPath(hash: string): string {
+  const trimmed = hash.replace(/^#/, "").trim();
+  if (!trimmed) return "/";
+  return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+}
+
+export function hrefForRoute(route: RouteKey): string {
+  return navigationPaths[route];
+}
+
+export function navigateTo(route: RouteKey): void {
+  if (typeof window === "undefined") return;
+  const nextHash = hrefForRoute(route);
+  if (window.location.hash === nextHash) return;
+  window.location.hash = nextHash;
+}
+
+export function rememberPreviousRoute(previousHash: string, nextHash: string): void {
+  if (typeof window === "undefined" || typeof sessionStorage === "undefined") return;
+  const previousPath = normalizeHashPath(previousHash);
+  const nextPath = normalizeHashPath(nextHash);
+  if (!previousPath || previousPath === nextPath) return;
+  sessionStorage.setItem(PREVIOUS_ROUTE_STORAGE_KEY, previousPath);
+}
+
+export function hasTrackedPreviousRoute(currentHash: string): boolean {
+  if (typeof window === "undefined" || typeof sessionStorage === "undefined") return false;
+  const previousPath = sessionStorage.getItem(PREVIOUS_ROUTE_STORAGE_KEY);
+  if (!previousPath) return false;
+  return normalizeHashPath(previousPath) !== normalizeHashPath(currentHash);
+}
+
 export function resolveRoute(hash: string): RouteKey {
-  const path = hash.replace("#", "");
-  
+  const path = normalizeHashPath(hash).toLowerCase();
+
   for (const route of Object.values(routesConfig)) {
-    if (route.aliases.some((alias) => path.startsWith(alias))) {
+    if (route.aliases.some((alias) => alias.toLowerCase() === path)) {
       return route.key;
     }
   }
-  
-  return "editor"; // Default route
+
+  return "home";
 }
 
-// Type exports
 export type NavigationPaths = typeof navigationPaths;

@@ -25,8 +25,8 @@ export default function StreamPanel({
 }: Props) {
   return (
     <div className="panel bg-white/85">
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-600">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <h3 className="min-w-0 flex-1 text-sm font-semibold uppercase tracking-[0.2em] text-slate-600">
           {title}
         </h3>
         <span className="badge text-[11px] font-semibold text-slate-600">
@@ -37,7 +37,7 @@ export default function StreamPanel({
         {items.length ? (
           items.map((item) => (
             <span key={item} className="group chip">
-              {item}
+              <span className="min-w-0 flex-1">{item}</span>
               <button
                 type="button"
                 className="chip-close"
@@ -52,9 +52,9 @@ export default function StreamPanel({
           <p className="text-xs text-slate-500">{emptyLabel}</p>
         )}
       </div>
-      <div className="mt-4 flex gap-2">
+      <div className="mt-4 flex flex-wrap gap-2">
         <input
-          className={`flex-1 rounded-lg border border-slate-200 bg-white/90 px-3 py-2 text-xs text-slate-700 focus:outline-none focus:ring-2 ${inputFocusRingClass}`}
+          className={`min-w-0 flex-1 rounded-lg border border-slate-200 bg-white/90 px-3 py-2 text-xs text-slate-700 focus:outline-none focus:ring-2 ${inputFocusRingClass}`}
           placeholder={placeholder}
           value={draft}
           onChange={(event) => onDraftChange(event.target.value)}

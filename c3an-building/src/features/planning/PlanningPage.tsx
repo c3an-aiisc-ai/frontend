@@ -1,4 +1,6 @@
 import { useMemo, useState } from "react";
+import { navigateTo } from "../../config";
+import { PageBackButton } from "../../components/ui";
 import type { PlanSubTask, PlanTemplate, PlanTriple } from "../../shared/types/planning";
 import { parsePlanningJSON } from "../../shared/planning/parsePlan";
 import { readCustomPlans, writeCustomPlans } from "../../shared/utils/customPlans";
@@ -640,7 +642,7 @@ export default function PlanningPage() {
     void (async () => {
       const dataAssets = await extractDemoDataAssetsFromFiles(dataFiles);
       queuePlansForBench(payloads, dataAssets);
-      window.location.hash = "#/workflow";
+      navigateTo("editor");
     })();
     return true;
   };
@@ -773,7 +775,7 @@ export default function PlanningPage() {
   };
 
   return (
-    <div className="relative h-screen overflow-y-auto bg-gradient-to-br from-slate-50 via-white to-amber-50 text-slate-900">
+    <div className="relative h-full overflow-y-auto bg-gradient-to-br from-slate-50 via-white to-amber-50 text-slate-900">
       {isGenerating && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-white/80 backdrop-blur-sm">
           <div className="flex flex-col items-center gap-4 rounded-2xl border border-slate-200 bg-white/90 px-6 py-5 shadow-lg">
@@ -787,9 +789,11 @@ export default function PlanningPage() {
         <div className="pointer-events-none absolute -bottom-32 left-10 h-72 w-72 rounded-full bg-emerald-200/40 blur-3xl" />
       </div>
 
-      <div className="relative mx-auto max-w-6xl px-6 py-12">
-        <header className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
-          <div>
+      <div className="page-shell">
+        <PageBackButton fallbackRoute="home" />
+
+        <header className="page-header mt-6">
+          <div className="min-w-0 flex-1">
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-600">
               Planning page
             </p>
@@ -800,20 +804,16 @@ export default function PlanningPage() {
               Paste plan JSON with task metadata and triples to generate draggable templates for the planning canvas.
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="page-actions">
             <button
               className="btn-pill btn-pill-light"
-              onClick={() => {
-                window.location.hash = "#/workflow";
-              }}
+              onClick={() => navigateTo("editor")}
             >
               Workflow builder
             </button>
             <button
               className="btn-pill btn-pill-light"
-              onClick={() => {
-                window.location.hash = "#/agentgen";
-              }}
+              onClick={() => navigateTo("agentgen")}
             >
               AgentGen
             </button>
@@ -829,14 +829,14 @@ export default function PlanningPage() {
         <div className="mt-10 grid gap-6 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
           <div className="space-y-6">
             <section className="panel bg-white/80">
-              <div className="flex items-start justify-between gap-4">
-                <div>
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="min-w-0 flex-1">
                   <h2 className="text-lg font-semibold text-slate-900">Task description</h2>
                   <p className="mt-1 text-xs text-slate-600">
                     Describe the task in natural language. Generate Plan to populate the generator below.
                   </p>
                 </div>
-                <span className="pill-tag pill-tag-amber">
+                <span className="pill-tag pill-tag-amber shrink-0">
                   TEXT
                 </span>
               </div>
@@ -875,14 +875,14 @@ export default function PlanningPage() {
             </section>
 
             <section className="panel bg-white/80">
-              <div className="flex items-start justify-between gap-4">
-                <div>
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="min-w-0 flex-1">
                   <h2 className="text-lg font-semibold text-slate-900">Generate workflow</h2>
                   <p className="mt-1 text-xs text-slate-600">
                     Generated from the task description above. You can also paste {`{ plans: [...] }`}, an array, or a single plan with task_id, sub_tasks, and triples.
                   </p>
                 </div>
-                <span className="pill-tag pill-tag-amber">
+                <span className="pill-tag pill-tag-amber shrink-0">
                   JSON
                 </span>
               </div>
@@ -928,21 +928,21 @@ export default function PlanningPage() {
 
           <div className="space-y-6">
             <section className="panel bg-white/80">
-              <div className="flex items-start justify-between gap-4">
-                <div>
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="min-w-0 flex-1">
                   <h2 className="text-lg font-semibold text-slate-900">Data files</h2>
                   <p className="mt-1 text-xs text-slate-600">
                     Upload supporting data files to keep track of inputs for this plan.
                   </p>
                 </div>
-                <span className="pill-tag pill-tag-amber">
+                <span className="pill-tag pill-tag-amber shrink-0">
                   FILES
                 </span>
               </div>
 
               <div className="mt-4 rounded-xl border border-dashed border-slate-200 bg-white/90 px-4 py-6 text-center text-xs text-slate-600">
-                <p className="font-semibold text-slate-700">Drag and drop is coming soon.</p>
-                <p className="mt-1">For now, use the file picker below.</p>
+                <p className="font-semibold text-slate-700">Use the file picker to attach inputs for this plan.</p>
+                <p className="mt-1">Uploaded files are kept with the plan-generation session.</p>
               </div>
 
               <div className="mt-4 flex flex-wrap items-center gap-2">
@@ -970,9 +970,9 @@ export default function PlanningPage() {
               {dataFiles.length > 0 ? (
                 <div className="mt-4 space-y-2 text-xs text-slate-700">
                   {dataFiles.map((file) => (
-                    <div key={`${file.name}-${file.size}`} className="flex items-center justify-between gap-2">
-                      <span className="truncate">{file.name}</span>
-                      <span className="text-[11px] text-slate-500">{formatFileSize(file.size)}</span>
+                    <div key={`${file.name}-${file.size}`} className="flex min-w-0 items-center justify-between gap-2">
+                      <span className="min-w-0 flex-1 truncate">{file.name}</span>
+                      <span className="shrink-0 text-[11px] text-slate-500">{formatFileSize(file.size)}</span>
                     </div>
                   ))}
                 </div>
@@ -983,7 +983,7 @@ export default function PlanningPage() {
 
             <section className="panel bg-white/80">
               <div className="flex flex-wrap items-start justify-between gap-4">
-                <div>
+                <div className="min-w-0 flex-1">
                   <h2 className="text-lg font-semibold text-slate-900">Custom plan templates</h2>
                   <p className="mt-1 text-xs text-slate-600">
                     These plans appear in the Blocks sidebar when you switch to plan view.
@@ -1007,15 +1007,15 @@ export default function PlanningPage() {
                       key={`${plan.id}-${index}`}
                       className="card"
                     >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
                           <p className="text-sm font-semibold text-slate-900">{plan.name}</p>
                           <p className="mt-1 text-xs text-slate-600">
                             {plan.query || "No query provided."}
                           </p>
                         </div>
                         <button
-                          className="text-xs font-semibold text-rose-600 hover:text-rose-500"
+                          className="shrink-0 text-xs font-semibold text-rose-600 hover:text-rose-500"
                           onClick={() => handleRemovePlan(plan.id)}
                         >
                           Delete
@@ -1051,7 +1051,7 @@ export default function PlanningPage() {
               )}
 
               {customPlans.length > 0 && (
-                <div className="mt-4 flex justify-end">
+                <div className="mt-4 flex flex-wrap justify-end gap-2">
                   <button
                     className="btn-sm btn-sm-rose"
                     onClick={handleClearPlans}

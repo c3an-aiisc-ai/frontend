@@ -1,4 +1,8 @@
 import PlanningCanvas from "./PlanningCanvas";
+import {
+  buildSubPlanHierarchy,
+  materializeVisibleSubPlans,
+} from "../../shared/planning/subPlans";
 import type { PlanningBlock, Theme } from "../../shared/types";
 
 type Props = {
@@ -61,13 +65,30 @@ export default function PlanCanvasView({
       onDropPlanBlock={(point, payload) => {
         const id = `plan-${nextPlanIdRef.current++}`;
         const template = payload?.type === "plan-template" ? payload.template : null;
+        const subPlans = template
+          ? buildSubPlanHierarchy({
+              subTasks: template.sub_tasks ?? [],
+              triples: template.triples ?? [],
+            })
+          : undefined;
+        if (subPlans?.plans?.length) {
+          const visibleSubPlans = materializeVisibleSubPlans({
+            hierarchy: subPlans,
+            scopePrefix: id,
+            origin: point,
+          });
+          setPlans((prev) => [...prev, ...visibleSubPlans.plans]);
+          setPlanConnections((prev) => [...prev, ...visibleSubPlans.connections]);
+          return;
+        }
+
         setPlans((prev) => [
           ...prev,
           {
             id,
             x: point.x,
             y: point.y,
-            name: template?.name ?? "Plan",
+            name: template?.name ?? "Subplan",
             query: template?.query ?? "",
             triples: template?.triples ?? [],
             task_id: template?.task_id,

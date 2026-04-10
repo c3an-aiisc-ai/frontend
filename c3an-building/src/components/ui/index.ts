@@ -4,3 +4,4 @@
 
 export { default as Toolbar } from "./tool_bar/Toolbar";
 export { default as Sidebar } from "./side_bar/Sidebar";
+export { default as PageBackButton } from "./PageBackButton";

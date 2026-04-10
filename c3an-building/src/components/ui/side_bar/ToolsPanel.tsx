@@ -13,14 +13,14 @@ type Props = {
 export default function ToolsPanel({ toolPalette, onToolDragStart }: Props) {
   return (
     <div className="mt-4 flex-1 space-y-4 overflow-hidden">
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
           <p className="text-xs uppercase tracking-wide text-slate-500">Tools</p>
           <p className="text-sm text-slate-600">Eleven trapezoid picks ready to drop</p>
         </div>
       </div>
-      <div className="mt-3 h-[calc(100vh-240px)] overflow-y-auto pr-2">
-        <div className="grid grid-cols-2 gap-3 auto-rows-max">
+      <div className="mt-3 flex-1 overflow-y-auto pr-2">
+        <div className="grid grid-cols-1 gap-3 auto-rows-max">
           {toolPalette.map((tool) => (
             <div
               key={tool.name}
@@ -29,7 +29,7 @@ export default function ToolsPanel({ toolPalette, onToolDragStart }: Props) {
               onDragStart={onToolDragStart(tool.name)}
             >
               <div
-                className={`relative h-[110px] w-[180px] rounded-lg bg-gradient-to-br ${tool.gradient} ring-1 ring-inset ${tool.ring} shadow-sm transition duration-150 group-hover:shadow-md group-hover:-translate-y-0.5`}
+                className={`relative h-[110px] w-full max-w-[180px] rounded-lg bg-gradient-to-br ${tool.gradient} ring-1 ring-inset ${tool.ring} shadow-sm transition duration-150 group-hover:shadow-md group-hover:-translate-y-0.5`}
                 aria-label={tool.name}
               >
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-4 text-center">

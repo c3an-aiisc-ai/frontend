@@ -107,8 +107,8 @@ export default function AgentBlock({
         </button>
 
         {/* Header */}
-        <div className="flex items-start justify-between">
-          <div className="flex flex-col gap-0.5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1 flex flex-col gap-0.5">
             <p className="text-sm font-semibold text-slate-900">{block.name}</p>
             {mode && (
               <p className="text-[11px] text-slate-600 leading-snug">
@@ -116,7 +116,7 @@ export default function AgentBlock({
               </p>
             )}
           </div>
-          <span className="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
+          <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
             Agent
           </span>
         </div>

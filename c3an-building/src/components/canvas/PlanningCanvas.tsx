@@ -380,7 +380,7 @@ export default function PlanningCanvas({
               key={plan.id}
               plan={plan}
               modeOverride={getPlanMode(plan.id)}
-              pillLabel={plan.sub_plans?.plans?.length ? "Plan" : planPillLabel}
+              pillLabel={planPillLabel}
               onEnterWorkflow={() => onEnterWorkflow(plan)}
               toWorldPoint={toWorldPoint}
               linkingFrom={activeLink?.from === plan.id}

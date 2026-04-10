@@ -1,9 +1,17 @@
 import { useCallback, useEffect } from "react";
 import { parsePlanningJSON } from "../shared/planning/parsePlan";
+import {
+  buildPlanConnectionsFromTriples,
+  buildSubPlanHierarchy,
+  flattenVisiblePlanHierarchy,
+} from "../shared/planning/subPlans";
 import { PENDING_PLAN_STORAGE_KEY } from "../shared/constants";
 import { isRecord } from "../shared/utils";
-import type { PlanSubTask, PlanningBlock } from "../shared/types";
-import { buildDemoWorkflowSnapshotForSubTask } from "../features/workflow/demoWorkflow";
+import type { PlanningBlock } from "../shared/types";
+import {
+  buildDemoWorkflowSnapshotForSubTask,
+  type DemoDataAsset,
+} from "../features/workflow/demoWorkflow";
 
 const formatTaskIdLabel = (taskId: string) => {
   const trimmed = taskId.trim();
@@ -28,25 +36,6 @@ const normalizeWorkflowSnapshot = (
     outputs: Array.isArray(value.outputs) ? value.outputs : [],
   };
 };
-
-const buildPlanConnectionsFromTriples = (triples: PlanningBlock["triples"]) => {
-  const seen = new Set<string>();
-  return (triples ?? [])
-    .map((triple) => {
-      const from = String(triple?.from ?? "").trim();
-      const to = String(triple?.to ?? "").trim();
-      if (!from || !to) return null;
-      const key = `${from}::${to}`;
-      if (seen.has(key)) return null;
-      seen.add(key);
-      return { from, to };
-    })
-    .filter((conn): conn is { from: string; to: string } => Boolean(conn));
-};
-
-// NOTE: Option A behavior: do NOT auto-generate agent workflows for sub-plans.
-// Sub-plans should remain in the same schema family as uploaded plan JSON
-// ({task_id, main_task, sub_tasks, triples}).
 
 export function usePlanBench(args: {
   applyPlanJson: (src: unknown) => void;
@@ -81,7 +70,7 @@ export function usePlanBench(args: {
   } = args;
 
   const buildPlanBlocksFromPayload = useCallback((entries: unknown[], dataAssets?: unknown[]) => {
-    const demoDataAssets = Array.isArray(dataAssets) ? (dataAssets as any[]) : [];
+    const demoDataAssets = Array.isArray(dataAssets) ? (dataAssets as DemoDataAsset[]) : [];
     const colCount = 2;
     const startX = 260;
     const startY = 200;
@@ -112,127 +101,6 @@ export function usePlanBench(args: {
           return build(item, index, x, y);
         })
         .filter((plan): plan is PlanningBlock => Boolean(plan));
-    };
-
-    const buildSubPlansFromSubTasks = (
-      subTasks: PlanSubTask[],
-      triples: PlanningBlock["triples"]
-    ): PlanningBlock["sub_plans"] | undefined => {
-      if (!subTasks.length && !triples.length) return undefined;
-      const taskById = new Map<string, PlanSubTask>();
-      const orderedIds: string[] = [];
-      const seen = new Set<string>();
-      const addId = (value: string, task?: PlanSubTask) => {
-        const id = value.trim();
-        if (!id || seen.has(id)) return;
-        seen.add(id);
-        orderedIds.push(id);
-        if (task) taskById.set(id, task);
-      };
-      subTasks.forEach((task) => {
-        if (!task?.sub_task_id) return;
-        addId(task.sub_task_id, task);
-      });
-      triples.forEach((triple) => {
-        addId(String(triple?.from ?? ""));
-        addId(String(triple?.to ?? ""));
-      });
-
-      const subPlanGapX = gapX;
-      const subPlanY = typeof window === "undefined" ? startY : centerY;
-      const subPlanStartX =
-        typeof window === "undefined"
-          ? startX
-          : centerX - ((orderedIds.length - 1) * subPlanGapX) / 2;
-
-      const isKimoDemoTriad =
-        orderedIds.length === 3 &&
-        orderedIds.includes("ST-1") &&
-        orderedIds.includes("ST-2") &&
-        orderedIds.includes("ST-3");
-
-      const kimoLeftX = subPlanStartX;
-      const kimoRightX = subPlanStartX + subPlanGapX * 2;
-      const kimoStackGapY = 220;
-      const orderedIndex = new Map<string, number>();
-      orderedIds.forEach((nodeId, index) => {
-        orderedIndex.set(nodeId, index);
-      });
-      const branchTargetsBySource = new Map<string, string[]>();
-      const pushBranchTarget = (source: string, target: string) => {
-        const existing = branchTargetsBySource.get(source);
-        if (existing) {
-          if (!existing.includes(target)) existing.push(target);
-        } else {
-          branchTargetsBySource.set(source, [target]);
-        }
-      };
-      triples.forEach((triple) => {
-        const from = String(triple?.from ?? "").trim();
-        const to = String(triple?.to ?? "").trim();
-        if (!from || !to) return;
-        if (triple?.op !== "brn") return;
-        pushBranchTarget(from, to);
-      });
-      const branchOffsets = new Map<string, number>();
-      if (branchTargetsBySource.size > 0) {
-        const branchGapY = 140;
-        branchTargetsBySource.forEach((targets) => {
-          const sortedTargets = [...targets].sort((a, b) => {
-            return (orderedIndex.get(a) ?? 0) - (orderedIndex.get(b) ?? 0);
-          });
-          if (sortedTargets.length <= 1) return;
-          const totalSpan = (sortedTargets.length - 1) * branchGapY;
-          const startOffset = -totalSpan / 2;
-          sortedTargets.forEach((target, index) => {
-            if (branchOffsets.has(target)) return;
-            branchOffsets.set(target, startOffset + index * branchGapY);
-          });
-        });
-      }
-
-      const subPlanBlocks = orderedIds
-        .map((nodeId, index) => {
-        const task = taskById.get(nodeId);
-        const name = task?.name?.trim() || nodeId;
-        const description = task?.description?.trim() || "";
-
-        // Demo behavior: auto-generate an agent workflow for ST-1..ST-3 when those IDs are present.
-        const workflow =
-          nodeId === "ST-1" || nodeId === "ST-2" || nodeId === "ST-3"
-            ? buildDemoWorkflowSnapshotForSubTask({ subTaskId: nodeId, dataAssets: demoDataAssets })
-            : undefined;
-
-        const plan: PlanningBlock = {
-          id: nodeId,
-          x: isKimoDemoTriad
-            ? nodeId === "ST-3"
-              ? kimoRightX
-              : kimoLeftX
-            : subPlanStartX + index * subPlanGapX,
-          y: isKimoDemoTriad
-            ? nodeId === "ST-1"
-              ? subPlanY - kimoStackGapY / 2
-              : nodeId === "ST-2"
-                ? subPlanY + kimoStackGapY / 2
-                : subPlanY
-            : subPlanY + (branchOffsets.get(nodeId) ?? 0),
-          name,
-          query: description,
-          triples: [],
-          task_id: nodeId,
-          ...(task?.name ? { main_task: task.name } : {}),
-          ...(task ? { sub_tasks: [task] } : {}),
-          ...(workflow ? { workflow } : {}),
-        };
-        return plan;
-      })
-      .filter((plan): plan is PlanningBlock => Boolean(plan));
-
-      return {
-        plans: subPlanBlocks,
-        connections: buildPlanConnectionsFromTriples(triples),
-      };
     };
 
     function resolveSubPlans(
@@ -269,7 +137,18 @@ export function usePlanBench(args: {
         };
       }
       const subTasks = parsed.sub_tasks?.length ? parsed.sub_tasks : [];
-      return buildSubPlansFromSubTasks(subTasks, parsed.triples);
+      return buildSubPlanHierarchy({
+        subTasks,
+        triples: parsed.triples,
+        dataAssets: demoDataAssets,
+        buildWorkflowForTask: ({ subTaskId, dataAssets }) =>
+          subTaskId === "ST-1" || subTaskId === "ST-2" || subTaskId === "ST-3"
+            ? buildDemoWorkflowSnapshotForSubTask({
+                subTaskId,
+                dataAssets: dataAssets as DemoDataAsset[],
+              })
+            : undefined,
+      });
     }
 
     function buildPlanBlocks(
@@ -376,11 +255,16 @@ export function usePlanBench(args: {
             return Number.isFinite(n) ? Math.max(max, n) : max;
           }, 0);
           if (maxPlan > 0) nextPlanIdRef.current = Math.max(nextPlanIdRef.current, maxPlan + 1);
-          setPlans(nextPlans);
-          setPlanConnections(buildSequentialPlanConnections(nextPlans));
+          const nextConnections = buildSequentialPlanConnections(nextPlans);
+          const visibleHierarchy = flattenVisiblePlanHierarchy({
+            plans: nextPlans,
+            connections: nextConnections,
+          });
+          setPlans(visibleHierarchy.plans);
+          setPlanConnections(visibleHierarchy.connections);
+          setPlanStack([]);
           planLinkFromRef.current = null;
           setActivePlanId(null);
-          setPlanStack([]);
           setViewMode("plan");
           setActivePanel((prev) => (prev === "tools" ? "blocks" : prev));
           return;

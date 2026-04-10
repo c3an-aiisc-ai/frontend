@@ -54,10 +54,10 @@ export default function Sidebar({
               : "bg-slate-800/70 text-white hover:bg-slate-800"
           }`}
           onClick={() => onViewModeChange(viewMode === "plan" ? "agent" : "plan")}
-          aria-label={viewMode === "plan" ? "Switch to agent view" : "Switch to plan view"}
-          title={viewMode === "plan" ? "Plan view" : "Agent view"}
+          aria-label={viewMode === "plan" ? "Switch to agent view" : "Switch to subplan view"}
+          title={viewMode === "plan" ? "Subplan view" : "Agent view"}
         >
-          {viewMode === "plan" ? "PLAN" : "AGENT"}
+          {viewMode === "plan" ? "SUB\nPLAN" : "AGENT"}
         </button>
 
         {visibleTabs.map((item) => {
@@ -100,8 +100,8 @@ export default function Sidebar({
               : "border-r border-slate-200 bg-white/95 text-slate-900"
           }`}
         >
-          <div className="flex items-start justify-between">
-            <div>
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
               <h2 className="text-lg font-semibold text-slate-900">
                 {PANEL_TITLES[activePanel]}
               </h2>

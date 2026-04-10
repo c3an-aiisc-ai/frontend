@@ -1,4 +1,6 @@
 import { useMemo, useState } from "react";
+import { navigateTo } from "../../config";
+import { PageBackButton } from "../../components/ui";
 import type { AgentRegistryEntry, PlanningBlock } from "../../shared/types";
 import { AGENT_REGISTRY_AGENTS, PENDING_PLAN_STORAGE_KEY } from "../../shared/constants";
 import { readCustomAgents, writeCustomAgents } from "../../shared/utils/customAgents";
@@ -425,7 +427,7 @@ export default function AgentGenPage() {
   }, [customAgents]);
 
   return (
-    <div className="relative h-screen overflow-y-auto bg-gradient-to-br from-slate-50 via-white to-emerald-50 text-slate-900">
+    <div className="relative h-full overflow-y-auto bg-gradient-to-br from-slate-50 via-white to-emerald-50 text-slate-900">
       {isGenerating && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-white/80 backdrop-blur-sm">
           <div className="flex flex-col items-center gap-4 rounded-2xl border border-slate-200 bg-white/90 px-6 py-5 shadow-lg">
@@ -439,9 +441,11 @@ export default function AgentGenPage() {
         <div className="pointer-events-none absolute -bottom-32 left-10 h-72 w-72 rounded-full bg-amber-200/40 blur-3xl" />
       </div>
 
-      <div className="relative mx-auto max-w-6xl px-6 py-12">
-        <header className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
-          <div>
+      <div className="page-shell">
+        <PageBackButton fallbackRoute="home" />
+
+        <header className="page-header mt-6">
+          <div className="min-w-0 flex-1">
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-600">
               Agent generator
             </p>
@@ -452,28 +456,22 @@ export default function AgentGenPage() {
               Paste JSON to generate agent blocks and store them in the sidebar palette.
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="page-actions">
             <button
               className="btn-pill btn-pill-light"
-              onClick={() => {
-                window.location.hash = "#/workflow";
-              }}
+              onClick={() => navigateTo("editor")}
             >
               Workflow builder
             </button>
             <button
               className="btn-pill btn-pill-light"
-              onClick={() => {
-                window.location.hash = "#/evaluation";
-              }}
+              onClick={() => navigateTo("evaluation")}
             >
               Evaluation
             </button>
             <button
               className="btn-pill btn-pill-light"
-              onClick={() => {
-                window.location.hash = "#/planning";
-              }}
+              onClick={() => navigateTo("planning")}
             >
               Planning
             </button>
@@ -488,14 +486,14 @@ export default function AgentGenPage() {
 
         <div className="mt-10 grid gap-6 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
           <section className="panel bg-white/80">
-            <div className="flex items-start justify-between gap-4">
-              <div>
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="min-w-0 flex-1">
                 <h2 className="text-lg font-semibold text-slate-900">JSON intake</h2>
                 <p className="mt-1 text-xs text-slate-600">
                   Supports {`{ agents: [...] }`}, an array, a single agent object, or plan JSON with agents + triples.
                 </p>
               </div>
-              <span className="pill-tag pill-tag-emerald">
+              <span className="pill-tag pill-tag-emerald shrink-0">
                 JSON
               </span>
             </div>
@@ -545,7 +543,7 @@ export default function AgentGenPage() {
 
           <section className="panel bg-white/80">
             <div className="flex flex-wrap items-start justify-between gap-4">
-              <div>
+              <div className="min-w-0 flex-1">
                 <h2 className="text-lg font-semibold text-slate-900">Custom agent palette</h2>
                 <p className="mt-1 text-xs text-slate-600">
                   These agents appear in the Blocks sidebar and persist across reloads.
@@ -572,15 +570,15 @@ export default function AgentGenPage() {
                       key={`${agent.id}-${index}`}
                       className="card"
                     >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
                           <p className="text-sm font-semibold text-slate-900">{agent.name}</p>
                           <p className="mt-1 text-xs text-slate-600">
                             {agent.description || "No description provided."}
                           </p>
                         </div>
                         <button
-                          className="text-xs font-semibold text-rose-600 hover:text-rose-500"
+                          className="shrink-0 text-xs font-semibold text-rose-600 hover:text-rose-500"
                           onClick={() => handleRemoveAgent(agent.id)}
                         >
                           Delete
@@ -605,7 +603,7 @@ export default function AgentGenPage() {
             )}
 
             {customAgents.length > 0 && (
-              <div className="mt-4 flex justify-end">
+              <div className="mt-4 flex flex-wrap justify-end gap-2">
                 <button
                   className="btn-sm btn-sm-rose"
                   onClick={handleClearAgents}

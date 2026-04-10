@@ -351,6 +351,16 @@ type PlanSubPlanDownload = {
 const normalizeStringList = (value: string[] | undefined) =>
 	Array.isArray(value) ? value.map((item) => String(item).trim()).filter(Boolean) : [];
 
+function normalizeSubTaskExport(task: unknown): unknown {
+	if (!isRecord(task)) return task;
+	const maybeTask = task as Partial<PlanSubTask>;
+	const tools = normalizeStringList(maybeTask.Tools ?? maybeTask.tools);
+	const next: Record<string, unknown> = { ...task };
+	if (tools.length) next.Tools = tools;
+	if ("tools" in next) delete next.tools;
+	return next;
+}
+
 function normalizePlanTriples(triples: PlanningBlock["triples"] | undefined) {
 	return (triples ?? [])
 		.map((triple) => {
@@ -380,13 +390,13 @@ function buildSubTasks(
 		const description = typeof task.description === "string" ? task.description.trim() : "";
 		const knowledgeDependencies = normalizeStringList(task.knowledge_dependencies);
 		const requiredSkills = normalizeStringList(task.required_skills);
-		const tools = normalizeStringList((task as any).Tools ?? (task as any).tools);
+		const tools = normalizeStringList(task.Tools ?? task.tools);
 
 		const next: PlanSubTaskFromBlock = { sub_task_id: subTaskId, name };
 		if (description) next.description = description;
 		if (knowledgeDependencies.length) next.knowledge_dependencies = knowledgeDependencies;
 		if (requiredSkills.length) next.required_skills = requiredSkills;
-		if (tools.length) (next as any).Tools = tools;
+		if (tools.length) next.Tools = tools;
 
 		seen.add(subTaskId);
 		result.push(next);
@@ -993,22 +1003,15 @@ export function useWorkflowDownload(args: {
 				...agentPlanTemplateRef.current,
 				triples,
 			};
-			if (Array.isArray((payload as any).sub_tasks)) {
-				(payload as any).sub_tasks = (payload as any).sub_tasks.map((task: any) => {
-					if (!isRecord(task)) return task;
-					const tools = normalizeStringList((task as any).Tools ?? (task as any).tools);
-					const next = { ...task } as any;
-					if (tools.length) next.Tools = tools;
-					if ("tools" in next) delete next.tools;
-					return next;
-				});
+			if (Array.isArray(payload.sub_tasks)) {
+				payload.sub_tasks = payload.sub_tasks.map((task) => normalizeSubTaskExport(task));
 			}
 			// keep output minimal
-			if ("workflow" in payload) delete (payload as any).workflow;
+			if ("workflow" in payload) delete payload.workflow;
 
 			const toolBindings = buildToolBindingsFromAgentWorkflow({ blocks, tools, connections });
 			if (Object.keys(toolBindings).length > 0) payload.tool_bindings = toolBindings;
-			else if ("tool_bindings" in payload) delete (payload as any).tool_bindings;
+			else if ("tool_bindings" in payload) delete payload.tool_bindings;
 
 			downloadWorkflow(payload, "triples.json");
 			return;

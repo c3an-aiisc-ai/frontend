@@ -11,7 +11,16 @@ export type { AppConfig, StorageKeys } from "./app.config";
 export { canvasConfig } from "./canvas.config";
 export type { CanvasConfig, ThemePalette } from "./canvas.config";
 
-export { routesConfig, navigationPaths, resolveRoute } from "./routes.config";
+export {
+  routesConfig,
+  navigationPaths,
+  hrefForRoute,
+  navigateTo,
+  rememberPreviousRoute,
+  hasTrackedPreviousRoute,
+  normalizeHashPath,
+  resolveRoute,
+} from "./routes.config";
 export type { RouteKey, RouteDefinition, NavigationPaths } from "./routes.config";
 
 export { panelConfig, categoryStyles } from "./ui.config";

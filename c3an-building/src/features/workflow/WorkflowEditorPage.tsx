@@ -24,6 +24,9 @@ import { useIdCounters } from "../../hooks/useIdCounters";
 import { useSidebarDragHandlers } from "../../hooks/useSidebarDragHandlers";
 import { useHandleVisibility } from "../../hooks/useHandleVisibility";
 import { useWorkflowReset } from "../../hooks/useWorkflowReset";
+import { flattenVisiblePlanHierarchy } from "../../shared/planning/subPlans";
+import { navigateTo } from "../../config";
+import { PageBackButton } from "../../components/ui";
 import {
   TOOL_PALETTE,
   EVAL_OPTIONS,
@@ -137,10 +140,25 @@ const readPlanWorkspaceSnapshot = (): PlanWorkspaceSnapshot | null => {
     const planStack = rawStack
       .map((entry) => readPlanContextSnapshot(entry))
       .filter((entry): entry is PlanContextSnapshot => Boolean(entry));
+    const hasRootWrapperPlans = plans.some(
+      (plan) =>
+        (plan.sub_plans?.plans?.length ?? 0) > 0 &&
+        ((plan.sub_tasks?.length ?? 0) > 1 || (!plan.workflow && (plan.sub_tasks?.length ?? 0) !== 1)),
+    );
+    const shouldFlattenVisiblePlans =
+      viewMode === "plan" &&
+      planStack.length === 0 &&
+      hasRootWrapperPlans;
+    const visibleHierarchy = shouldFlattenVisiblePlans
+      ? flattenVisiblePlanHierarchy({
+          plans,
+          connections: planConnections,
+        })
+      : null;
     return {
-      plans,
-      planConnections,
-      activePlanId,
+      plans: visibleHierarchy?.plans ?? plans,
+      planConnections: visibleHierarchy?.connections ?? planConnections,
+      activePlanId: visibleHierarchy ? null : activePlanId,
       viewMode,
       nextPlanId,
       planStack,
@@ -154,11 +172,17 @@ export default function WorkflowEditorPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const initialPlanSnapshot = useMemo(() => readPlanWorkspaceSnapshot(), []);
-  const [viewMode, setViewMode] = useState<ViewMode>(() => initialPlanSnapshot?.viewMode ?? "agent");
-
   const STARTUP_LOADING_MS = 900;
   const VIEW_SWITCH_LOADING_MS = 650;
   const startupLoadingKey = "c3an_workflow_startup_loading_shown";
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    try {
+      if (sessionStorage.getItem(startupLoadingKey) !== "1") return "agent";
+    } catch {
+      return "agent";
+    }
+    return initialPlanSnapshot?.viewMode ?? "agent";
+  });
 
   const [showStartupLoading, setShowStartupLoading] = useState(() => {
     try {
@@ -184,9 +208,6 @@ export default function WorkflowEditorPage() {
 
   useEffect(() => {
     if (!showStartupLoading) return;
-
-    // Per request: on first load, show a loading page and land in agent view.
-    setViewMode("agent");
 
     const timeout = window.setTimeout(() => {
       try {
@@ -833,7 +854,7 @@ export default function WorkflowEditorPage() {
       : undefined;
 
   return (
-    <div className={`relative h-screen w-screen overflow-hidden ${appThemeClass}`}>
+    <div className={`relative h-full w-full overflow-hidden ${appThemeClass}`}>
       {showStartupLoading ? (
         <AgentViewLoadingScreen theme={theme} />
       ) : isViewSwitchLoading || isSubplanLoading ? (
@@ -882,22 +903,27 @@ export default function WorkflowEditorPage() {
         theme={theme}
         fileInputRef={fileInputRef}
         downloadLabel={downloadLabel}
-        onPlanBackClick={toolbarBackHandler}
         onC3ANClick={handleC3ANClick}
-        onAboutClick={() => setActivePanel((prev) => (prev === "settings" ? null : "settings"))}
-        onPlanningClick={() => {
-          window.location.hash = "#/planning";
-        }}
-        onAgentGenClick={() => {
-          window.location.hash = "#/agentgen";
-        }}
+        onSettingsClick={() => setActivePanel((prev) => (prev === "settings" ? null : "settings"))}
+        onPlanningClick={() => navigateTo("planning")}
+        onEvaluationClick={() => navigateTo("evaluation")}
+        onAgentGenClick={() => navigateTo("agentgen")}
         onEvalsClick={() => setShowEvalsModal(true)}
         onDownloadClick={handleDownload}
         onUploadClick={() => fileInputRef.current?.click()}
-        onRunClick={() => alert("Run triggered")}
+        runButtonLabel="Run unavailable"
+        runDisabledReason="Execution requires a backend runner. Editing, importing, and exporting still work."
         onResetClick={handleReset}
         onFileUpload={handleUpload}
       />
+
+      <div className="absolute top-4 left-20 z-30 max-w-[calc(100vw-8rem)]">
+        <PageBackButton
+          fallbackRoute="home"
+          onBack={toolbarBackHandler}
+          className={theme === "dark" ? "border-slate-700 bg-slate-900/90 text-slate-100 hover:bg-slate-800" : ""}
+        />
+      </div>
 
       <main className="relative z-0 h-full w-full">
         {showStartupLoading || isViewSwitchLoading || isSubplanLoading ? null : viewMode === "plan" ? (
@@ -906,7 +932,7 @@ export default function WorkflowEditorPage() {
             theme={theme}
             plans={plans}
             connections={planConnections}
-            planPillLabel={planStack.length > 0 ? "Subtask" : "Plan"}
+            planPillLabel="Subplan"
             planLinkFromRef={planLinkFromRef}
             setPlans={setPlans}
             setPlanConnections={setPlanConnections}

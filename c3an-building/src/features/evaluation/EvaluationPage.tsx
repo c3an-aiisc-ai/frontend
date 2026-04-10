@@ -1,6 +1,13 @@
 import { useMemo, useRef, useState } from "react";
+import { navigateTo } from "../../config";
+import { PageBackButton } from "../../components/ui";
 import { EVAL_OPTIONS } from "../../shared/constants";
-import { StreamPanel, MetricLibrary, MappingList } from "../../components/evaluation";
+import {
+  StreamPanel,
+  MetricLibrary,
+  MappingSidebar,
+  MappingDetails,
+} from "./components";
 import { CATEGORY_STYLES, DEFAULT_INPUTS, DEFAULT_OUTPUTS, DEFAULT_MAPPINGS } from "./constants";
 import { normalizeMappings, uniqueList } from "./utils";
 import type { MappingRow } from "./types";
@@ -11,6 +18,10 @@ export default function EvaluationPage() {
   const [mappings, setMappings] = useState(DEFAULT_MAPPINGS);
   const [inputDraft, setInputDraft] = useState("");
   const [outputDraft, setOutputDraft] = useState("");
+  const [mappingFilter, setMappingFilter] = useState("");
+  const [selectedMappingId, setSelectedMappingId] = useState<string | null>(
+    DEFAULT_MAPPINGS[0]?.id ?? null
+  );
   const nextMappingId = useRef(DEFAULT_MAPPINGS.length + 1);
 
   const metricGroups = useMemo(() => {
@@ -52,6 +63,33 @@ export default function EvaluationPage() {
       activeMappings,
     };
   }, [inputs.length, inputsWithMappings.size, mappings, metricsInUse.size]);
+
+  const filteredMappings = useMemo(() => {
+    const query = mappingFilter.trim().toLowerCase();
+    if (!query) return mappings;
+    return mappings.filter((row) => {
+      const haystack = [row.input, row.output, row.owner, row.threshold, row.cadence, ...row.metrics]
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [mappingFilter, mappings]);
+
+  const activeMappingId = useMemo(() => {
+    if (selectedMappingId && filteredMappings.some((row) => row.id === selectedMappingId)) {
+      return selectedMappingId;
+    }
+    if (filteredMappings.length > 0) return filteredMappings[0].id;
+    if (selectedMappingId && mappings.some((row) => row.id === selectedMappingId)) {
+      return selectedMappingId;
+    }
+    return mappings[0]?.id ?? null;
+  }, [filteredMappings, mappings, selectedMappingId]);
+
+  const selectedMapping = useMemo(
+    () => mappings.find((row) => row.id === activeMappingId) ?? null,
+    [activeMappingId, mappings]
+  );
 
   const handleAddInput = () => {
     const trimmed = inputDraft.trim();
@@ -95,6 +133,7 @@ export default function EvaluationPage() {
       cadence: "Weekly",
     };
     setMappings((prev) => [...prev, nextRow]);
+    setSelectedMappingId(id);
   };
 
   const handleRemoveMapping = (id: string) => {
@@ -125,15 +164,17 @@ export default function EvaluationPage() {
   };
 
   return (
-    <div className="h-screen overflow-y-auto bg-gradient-to-br from-white via-slate-50 to-sky-50 text-slate-900">
+    <div className="h-full overflow-y-auto bg-gradient-to-br from-white via-slate-50 to-sky-50 text-slate-900">
       <div className="relative overflow-hidden">
         <div className="pointer-events-none absolute -top-32 -left-20 h-72 w-72 rounded-full bg-sky-200/40 blur-3xl" />
         <div className="pointer-events-none absolute -bottom-32 right-10 h-72 w-72 rounded-full bg-emerald-200/40 blur-3xl" />
       </div>
 
-      <div className="relative mx-auto max-w-6xl px-6 py-12">
-        <header className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
-          <div>
+      <div className="page-shell">
+        <PageBackButton fallbackRoute="home" />
+
+        <header className="page-header mt-6">
+          <div className="min-w-0 flex-1">
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-600">
               Evaluation page
             </p>
@@ -145,28 +186,22 @@ export default function EvaluationPage() {
               be produced.
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="page-actions">
             <button
               className="btn-pill btn-pill-light"
-              onClick={() => {
-                window.location.hash = "#/workflow";
-              }}
+              onClick={() => navigateTo("editor")}
             >
               Workflow builder
             </button>
             <button
               className="btn-pill btn-pill-light"
-              onClick={() => {
-                window.location.hash = "#/agentgen";
-              }}
+              onClick={() => navigateTo("agentgen")}
             >
               AgentGen
             </button>
             <button
               className="btn-pill btn-pill-light"
-              onClick={() => {
-                window.location.hash = "#/planning";
-              }}
+              onClick={() => navigateTo("planning")}
             >
               Planning
             </button>
@@ -179,97 +214,58 @@ export default function EvaluationPage() {
           </div>
         </header>
 
-        <section className="mt-10 panel bg-white/80">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                Coverage
-              </p>
-              <h2 className="mt-2 text-lg font-semibold text-slate-900">Evaluation blueprint</h2>
-            </div>
-            <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600">
-              <span className="badge font-semibold text-slate-700">
-                Inputs: {inputs.length}
-              </span>
-              <span className="badge font-semibold text-slate-700">
-                Outputs: {outputs.length}
-              </span>
-              <span className="badge font-semibold text-slate-700">
-                Mappings: {summary.mappingCount}
-              </span>
-            </div>
+        <section className="mt-10 grid gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
+          <div className="space-y-6">
+            <MappingSidebar
+              mappings={filteredMappings}
+              selectedMappingId={activeMappingId}
+              filterValue={mappingFilter}
+              summary={summary}
+              onAddMapping={handleAddMapping}
+              onFilterChange={setMappingFilter}
+              onSelectMapping={setSelectedMappingId}
+            />
+
+            <StreamPanel
+              title="Inputs"
+              countLabel={`${inputs.length} streams`}
+              items={inputs}
+              emptyLabel="No inputs yet. Add one below."
+              placeholder="Add input stream"
+              draft={inputDraft}
+              onDraftChange={setInputDraft}
+              onAdd={handleAddInput}
+              onRemove={handleRemoveInput}
+              inputFocusRingClass="focus:ring-sky-400"
+            />
+
+            <StreamPanel
+              title="Outputs"
+              countLabel={`${outputs.length} channels`}
+              items={outputs}
+              emptyLabel="No outputs yet. Add one below."
+              placeholder="Add output channel"
+              draft={outputDraft}
+              onDraftChange={setOutputDraft}
+              onAdd={handleAddOutput}
+              onRemove={handleRemoveOutput}
+              inputFocusRingClass="focus:ring-emerald-400"
+            />
+
+            <MetricLibrary metricGroups={metricGroups} categoryStyles={CATEGORY_STYLES} />
           </div>
 
-          <div className="mt-5 grid gap-4 md:grid-cols-3">
-            <div className="rounded-xl bg-slate-50 px-4 py-3">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Input coverage
-              </p>
-              <p className="mt-2 text-2xl font-semibold text-slate-900">{summary.coverage}%</p>
-              <p className="mt-1 text-xs text-slate-600">
-                {inputsWithMappings.size} of {inputs.length} inputs mapped
-              </p>
-            </div>
-            <div className="rounded-xl bg-sky-50 px-4 py-3">
-              <p className="text-xs font-semibold uppercase tracking-wide text-sky-600">
-                Metrics coverage
-              </p>
-              <p className="mt-2 text-2xl font-semibold text-slate-900">{summary.metricCoverage}%</p>
-              <p className="mt-1 text-xs text-slate-600">
-                {metricsInUse.size} of {EVAL_OPTIONS.length} metrics in use
-              </p>
-            </div>
-            <div className="rounded-xl bg-emerald-50 px-4 py-3">
-              <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
-                Active mappings
-              </p>
-              <p className="mt-2 text-2xl font-semibold text-slate-900">{summary.activeMappings}</p>
-              <p className="mt-1 text-xs text-slate-600">Mappings with at least one metric</p>
-            </div>
-          </div>
-        </section>
-
-        <section className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]">
-          <StreamPanel
-            title="Inputs"
-            countLabel={`${inputs.length} streams`}
-            items={inputs}
-            emptyLabel="No inputs yet. Add one below."
-            placeholder="Add input stream"
-            draft={inputDraft}
-            onDraftChange={setInputDraft}
-            onAdd={handleAddInput}
-            onRemove={handleRemoveInput}
-            inputFocusRingClass="focus:ring-sky-400"
-          />
-
-          <MetricLibrary metricGroups={metricGroups} categoryStyles={CATEGORY_STYLES} />
-
-          <StreamPanel
-            title="Outputs"
-            countLabel={`${outputs.length} channels`}
-            items={outputs}
-            emptyLabel="No outputs yet. Add one below."
-            placeholder="Add output channel"
-            draft={outputDraft}
-            onDraftChange={setOutputDraft}
-            onAdd={handleAddOutput}
-            onRemove={handleRemoveOutput}
-            inputFocusRingClass="focus:ring-emerald-400"
+          <MappingDetails
+            mapping={selectedMapping}
+            inputs={inputs}
+            outputs={outputs}
+            metricGroups={metricGroups}
+            categoryStyles={CATEGORY_STYLES}
+            onRemoveMapping={handleRemoveMapping}
+            onMappingChange={handleMappingChange}
+            onToggleMetric={toggleMetric}
           />
         </section>
-
-        <MappingList
-          mappings={mappings}
-          inputs={inputs}
-          outputs={outputs}
-          metricGroups={metricGroups}
-          categoryStyles={CATEGORY_STYLES}
-          onAddMapping={handleAddMapping}
-          onRemoveMapping={handleRemoveMapping}
-          onMappingChange={handleMappingChange}
-          onToggleMetric={toggleMetric}
-        />
       </div>
     </div>
   );

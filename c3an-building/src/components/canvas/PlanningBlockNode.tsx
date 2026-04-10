@@ -30,7 +30,7 @@ type Props = {
 export default function PlanningBlockNode({
   plan,
   modeOverride,
-  pillLabel = "Plan",
+  pillLabel = "Subplan",
   onEnterWorkflow,
   onMove,
   toWorldPoint,
@@ -100,15 +100,15 @@ export default function PlanningBlockNode({
           linkingFrom || linkingTarget ? "plan-card-active" : ""
         }`}
       >
-        <div className="flex items-start justify-between">
-          <div>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold text-slate-900 break-words whitespace-pre-wrap leading-snug">{plan.name}</p>
             {effectiveMode && (
               <p className="text-[11px] text-slate-600 leading-snug">Mode: {effectiveMode}</p>
             )}
             <p className="mt-1 text-xs text-slate-700 break-words whitespace-pre-wrap leading-snug" title={plan.query}>{plan.query || "(no query)"}</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             <span className="rounded-full bg-amber-50 px-2 py-1 text-[10px] font-semibold uppercase text-amber-700 ring-1 ring-amber-100">
               {pillLabel}
             </span>
@@ -130,7 +130,7 @@ export default function PlanningBlockNode({
         </div>
 
         <button
-          className="mt-4 inline-flex items-center gap-1 rounded-full bg-slate-900 px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-white shadow-sm"
+          className="mt-4 inline-flex max-w-full min-w-0 items-center justify-center gap-1 rounded-full bg-slate-900 px-3 py-1 text-center text-[10px] font-semibold uppercase tracking-wide text-white shadow-sm whitespace-normal break-words"
           data-interactive
           onPointerDown={(e) => {
             e.stopPropagation();
@@ -143,7 +143,7 @@ export default function PlanningBlockNode({
             onEnterWorkflow();
           }}
         >
-          {hasSubPlans ? "View Subplans →" : "Enter Workflow →"}
+          {hasSubPlans ? "Open Subplans ->" : "Open Agents ->"}
         </button>
       </div>
 

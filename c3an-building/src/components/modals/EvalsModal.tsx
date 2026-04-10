@@ -64,7 +64,7 @@ export default function EvalsModal({
       onClick={onClose}
     >
       <div
-        className="modal-card w-[680px] max-h-[85vh]"
+        className="modal-card w-[min(680px,calc(100vw-2rem))] max-h-[85vh]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Close button */}
@@ -86,8 +86,8 @@ export default function EvalsModal({
         <div className="max-h-[85vh] overflow-y-auto p-6 text-slate-900">
           {/* Header */}
           <div className="mb-5">
-            <div className="flex items-center justify-between">
-              <div>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
                 <h2 className="text-xl font-semibold text-slate-900">
                   Evaluation Metrics
                 </h2>
@@ -139,10 +139,10 @@ export default function EvalsModal({
                             onChange={() => onToggleEval(option.id)}
                             className="mt-0.5 h-4 w-4 rounded border-2 border-slate-300 cursor-pointer"
                           />
-                          <div className="flex-1">
-                            <div className="flex items-center justify-between">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-start justify-between gap-2">
                               <span
-                                className={`text-sm font-semibold ${
+                                className={`min-w-0 flex-1 text-sm font-semibold ${
                                   isSelected ? styles.title : "text-slate-800"
                                 }`}
                               >
@@ -170,27 +170,19 @@ export default function EvalsModal({
           </div>
 
           {/* Footer */}
-          <div className="mt-6 flex items-center justify-between gap-3 pt-4 border-t border-slate-200">
+          <div className="mt-6 flex flex-col gap-3 border-t border-slate-200 pt-4 sm:flex-row sm:items-center sm:justify-between">
             <button
               className="rounded-md border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
               onClick={onClearAll}
             >
               Clear All
             </button>
-            <div className="flex items-center gap-2">
-              <button
-                className="rounded-md border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-                onClick={onClose}
-              >
-                Cancel
-              </button>
-              <button
-                className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800"
-                onClick={onClose}
-              >
-                Apply Metrics
-              </button>
-            </div>
+            <button
+              className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800"
+              onClick={onClose}
+            >
+              Done
+            </button>
           </div>
         </div>
       </div>

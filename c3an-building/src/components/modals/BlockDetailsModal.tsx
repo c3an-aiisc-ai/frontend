@@ -47,7 +47,7 @@ export default function BlockDetailsModal({
       onClick={onClose}
     >
       <div
-        className="modal-card w-[680px] max-h-[80vh] p-5"
+        className="modal-card w-[min(680px,calc(100vw-2rem))] max-h-[80vh] p-5"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Close button */}
@@ -67,8 +67,8 @@ export default function BlockDetailsModal({
         </div>
 
         {/* Header */}
-        <div className="flex items-center justify-between gap-3">
-          <div>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
             <p className="text-lg font-semibold text-slate-900">{block.name}</p>
             {getBlockMode(block) && (
               <p className="text-sm text-slate-600">
@@ -115,7 +115,7 @@ export default function BlockDetailsModal({
         </div>
 
         {/* Inputs/Outputs Grid */}
-        <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+        <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
           {/* Inputs */}
           <div className="panel-sm">
             <p className="label-xs">
@@ -128,9 +128,9 @@ export default function BlockDetailsModal({
                 return (
                   <div
                     key={idx}
-                    className="flex items-center justify-between gap-2 text-sm text-black"
+                    className="flex flex-wrap items-center justify-between gap-2 text-sm text-black"
                   >
-                    <div className="flex items-center gap-2 text-black flex-1">
+                    <div className="flex min-w-0 flex-1 items-center gap-2 text-black">
                       <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
                       <span className="text-black truncate">
                         {block.inputNames?.[idx] ?? `Input ${idx + 1}`}
@@ -141,7 +141,7 @@ export default function BlockDetailsModal({
                         </span>
                       )}
                     </div>
-                    <label className="flex items-center gap-2 cursor-pointer flex-shrink-0">
+                    <label className="flex shrink-0 items-center gap-2 cursor-pointer">
                       <input
                         type="checkbox"
                         checked={isRequired}
@@ -154,7 +154,7 @@ export default function BlockDetailsModal({
                         }`}
                       />
                       <span
-                        className={`text-[11px] font-semibold whitespace-nowrap ${
+                        className={`text-[11px] font-semibold ${
                           isMandatory ? "text-rose-600" : "text-slate-600"
                         }`}
                       >
@@ -179,9 +179,9 @@ export default function BlockDetailsModal({
                 return (
                   <div
                     key={idx}
-                    className="flex items-center justify-between gap-2 text-sm text-black"
+                    className="flex flex-wrap items-center justify-between gap-2 text-sm text-black"
                   >
-                    <div className="flex items-center gap-2 text-black flex-1">
+                    <div className="flex min-w-0 flex-1 items-center gap-2 text-black">
                       <span className="h-2.5 w-2.5 rounded-full bg-sky-500" />
                       <span className="text-black truncate">
                         {block.outputNames?.[idx] ?? `Output ${idx + 1}`}
@@ -192,7 +192,7 @@ export default function BlockDetailsModal({
                         </span>
                       )}
                     </div>
-                    <label className="flex items-center gap-2 cursor-pointer flex-shrink-0">
+                    <label className="flex shrink-0 items-center gap-2 cursor-pointer">
                       <input
                         type="checkbox"
                         checked={isRequired}
@@ -205,7 +205,7 @@ export default function BlockDetailsModal({
                         }`}
                       />
                       <span
-                        className={`text-[11px] font-semibold whitespace-nowrap ${
+                        className={`text-[11px] font-semibold ${
                           isMandatory ? "text-rose-600" : "text-slate-600"
                         }`}
                       >

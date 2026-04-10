@@ -1,5 +1,5 @@
-import type { EvalOption } from "../../shared/types";
-import type { CategoryStyle } from "../../features/evaluation/types";
+import type { EvalOption } from "../../../shared/types";
+import type { CategoryStyle } from "../types";
 
 type Props = {
   metricGroups: Record<string, EvalOption[]>;
@@ -9,8 +9,8 @@ type Props = {
 export default function MetricLibrary({ metricGroups, categoryStyles }: Props) {
   return (
     <div className="panel bg-white/85">
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-600">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <h3 className="min-w-0 flex-1 text-sm font-semibold uppercase tracking-[0.2em] text-slate-600">
           Metrics library
         </h3>
         <span className="badge text-[11px] font-semibold text-slate-600">

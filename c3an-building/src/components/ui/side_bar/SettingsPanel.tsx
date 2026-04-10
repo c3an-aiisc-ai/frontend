@@ -14,11 +14,11 @@ export default function SettingsPanel({ theme, onThemeChange }: Props) {
     <div className="mt-4 space-y-5 text-sm">
       <div className="space-y-2">
         <p className="text-xs uppercase tracking-wide text-slate-500">Theme</p>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {(["light", "dark"] as const).map((mode) => (
             <button
               key={mode}
-              className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold transition ${
+              className={`inline-flex max-w-full min-w-0 items-center justify-center gap-2 rounded-lg border px-3 py-2 text-center text-sm font-semibold transition whitespace-normal break-words ${
                 theme === mode
                   ? "bg-slate-900 text-white border-slate-700 shadow-sm"
                   : "bg-white/80 border-slate-200 text-slate-700 hover:bg-slate-100"
@@ -36,18 +36,8 @@ export default function SettingsPanel({ theme, onThemeChange }: Props) {
         </div>
       </div>
 
-      <div className="space-y-3">
-        <p className="text-xs uppercase tracking-wide text-slate-500">Links</p>
-        <div className="flex flex-wrap gap-2">
-          {["Docs", "Changelog", "Support"].map((label) => (
-            <button
-              key={label}
-              className="rounded-full border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
-            >
-              Add {label} link
-            </button>
-          ))}
-        </div>
+      <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
+        Use the footer for top-level navigation and external links.
       </div>
     </div>
   );
