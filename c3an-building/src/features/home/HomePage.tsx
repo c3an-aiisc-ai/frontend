@@ -1,5 +1,4 @@
 import { hrefForRoute } from "../../config";
-import { PageBackButton } from "../../components/ui";
 
 const destinations = [
   {
@@ -37,9 +36,7 @@ export default function HomePage() {
       </div>
 
       <div className="page-shell">
-        <PageBackButton fallbackRoute="home" />
-
-        <div className="mt-6 max-w-3xl">
+        <div className="max-w-3xl">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-600">
             Start page
           </p>

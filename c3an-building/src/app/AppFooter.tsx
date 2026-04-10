@@ -2,10 +2,6 @@ import { hrefForRoute } from "../config";
 
 const footerLinks = [
   { label: "Home", href: hrefForRoute("home") },
-  { label: "Workflow", href: hrefForRoute("editor") },
-  { label: "Planning", href: hrefForRoute("planning") },
-  { label: "Evaluations", href: hrefForRoute("evaluation") },
-  { label: "AgentGen", href: hrefForRoute("agentgen") },
 ];
 
 export default function AppFooter() {
