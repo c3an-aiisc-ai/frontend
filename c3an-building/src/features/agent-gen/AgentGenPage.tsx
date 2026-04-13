@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
-import { navigateTo } from "../../config";
-import { PageBackButton } from "../../components/ui";
+import { PageBackButton, WorkspaceTabs } from "../../components/ui";
 import type { AgentRegistryEntry, PlanningBlock } from "../../shared/types";
 import { AGENT_REGISTRY_AGENTS, PENDING_PLAN_STORAGE_KEY } from "../../shared/constants";
 import { readCustomAgents, writeCustomAgents } from "../../shared/utils/customAgents";
@@ -457,24 +456,7 @@ export default function AgentGenPage() {
             </p>
           </div>
           <div className="page-actions">
-            <button
-              className="btn-pill btn-pill-light"
-              onClick={() => navigateTo("editor")}
-            >
-              Workflow builder
-            </button>
-            <button
-              className="btn-pill btn-pill-light"
-              onClick={() => navigateTo("evaluation")}
-            >
-              Evaluation
-            </button>
-            <button
-              className="btn-pill btn-pill-light"
-              onClick={() => navigateTo("planning")}
-            >
-              Planning
-            </button>
+            <WorkspaceTabs currentRoute="agentgen" />
             <button
               className="btn-pill btn-pill-emerald"
               onClick={handleGenerate}

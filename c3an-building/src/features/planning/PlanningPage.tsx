@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { navigateTo } from "../../config";
-import { PageBackButton } from "../../components/ui";
+import { PageBackButton, WorkspaceTabs } from "../../components/ui";
 import type { PlanSubTask, PlanTemplate, PlanTriple } from "../../shared/types/planning";
 import { parsePlanningJSON } from "../../shared/planning/parsePlan";
 import { readCustomPlans, writeCustomPlans } from "../../shared/utils/customPlans";
@@ -805,18 +805,7 @@ export default function PlanningPage() {
             </p>
           </div>
           <div className="page-actions">
-            <button
-              className="btn-pill btn-pill-light"
-              onClick={() => navigateTo("editor")}
-            >
-              Workflow builder
-            </button>
-            <button
-              className="btn-pill btn-pill-light"
-              onClick={() => navigateTo("agentgen")}
-            >
-              AgentGen
-            </button>
+            <WorkspaceTabs currentRoute="planning" />
             <button
               className="btn-pill btn-pill-amber"
               onClick={handleGenerate}

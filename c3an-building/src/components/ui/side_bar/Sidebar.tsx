@@ -2,12 +2,13 @@
 // Sidebar Component - Main sidebar with tabs and panels
 // =============================================================================
 
-import type { DragEvent } from "react";
+import type { ChangeEvent, DragEvent, RefObject } from "react";
 import type { AgentRegistryEntry, PanelKey, Theme, ToolPreset, ViewMode } from "../../../shared/types";
 import type { PlanTemplate } from "../../../shared/types/planning";
 import { PANEL_TABS, PANEL_TITLES } from "../../../shared/constants";
 import { iconPaths } from "../../../shared/assets";
 import BlocksPanel from "./BlocksPanel";
+import ImportExportPanel from "./ImportExportPanel";
 import ToolsPanel from "./ToolsPanel";
 import SettingsPanel from "./SettingsPanel";
 
@@ -19,9 +20,13 @@ type Props = {
   customAgents: AgentRegistryEntry[];
   planTemplates: PlanTemplate[];
   toolPalette: ToolPreset[];
+  downloadLabel: string;
   onPanelChange: (panel: PanelKey | null) => void;
   onThemeChange: (theme: Theme) => void;
   onViewModeChange: (mode: ViewMode) => void;
+  onDownloadClick: () => void;
+  fileInputRef: RefObject<HTMLInputElement | null>;
+  onFileUpload: (e: ChangeEvent<HTMLInputElement>) => void;
   onAgentDragStart: (agentId: string) => (e: DragEvent<HTMLDivElement>) => void;
   onPlanDragStart: (template?: PlanTemplate) => (e: DragEvent<HTMLDivElement>) => void;
   onToolDragStart: (toolName: string) => (e: DragEvent<HTMLDivElement>) => void;
@@ -35,9 +40,13 @@ export default function Sidebar({
   customAgents,
   planTemplates,
   toolPalette,
+  downloadLabel,
   onPanelChange,
   onThemeChange,
   onViewModeChange,
+  onDownloadClick,
+  fileInputRef,
+  onFileUpload,
   onAgentDragStart,
   onPlanDragStart,
   onToolDragStart,
@@ -62,6 +71,7 @@ export default function Sidebar({
 
         {visibleTabs.map((item) => {
           const isActive = activePanel === item.id;
+          const isIo = item.id === "io";
           const isSettings = item.id === "settings";
           return (
             <button
@@ -77,7 +87,22 @@ export default function Sidebar({
               aria-pressed={isActive}
               aria-label={item.label}
             >
-              {isSettings ? (
+              {isIo ? (
+                <span className="flex flex-col items-center justify-center gap-0.5">
+                  <img
+                    src={iconPaths.upload}
+                    alt=""
+                    draggable={false}
+                    className={`h-3.5 w-3.5 ${isActive ? "" : "invert"}`}
+                  />
+                  <img
+                    src={iconPaths.download}
+                    alt=""
+                    draggable={false}
+                    className={`h-3.5 w-3.5 ${isActive ? "" : "invert"}`}
+                  />
+                </span>
+              ) : isSettings ? (
                 <img
                   src={iconPaths.settings}
                   alt=""
@@ -129,6 +154,16 @@ export default function Sidebar({
 
           {viewMode !== "plan" && activePanel === "tools" && (
             <ToolsPanel toolPalette={toolPalette} onToolDragStart={onToolDragStart} />
+          )}
+
+          {activePanel === "io" && (
+            <ImportExportPanel
+              theme={theme}
+              downloadLabel={downloadLabel}
+              onDownloadClick={onDownloadClick}
+              fileInputRef={fileInputRef}
+              onFileUpload={onFileUpload}
+            />
           )}
 
           {activePanel === "settings" && (

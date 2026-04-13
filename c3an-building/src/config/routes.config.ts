@@ -11,6 +11,8 @@ export type RouteDefinition = {
   label: string;
 };
 
+export type WorkspaceRouteKey = Exclude<RouteKey, "home">;
+
 export const routesConfig: Record<RouteKey, RouteDefinition> = {
   home: {
     key: "home",
@@ -28,21 +30,28 @@ export const routesConfig: Record<RouteKey, RouteDefinition> = {
     key: "evaluation",
     path: "/evaluation",
     aliases: ["/evaluation", "/evals", "/metrics"],
-    label: "Evaluation",
+    label: "Evaluations",
   },
   agentgen: {
     key: "agentgen",
     path: "/agentgen",
     aliases: ["/agentgen"],
-    label: "Agent Generator",
+    label: "AgentGen",
   },
   editor: {
     key: "editor",
     path: "/workflow",
     aliases: ["/workflow", "/editor", "/"],
-    label: "Workflow Editor",
+    label: "Workflow Builder",
   },
 } as const;
+
+export const workspaceTabRoutes = [
+  "editor",
+  "planning",
+  "evaluation",
+  "agentgen",
+] as const satisfies readonly WorkspaceRouteKey[];
 
 export const navigationPaths = {
   home: "#/",

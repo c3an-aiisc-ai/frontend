@@ -3,7 +3,7 @@
 // =============================================================================
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Sidebar, Toolbar } from "../../components/ui";
+import { PageBackButton, Sidebar, Toolbar } from "../../components/ui";
 import { AgentCanvasView, PlanCanvasView } from "../../components/canvas";
 import { BlockDetailsModal, ToolDetailsModal, EvalsModal } from "../../components/modals";
 import AgentViewLoadingScreen from "./AgentViewLoadingScreen";
@@ -25,8 +25,6 @@ import { useSidebarDragHandlers } from "../../hooks/useSidebarDragHandlers";
 import { useHandleVisibility } from "../../hooks/useHandleVisibility";
 import { useWorkflowReset } from "../../hooks/useWorkflowReset";
 import { flattenVisiblePlanHierarchy } from "../../shared/planning/subPlans";
-import { navigateTo } from "../../config";
-import { PageBackButton } from "../../components/ui";
 import {
   TOOL_PALETTE,
   EVAL_OPTIONS,
@@ -877,6 +875,7 @@ export default function WorkflowEditorPage() {
         customAgents={customAgents}
         planTemplates={customPlans}
         toolPalette={toolPalette}
+        downloadLabel={downloadLabel}
         onPanelChange={setActivePanel}
         onThemeChange={(value) => {
           setTheme(value);
@@ -898,6 +897,9 @@ export default function WorkflowEditorPage() {
           setModalToolId(null);
           clearWorkspaceUIState();
         }}
+        onDownloadClick={handleDownload}
+        fileInputRef={fileInputRef}
+        onFileUpload={handleUpload}
         onAgentDragStart={handleAgentDragStart}
         onPlanDragStart={handlePlanDragStart}
         onToolDragStart={handleToolDragStart}
@@ -905,20 +907,11 @@ export default function WorkflowEditorPage() {
 
       <Toolbar
         theme={theme}
-        fileInputRef={fileInputRef}
-        downloadLabel={downloadLabel}
+        currentRoute="editor"
         onC3ANClick={handleC3ANClick}
-        onSettingsClick={() => setActivePanel((prev) => (prev === "settings" ? null : "settings"))}
-        onPlanningClick={() => navigateTo("planning")}
-        onEvaluationClick={() => navigateTo("evaluation")}
-        onAgentGenClick={() => navigateTo("agentgen")}
-        onEvalsClick={() => setShowEvalsModal(true)}
-        onDownloadClick={handleDownload}
-        onUploadClick={() => fileInputRef.current?.click()}
         runButtonLabel="Run unavailable"
         runDisabledReason="Execution requires a backend runner. Editing, importing, and exporting still work."
         onResetClick={handleReset}
-        onFileUpload={handleUpload}
       />
 
       <div className="absolute top-4 left-20 z-30 max-w-[calc(100vw-8rem)]">

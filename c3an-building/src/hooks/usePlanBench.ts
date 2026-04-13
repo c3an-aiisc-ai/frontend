@@ -13,7 +13,7 @@ import {
   PLAN_CARD_WIDTH,
 } from "../shared/constants";
 import { isRecord } from "../shared/utils";
-import type { PlanningBlock } from "../shared/types";
+import type { PanelKey, PlanningBlock } from "../shared/types";
 import {
   buildDemoWorkflowSnapshotForSubTask,
   type DemoDataAsset,
@@ -61,7 +61,7 @@ export function usePlanBench(args: {
   >;
   setActivePlanId: React.Dispatch<React.SetStateAction<string | null>>;
   setViewMode: React.Dispatch<React.SetStateAction<"agent" | "plan">>;
-  setActivePanel: React.Dispatch<React.SetStateAction<"blocks" | "tools" | "settings" | null>>;
+  setActivePanel: React.Dispatch<React.SetStateAction<PanelKey | null>>;
 }) {
   const {
     applyPlanJson,

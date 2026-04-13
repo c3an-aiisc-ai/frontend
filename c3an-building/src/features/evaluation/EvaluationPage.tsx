@@ -1,6 +1,5 @@
 import { useMemo, useRef, useState } from "react";
-import { navigateTo } from "../../config";
-import { PageBackButton } from "../../components/ui";
+import { PageBackButton, WorkspaceTabs } from "../../components/ui";
 import { EVAL_OPTIONS } from "../../shared/constants";
 import {
   StreamPanel,
@@ -187,24 +186,7 @@ export default function EvaluationPage() {
             </p>
           </div>
           <div className="page-actions">
-            <button
-              className="btn-pill btn-pill-light"
-              onClick={() => navigateTo("editor")}
-            >
-              Workflow builder
-            </button>
-            <button
-              className="btn-pill btn-pill-light"
-              onClick={() => navigateTo("agentgen")}
-            >
-              AgentGen
-            </button>
-            <button
-              className="btn-pill btn-pill-light"
-              onClick={() => navigateTo("planning")}
-            >
-              Planning
-            </button>
+            <WorkspaceTabs currentRoute="evaluation" />
             <button
               className="btn-pill btn-pill-sky"
               onClick={handleAddMapping}

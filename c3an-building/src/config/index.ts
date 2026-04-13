@@ -13,6 +13,7 @@ export type { CanvasConfig, ThemePalette } from "./canvas.config";
 
 export {
   routesConfig,
+  workspaceTabRoutes,
   navigationPaths,
   hrefForRoute,
   navigateTo,
@@ -21,7 +22,7 @@ export {
   normalizeHashPath,
   resolveRoute,
 } from "./routes.config";
-export type { RouteKey, RouteDefinition, NavigationPaths } from "./routes.config";
+export type { RouteKey, RouteDefinition, WorkspaceRouteKey, NavigationPaths } from "./routes.config";
 
 export { panelConfig, categoryStyles } from "./ui.config";
 export type { PanelConfig, PanelTab } from "./ui.config";

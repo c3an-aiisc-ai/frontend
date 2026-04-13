@@ -3,25 +3,25 @@ import { hrefForRoute } from "../../config";
 const workflowStages = [
   {
     step: "01",
-    label: "Intent",
+    label: "Problems",
     panelClass: "border-white/70 bg-white/80 text-slate-700",
     accentClass: "bg-slate-900",
   },
   {
     step: "02",
-    label: "Plan",
+    label: "Plangen",
     panelClass: "border-amber-200/80 bg-amber-50/90 text-amber-950",
     accentClass: "bg-amber-400",
   },
   {
     step: "03",
-    label: "Agents",
+    label: "Agentgen",
     panelClass: "border-emerald-200/80 bg-emerald-50/90 text-emerald-950",
     accentClass: "bg-emerald-400",
   },
   {
     step: "04",
-    label: "Metrics",
+    label: "Evaluations",
     panelClass: "border-sky-200/80 bg-sky-50/90 text-sky-950",
     accentClass: "bg-sky-400",
   },

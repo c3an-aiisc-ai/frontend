@@ -3,47 +3,32 @@
 // =============================================================================
 
 import { useEffect, useId, useRef, useState } from "react";
-import type { RefObject } from "react";
+import type { WorkspaceRouteKey } from "../../../config";
 import type { Theme } from "../../../shared/types";
+import WorkspaceTabs from "../WorkspaceTabs";
 
 type Props = {
   theme: Theme;
-  fileInputRef: RefObject<HTMLInputElement | null>;
-  downloadLabel?: string;
+  currentRoute: WorkspaceRouteKey;
   onPlanBackClick?: () => void;
   onC3ANClick: () => void;
-  onSettingsClick: () => void;
-  onPlanningClick?: () => void;
-  onEvaluationClick?: () => void;
-  onAgentGenClick?: () => void;
-  onEvalsClick: () => void;
-  onDownloadClick: () => void;
-  onUploadClick: () => void;
+  onEvalsClick?: () => void;
   onRunClick?: () => void;
   runButtonLabel?: string;
   runDisabledReason?: string;
   onResetClick: () => void;
-  onFileUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
 };
 
 export default function Toolbar({
   theme,
-  fileInputRef,
-  downloadLabel,
+  currentRoute,
   onPlanBackClick,
   onC3ANClick,
-  onSettingsClick,
-  onPlanningClick,
-  onEvaluationClick,
-  onAgentGenClick,
   onEvalsClick,
-  onDownloadClick,
-  onUploadClick,
   onRunClick,
   runButtonLabel,
   runDisabledReason,
   onResetClick,
-  onFileUpload,
 }: Props) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -64,7 +49,6 @@ export default function Toolbar({
       ? "toolbar-menu-item toolbar-menu-item-dark"
       : "toolbar-menu-item toolbar-menu-item-light";
 
-  const downloadText = downloadLabel ?? "Download JSON";
   const runText = runButtonLabel ?? "Run";
   const isRunDisabled = Boolean(runDisabledReason) || !onRunClick;
   const runButtonClass = `${actionButtonClass} ${isRunDisabled ? "cursor-not-allowed opacity-55" : ""}`;
@@ -95,33 +79,12 @@ export default function Toolbar({
         <button className={actionButtonClass} onClick={onC3ANClick}>
           C3AN
         </button>
-        <button className={actionButtonClass} onClick={onSettingsClick}>
-          Settings
-        </button>
-        {onPlanningClick && (
-          <button className={actionButtonClass} onClick={onPlanningClick}>
-            Planning
+        <WorkspaceTabs currentRoute={currentRoute} tone={theme === "dark" ? "dark" : "light"} />
+        {onEvalsClick && (
+          <button className={actionButtonClass} onClick={onEvalsClick}>
+            Evals
           </button>
         )}
-        {onEvaluationClick && (
-          <button className={actionButtonClass} onClick={onEvaluationClick}>
-            Evaluation
-          </button>
-        )}
-        {onAgentGenClick && (
-          <button className={actionButtonClass} onClick={onAgentGenClick}>
-            AgentGen
-          </button>
-        )}
-        <button className={actionButtonClass} onClick={onEvalsClick}>
-          Evals
-        </button>
-        <button className={actionButtonClass} onClick={onDownloadClick}>
-          {downloadText}
-        </button>
-        <button className={actionButtonClass} onClick={onUploadClick}>
-          Upload JSON
-        </button>
         <button
           className={runButtonClass}
           onClick={onRunClick}
@@ -158,33 +121,17 @@ export default function Toolbar({
             <button className={menuItemClass} onClick={() => handleMenuAction(onC3ANClick)} role="menuitem">
               C3AN
             </button>
-            <button className={menuItemClass} onClick={() => handleMenuAction(onSettingsClick)} role="menuitem">
-              Settings
-            </button>
-            {onPlanningClick && (
-              <button className={menuItemClass} onClick={() => handleMenuAction(onPlanningClick)} role="menuitem">
-                Planning
+            <WorkspaceTabs
+              currentRoute={currentRoute}
+              tone={theme === "dark" ? "dark" : "light"}
+              orientation="column"
+              onItemClick={() => setIsMenuOpen(false)}
+            />
+            {onEvalsClick && (
+              <button className={menuItemClass} onClick={() => handleMenuAction(onEvalsClick)} role="menuitem">
+                Evals
               </button>
             )}
-            {onEvaluationClick && (
-              <button className={menuItemClass} onClick={() => handleMenuAction(onEvaluationClick)} role="menuitem">
-                Evaluation
-              </button>
-            )}
-            {onAgentGenClick && (
-              <button className={menuItemClass} onClick={() => handleMenuAction(onAgentGenClick)} role="menuitem">
-                AgentGen
-              </button>
-            )}
-            <button className={menuItemClass} onClick={() => handleMenuAction(onEvalsClick)} role="menuitem">
-              Evals
-            </button>
-            <button className={menuItemClass} onClick={() => handleMenuAction(onDownloadClick)} role="menuitem">
-              {downloadText}
-            </button>
-            <button className={menuItemClass} onClick={() => handleMenuAction(onUploadClick)} role="menuitem">
-              Upload JSON
-            </button>
             {isRunDisabled ? (
               <button className={`${menuItemClass} cursor-not-allowed opacity-55`} disabled title={runDisabledReason}>
                 {runText}
@@ -204,14 +151,6 @@ export default function Toolbar({
           </div>
         )}
       </div>
-
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept=".json"
-        className="hidden"
-        onChange={onFileUpload}
-      />
     </div>
   );
 }

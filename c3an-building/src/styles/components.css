@@ -220,6 +220,42 @@
 .page-actions {
   @apply flex min-w-0 flex-wrap items-center gap-3;
 }
+
+.workspace-tabs {
+  @apply min-w-0;
+}
+
+.workspace-tabs-row {
+  @apply flex min-w-0 flex-wrap items-center gap-3;
+}
+
+.workspace-tabs-column {
+  @apply flex w-full min-w-0 flex-col gap-1;
+}
+
+.workspace-tab {
+  @apply inline-flex min-w-0 items-center justify-center rounded-full border px-4 py-2 text-center text-sm font-semibold leading-tight whitespace-normal break-words shadow-sm transition;
+}
+
+.workspace-tab-column {
+  @apply w-full justify-start rounded-lg px-3 py-2 text-left shadow-none;
+}
+
+.workspace-tab-light {
+  @apply border-slate-200 bg-white/90 text-slate-700 hover:bg-white hover:text-slate-900;
+}
+
+.workspace-tab-dark {
+  @apply border-slate-700 bg-slate-800/90 text-slate-100 hover:bg-slate-700;
+}
+
+.workspace-tab-active-light {
+  @apply border-slate-900 bg-slate-900 text-white hover:bg-slate-900 hover:text-white;
+}
+
+.workspace-tab-active-dark {
+  @apply border-white/15 bg-white text-slate-950 hover:bg-white hover:text-slate-950;
+}
 }
 
 @keyframes home-flow-beam {
