@@ -1,11 +1,11 @@
 // src/components/canvas/PlanningCanvas.tsx
-
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePanZoom } from "../../hooks";
 import { PLAN_CARD_DEFAULT_HEIGHT, PLAN_CARD_WIDTH } from "../../shared/constants";
 import { Background } from "../";
 import { PlanningBlockNode } from "./index";
 import ConnectionLines from "./ConnectionLines";
+import SubplanAgentsPanel from "./SubplanAgentsPanel";
 import type { AnchorPoint, Connection, LinkingState } from "../../shared/types";
 import type { PlanTemplate, PlanningBlock } from "../../shared/types/planning";
 
@@ -13,6 +13,11 @@ type PlanLinkState = { from: string; current: { x: number; y: number } } | null;
 type PlanDropPayload =
   | { type: "plan-block" }
   | { type: "plan-template"; template: PlanTemplate };
+type AgentPanelState = {
+  planId: string;
+  anchorRect: DOMRect;
+  triggerElement: HTMLButtonElement | null;
+} | null;
 
 type Props = {
   onEnterWorkflow: (plan: PlanningBlock) => void;
@@ -50,9 +55,15 @@ export default function PlanningCanvas({
   const [hoveredPlanId, setHoveredPlanId] = useState<string | null>(null);
   const [planSizes, setPlanSizes] = useState<Record<string, { width: number; height: number }>>({});
   const [draggingPlanId, setDraggingPlanId] = useState<string | null>(null);
+  const [openAgentPanel, setOpenAgentPanel] = useState<AgentPanelState>(null);
   const planDragOffsetRef = useRef({ x: 0, y: 0 });
   const [localLink, setLocalLink] = useState<PlanLinkState>(null);
   const activeLink = localLink ?? linking;
+
+  const getAgentPanelId = useCallback(
+    (planId: string) => `subplan-agents-panel-${planId.replace(/[^a-zA-Z0-9_-]+/g, "-")}`,
+    []
+  );
 
   const getEventElement = useCallback((target: EventTarget | null) => {
     if (target instanceof Element) return target;
@@ -256,6 +267,24 @@ export default function PlanningCanvas({
     onCompleteLink?.(toId);
   }, [onCompleteLink]);
 
+  const handleToggleAgentPanel = useCallback((plan: PlanningBlock, triggerElement: HTMLButtonElement) => {
+    setOpenAgentPanel((prev) => {
+      if (prev?.planId === plan.id) return null;
+      return {
+        planId: plan.id,
+        anchorRect: triggerElement.getBoundingClientRect(),
+        triggerElement,
+      };
+    });
+  }, []);
+
+  const handleCloseAgentPanel = useCallback(() => {
+    setOpenAgentPanel((prev) => {
+      prev?.triggerElement?.focus();
+      return null;
+    });
+  }, []);
+
   const handlePlanPointerDown = (plan: PlanningBlock) => (e: React.PointerEvent<HTMLDivElement>) => {
     const target = getEventElement(e.target);
     const isConnector = target?.closest("[data-connector]");
@@ -294,6 +323,10 @@ export default function PlanningCanvas({
     if (isConnector || isInteractive) return;
     onSelectPlan?.(plan);
   };
+
+  const selectedAgentPanelPlan = openAgentPanel
+    ? plans.find((plan) => plan.id === openAgentPanel.planId) ?? null
+    : null;
 
   return (
     <div
@@ -383,6 +416,9 @@ export default function PlanningCanvas({
               modeOverride={getPlanMode(plan.id)}
               pillLabel={planPillLabel}
               onEnterWorkflow={() => onEnterWorkflow(plan)}
+              isAgentPanelOpen={openAgentPanel?.planId === plan.id}
+              agentPanelId={getAgentPanelId(plan.id)}
+              onToggleAgentPanel={(triggerElement) => handleToggleAgentPanel(plan, triggerElement)}
               toWorldPoint={toWorldPoint}
               linkingFrom={activeLink?.from === plan.id}
               linkingTarget={Boolean(activeLink && activeLink.from !== plan.id)}
@@ -420,6 +456,17 @@ export default function PlanningCanvas({
               }}
             />
           ))}
+
+          {selectedAgentPanelPlan && openAgentPanel && (
+            <SubplanAgentsPanel
+              key={selectedAgentPanelPlan.id}
+              panelId={getAgentPanelId(selectedAgentPanelPlan.id)}
+              plan={selectedAgentPanelPlan}
+              anchorRect={openAgentPanel.anchorRect}
+              triggerElement={openAgentPanel.triggerElement}
+              onClose={handleCloseAgentPanel}
+            />
+          )}
         </div>
       </div>
     </div>

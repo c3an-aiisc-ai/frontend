@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import HandleDot from "./HandleDot";
 import { PLAN_CARD_DEFAULT_HEIGHT, PLAN_CARD_WIDTH } from "../../shared/constants";
+import { iconPaths } from "../../shared/assets";
 import type { PlanningBlock } from "../../shared/types/planning";
 
 type Props = {
@@ -26,6 +27,9 @@ type Props = {
   onPointerMove?: React.PointerEventHandler<HTMLDivElement>;
   onPointerUp?: React.PointerEventHandler<HTMLDivElement>;
   showHandles?: boolean;
+  isAgentPanelOpen?: boolean;
+  agentPanelId?: string;
+  onToggleAgentPanel?: (triggerElement: HTMLButtonElement) => void;
 };
 
 export default function PlanningBlockNode({
@@ -46,6 +50,9 @@ export default function PlanningBlockNode({
   onPointerMove,
   onPointerUp,
   showHandles = false,
+  isAgentPanelOpen = false,
+  agentPanelId,
+  onToggleAgentPanel,
 }: Props) {
   const cardRef = useRef<HTMLDivElement | null>(null);
   const onSizeRef = useRef<Props["onSize"]>(onSize);
@@ -144,22 +151,52 @@ export default function PlanningBlockNode({
             {pillLabel}
           </span>
 
-          <button
-            className="inline-flex max-w-full min-w-0 items-center justify-center gap-1 rounded-full bg-slate-900 px-3 py-0.5 text-center text-[9px] font-semibold uppercase tracking-wide text-white shadow-sm whitespace-normal break-words"
-            data-interactive
-            onPointerDown={(e) => {
-              e.stopPropagation();
-            }}
-            onPointerUp={(e) => {
-              e.stopPropagation();
-            }}
-            onClick={(e) => {
-              e.stopPropagation();
-              onEnterWorkflow();
-            }}
-          >
-            {hasSubPlans ? "Open Subplans ->" : "Open Agents ->"}
-          </button>
+          <div className="flex items-center gap-2">
+            {onToggleAgentPanel && (
+              <button
+                type="button"
+                className={`plan-card-icon-btn ${isAgentPanelOpen ? "plan-card-icon-btn-active" : ""}`}
+                data-interactive
+                aria-label={isAgentPanelOpen ? `Hide agents for ${plan.name}` : `View agents for ${plan.name}`}
+                aria-expanded={isAgentPanelOpen}
+                aria-controls={agentPanelId}
+                onPointerDown={(e) => {
+                  e.stopPropagation();
+                }}
+                onPointerUp={(e) => {
+                  e.stopPropagation();
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleAgentPanel(e.currentTarget);
+                }}
+              >
+                <img
+                  src={isAgentPanelOpen ? iconPaths.close : iconPaths.eye}
+                  alt=""
+                  className="h-3.5 w-3.5"
+                  draggable={false}
+                />
+              </button>
+            )}
+
+            <button
+              className="inline-flex max-w-full min-w-0 items-center justify-center gap-1 rounded-full bg-slate-900 px-3 py-0.5 text-center text-[9px] font-semibold uppercase tracking-wide text-white shadow-sm whitespace-normal break-words"
+              data-interactive
+              onPointerDown={(e) => {
+                e.stopPropagation();
+              }}
+              onPointerUp={(e) => {
+                e.stopPropagation();
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onEnterWorkflow();
+              }}
+            >
+              {hasSubPlans ? "Open Subplans ->" : "Open Agents ->"}
+            </button>
+          </div>
         </div>
       </div>
 

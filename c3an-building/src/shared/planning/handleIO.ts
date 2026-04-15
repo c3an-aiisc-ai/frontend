@@ -17,11 +17,16 @@ import type {
 	ViewMode,
 } from "../types";
 import {
+	AGENT_BLOCK_BASE_HEIGHT,
+	AGENT_BLOCK_SLOT_GAP,
+	AGENT_BLOCK_TOP_PADDING,
+	AGENT_BLOCK_WIDTH,
 	findAgentRegistryEntryByIdOrName,
 	getAgentRegistryEntryById,
 	listMandatoryOptional,
 	MAX_IO,
 	MIN_IO,
+	TOOL_PALETTE,
 	TOOL_PORT_OFFSET,
 } from "../constants";
 import { parsePlanningJSON } from "./parsePlan";
@@ -41,6 +46,13 @@ export type HydratedWorkflow = {
 	tools: ToolNode[];
 	connections: Connection[];
 };
+
+const HYDRATED_TOOL_WIDTH = 180;
+const HYDRATED_TOOL_HEIGHT = 110;
+const HYDRATED_TOOL_GAP = 28;
+const HYDRATED_TOOL_ROW_GAP = 24;
+const HYDRATED_TOOL_START_GAP = 40;
+const HYDRATED_TOOLS_PER_ROW = 3;
 
 export type PlanJsonTriple = { from: string; op: string; to: string };
 
@@ -63,6 +75,126 @@ const START_X = 200;
 const START_Y = 200;
 const X_GAP = 320;
 const Y_GAP = 200;
+
+function ensureToolPreset(name: string) {
+	const preset = TOOL_PALETTE.find((tool) => tool.name === name);
+	if (preset) return preset;
+	return (
+		TOOL_PALETTE.find((tool) => tool.name === "Data Asset") ??
+		TOOL_PALETTE[0] ?? {
+			name,
+			tagline: "",
+			gradient: "from-slate-50 via-white to-cyan-100",
+			ring: "ring-cyan-200",
+			accent: "bg-cyan-600",
+			inputCount: 1,
+			outputCount: 1,
+			inputRequired: [false],
+			outputRequired: [false],
+		}
+	);
+}
+
+function buildToolNode(name: string, x: number, y: number): ToolNode {
+	const preset = ensureToolPreset(name);
+	return {
+		...preset,
+		id: "",
+		x,
+		y,
+		name,
+	};
+}
+
+function getBlockVisualHeight(block: AgentBlock): number {
+	const maxSlots = Math.max(block.inputCount ?? 1, block.outputCount ?? 1);
+	if (maxSlots <= 1) return AGENT_BLOCK_BASE_HEIGHT;
+	return Math.max(
+		AGENT_BLOCK_BASE_HEIGHT,
+		AGENT_BLOCK_TOP_PADDING * 2 + AGENT_BLOCK_SLOT_GAP * (maxSlots - 1)
+	);
+}
+
+function normalizePlanTaskTools(task: PlanSubTask | undefined): string[] {
+	return normalizeStringList(task?.Tools ?? task?.tools);
+}
+
+function resolveToolTargetBlock(task: PlanSubTask, blocks: AgentBlock[]): AgentBlock | null {
+	if (blocks.length === 0) return null;
+	const taskKeys = [task.sub_task_id, task.name]
+		.map((value) => String(value ?? "").trim().toLowerCase())
+		.filter(Boolean);
+	const match = blocks.find((block) => {
+		const blockKeys = [block.sourceAgentId, block.agentId, block.name]
+			.map((value) => String(value ?? "").trim().toLowerCase())
+			.filter(Boolean);
+		return taskKeys.some((key) => blockKeys.includes(key));
+	});
+	return match ?? blocks[0] ?? null;
+}
+
+function hydrateToolsFromPlan(args: {
+	plan: PlanningBlock;
+	blocks: AgentBlock[];
+	connections: Connection[];
+}): Pick<HydratedWorkflow, "tools" | "connections"> {
+	const { plan, blocks } = args;
+	if (blocks.length === 0) return { tools: [], connections: args.connections };
+
+	const tools: ToolNode[] = [];
+	const connections = [...args.connections];
+	const rowOffsetByBlockId = new Map<string, number>();
+	let nextToolIndex = 1;
+	let nextConnectionIndex = connections.length + 1;
+
+	(plan.sub_tasks ?? []).forEach((task) => {
+		const toolNames = normalizePlanTaskTools(task);
+		if (toolNames.length === 0) return;
+
+		const targetBlock = resolveToolTargetBlock(task, blocks);
+		if (!targetBlock) return;
+
+		const blockHeight = getBlockVisualHeight(targetBlock);
+		const existingRowOffset = rowOffsetByBlockId.get(targetBlock.id) ?? 0;
+		const rowCount = Math.ceil(toolNames.length / HYDRATED_TOOLS_PER_ROW);
+
+		for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
+			const rowTools = toolNames.slice(
+				rowIndex * HYDRATED_TOOLS_PER_ROW,
+				(rowIndex + 1) * HYDRATED_TOOLS_PER_ROW
+			);
+			if (rowTools.length === 0) continue;
+
+			const totalWidth =
+				rowTools.length * HYDRATED_TOOL_WIDTH + (rowTools.length - 1) * HYDRATED_TOOL_GAP;
+			const startX = targetBlock.x + AGENT_BLOCK_WIDTH / 2 - totalWidth / 2;
+			const rowY =
+				targetBlock.y +
+				blockHeight +
+				HYDRATED_TOOL_START_GAP +
+				(existingRowOffset + rowIndex) * (HYDRATED_TOOL_HEIGHT + HYDRATED_TOOL_ROW_GAP);
+
+			rowTools.forEach((toolName, toolIndex) => {
+				const toolId = `tool-${nextToolIndex++}`;
+				const tool = buildToolNode(
+					toolName,
+					startX + toolIndex * (HYDRATED_TOOL_WIDTH + HYDRATED_TOOL_GAP),
+					rowY
+				);
+				tools.push({ ...tool, id: toolId });
+				connections.push({
+					id: `conn-${nextConnectionIndex++}`,
+					from: { type: "tool", id: toolId, port: 0 },
+					to: { type: "block", id: targetBlock.id, inputIndex: TOOL_PORT_OFFSET },
+				});
+			});
+		}
+
+		rowOffsetByBlockId.set(targetBlock.id, existingRowOffset + rowCount);
+	});
+
+	return { tools, connections };
+}
 
 type TripleLike = { from: string; to: string };
 
@@ -605,10 +737,15 @@ export function buildToolBindingsFromAgentWorkflow(args: {
 // Agent-view only: tools/uploads/outputs are empty; plan-view IO is handled elsewhere.
 export function hydrateWorkflowFromPlan(plan: PlanningBlock): HydratedWorkflow {
 	const hydrated = hydrateAgentViewFromPlan(plan);
+	const hydratedTools = hydrateToolsFromPlan({
+		plan,
+		blocks: hydrated.blocks,
+		connections: hydrated.connections,
+	});
 	return {
 		blocks: hydrated.blocks,
-		tools: [],
-		connections: hydrated.connections,
+		tools: hydratedTools.tools,
+		connections: hydratedTools.connections,
 	};
 }
 

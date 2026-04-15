@@ -205,6 +205,18 @@
   @apply ring-2 ring-sky-300;
 }
 
+.plan-card-icon-btn {
+  @apply inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-50;
+}
+
+.plan-card-icon-btn-active {
+  @apply border-sky-200 bg-sky-50 text-sky-700;
+}
+
+.subplan-agents-panel {
+  @apply bg-white;
+}
+
 .page-back-btn {
   @apply inline-flex w-fit max-w-full min-w-0 self-start shrink-0 items-center gap-1.5 rounded-full border-0 bg-transparent px-2.5 py-1 text-xs font-semibold text-slate-700 shadow-none transition hover:bg-white/80 whitespace-normal break-words outline-none focus:outline-none focus-visible:outline-none;
 }

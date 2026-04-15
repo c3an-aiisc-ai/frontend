@@ -12,6 +12,7 @@ export const iconPaths = {
   download: new URL("./icons/download.svg", import.meta.url).href,
   plus: new URL("./icons/plus.svg", import.meta.url).href,
   minus: new URL("./icons/minus.svg", import.meta.url).href,
+  eye: new URL("./icons/eye.svg", import.meta.url).href,
   settings: new URL("./icons/settings.svg", import.meta.url).href,
   close: new URL("./icons/close.svg", import.meta.url).href,
 } as const;
