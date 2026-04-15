@@ -1,6 +1,7 @@
 // src/components/canvas/PlanningCanvas.tsx
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePanZoom } from "../../hooks";
+import { canvasConfig } from "../../config";
 import { PLAN_CARD_DEFAULT_HEIGHT, PLAN_CARD_WIDTH } from "../../shared/constants";
 import { Background } from "../";
 import { PlanningBlockNode } from "./index";
@@ -56,6 +57,7 @@ export default function PlanningCanvas({
   const [planSizes, setPlanSizes] = useState<Record<string, { width: number; height: number }>>({});
   const [draggingPlanId, setDraggingPlanId] = useState<string | null>(null);
   const [openAgentPanel, setOpenAgentPanel] = useState<AgentPanelState>(null);
+  const hasAutoFitRef = useRef(false);
   const planDragOffsetRef = useRef({ x: 0, y: 0 });
   const [localLink, setLocalLink] = useState<PlanLinkState>(null);
   const activeLink = localLink ?? linking;
@@ -85,11 +87,6 @@ export default function PlanningCanvas({
     isPanDisabled,
   });
 
-  // keep pan-zoom bounded to supplied plans
-  useEffect(() => {
-    void plans; // placeholder for future fit logic
-  }, [plans]);
-
   const toWorldPoint = useCallback((clientX: number, clientY: number) => {
     const el = containerEl;
     if (!el) return null;
@@ -103,6 +100,50 @@ export default function PlanningCanvas({
     (plan: PlanningBlock) => planSizes[plan.id] ?? { width: PLAN_CARD_WIDTH, height: PLAN_CARD_DEFAULT_HEIGHT },
     [planSizes]
   );
+
+  useEffect(() => {
+    if (!containerEl || plans.length === 0 || hasAutoFitRef.current) return;
+
+    const frame = window.requestAnimationFrame(() => {
+      const rect = containerEl.getBoundingClientRect();
+      const viewportWidth = rect.width || containerEl.clientWidth || window.innerWidth;
+      const viewportHeight = rect.height || containerEl.clientHeight || window.innerHeight;
+      if (!viewportWidth || !viewportHeight) return;
+
+      const horizontalPadding = 96;
+      const verticalPadding = 88;
+      const bounds = plans.reduce(
+        (acc, plan) => {
+          const size = getSize(plan);
+          return {
+            minX: Math.min(acc.minX, plan.x),
+            minY: Math.min(acc.minY, plan.y),
+            maxX: Math.max(acc.maxX, plan.x + size.width),
+            maxY: Math.max(acc.maxY, plan.y + size.height),
+          };
+        },
+        {
+          minX: Number.POSITIVE_INFINITY,
+          minY: Number.POSITIVE_INFINITY,
+          maxX: Number.NEGATIVE_INFINITY,
+          maxY: Number.NEGATIVE_INFINITY,
+        }
+      );
+
+      const contentWidth = Math.max(1, bounds.maxX - bounds.minX);
+      const contentHeight = Math.max(1, bounds.maxY - bounds.minY);
+      const zoomX = Math.max(0.1, (viewportWidth - horizontalPadding * 2) / contentWidth);
+      const zoomY = Math.max(0.1, (viewportHeight - verticalPadding * 2) / contentHeight);
+      const zoom = Math.min(1, Math.max(canvasConfig.zoom.min, Math.min(zoomX, zoomY)));
+      const x = (viewportWidth - contentWidth * zoom) / 2 - bounds.minX * zoom;
+      const y = (viewportHeight - contentHeight * zoom) / 2 - bounds.minY * zoom;
+
+      hasAutoFitRef.current = true;
+      setTransform({ x, y, zoom });
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [containerEl, getSize, plans, setTransform]);
 
   const toWorldPointDuringDrag = useCallback(
     (clientX: number, clientY: number, plan: PlanningBlock) => {
@@ -385,6 +426,7 @@ export default function PlanningCanvas({
       <Background transform={transform} theme={theme} />
 
       <div
+        data-testid="plan-world-layer"
         style={{
           position: "absolute",
           inset: 0,

@@ -124,7 +124,7 @@ const readPlanWorkspaceSnapshot = (): PlanWorkspaceSnapshot | null => {
     );
     const planConnections = normalizePlanConnections(plans, connections);
     const viewMode =
-      parsed.viewMode === "plan" || parsed.viewMode === "agent" ? parsed.viewMode : "agent";
+      parsed.viewMode === "plan" || parsed.viewMode === "agent" ? parsed.viewMode : "plan";
     const activePlanId =
       typeof parsed.activePlanId === "string" && plans.some((plan) => plan.id === parsed.activePlanId)
         ? parsed.activePlanId
@@ -175,11 +175,11 @@ export default function WorkflowEditorPage() {
   const startupLoadingKey = "c3an_workflow_startup_loading_shown";
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
     try {
-      if (sessionStorage.getItem(startupLoadingKey) !== "1") return "agent";
+      if (sessionStorage.getItem(startupLoadingKey) !== "1") return "plan";
     } catch {
-      return "agent";
+      return "plan";
     }
-    return initialPlanSnapshot?.viewMode ?? "agent";
+    return initialPlanSnapshot?.viewMode ?? "plan";
   });
 
   const [showStartupLoading, setShowStartupLoading] = useState(() => {

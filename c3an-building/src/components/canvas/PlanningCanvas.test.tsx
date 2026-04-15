@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { PlanningBlock } from "../../shared/types/planning";
 import type { Connection, PlanningWorkflowSnapshot } from "../../shared/types";
@@ -173,6 +173,22 @@ describe("PlanningCanvas subplan agents panel", () => {
 
     const dialog = await screen.findByRole("dialog", { name: /plan alpha/i });
     expect(dialog).toHaveAttribute("data-placement", "bottom");
+  });
+
+  it("fits the visible subplans into view on open", async () => {
+    const alphaPlan = buildPlan("plan-alpha", "Plan Alpha", workflowSnapshot("Alpha Agent", "Alpha Tool"));
+    const betaPlan = {
+      ...buildPlan("plan-beta", "Plan Beta", workflowSnapshot("Beta Agent", "Beta Tool")),
+      x: 1320,
+      y: 520,
+    };
+
+    render(<PlanningCanvas onEnterWorkflow={() => {}} plans={[alphaPlan, betaPlan]} />);
+
+    const worldLayer = await screen.findByTestId("plan-world-layer");
+    await waitFor(() => {
+      expect(worldLayer.getAttribute("style")).toMatch(/scale\(0\.[0-9]+\)/);
+    });
   });
 
   it("can be moved around after opening", async () => {
