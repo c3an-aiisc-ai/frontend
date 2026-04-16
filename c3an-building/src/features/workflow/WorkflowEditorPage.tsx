@@ -898,15 +898,17 @@ export default function WorkflowEditorPage({ theme: appTheme }: Props) {
         onAgentDragStart={handleAgentDragStart}
         onPlanDragStart={handlePlanDragStart}
         onToolDragStart={handleToolDragStart}
-      />
+      >
+        <Toolbar
+          theme={theme}
+          currentRoute="editor"
+          onEvalsClick={() => setShowEvalsModal(true)}
+          runButtonLabel="Run unavailable"
+          runDisabledReason="Execution requires a backend runner. Editing, importing, and exporting still work."
+          onResetClick={handleReset}
+        />
+      </Sidebar>
 
-      <Toolbar
-        theme={theme}
-        currentRoute="editor"
-        runButtonLabel="Run unavailable"
-        runDisabledReason="Execution requires a backend runner. Editing, importing, and exporting still work."
-        onResetClick={handleReset}
-      />
 
       {shouldShowWorkflowBackButton ? (
         <div className="absolute top-4 left-20 z-30 max-w-[calc(100vw-8rem)]">

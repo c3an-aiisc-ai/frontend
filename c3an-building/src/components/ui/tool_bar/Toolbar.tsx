@@ -65,68 +65,63 @@ export default function Toolbar({
   };
 
   return (
-    <div className="absolute top-4 right-4 z-30 flex max-w-[calc(100vw-7rem)] items-start gap-3 sm:right-6">
-      <div className="hidden max-w-full flex-wrap justify-end gap-3 lg:flex">
-        <WorkspaceTabs currentRoute={currentRoute} tone={theme === "dark" ? "dark" : "light"} />
-        {onEvalsClick && (
-          <button className={actionButtonClass} onClick={onEvalsClick}>
-            Evals
-          </button>
-        )}
-        <button
-          className={runButtonClass}
-          onClick={onRunClick}
-          disabled={isRunDisabled}
-          title={runDisabledReason}
-        >
-          {runText}
-        </button>
-        <button className={actionButtonClass} onClick={onResetClick}>
-          Reset
-        </button>
-      </div>
-
-      <div className="relative lg:hidden" ref={menuRef}>
-        <button
-          className={actionButtonClass}
-          onClick={() => setIsMenuOpen((prev) => !prev)}
-          aria-expanded={isMenuOpen}
-          aria-controls={menuId}
-        >
-          Menu
-        </button>
-        {isMenuOpen && (
-          <div id={menuId} className={menuPanelClass} role="menu">
-            <WorkspaceTabs
-              currentRoute={currentRoute}
-              tone={theme === "dark" ? "dark" : "light"}
-              orientation="column"
-              onItemClick={() => setIsMenuOpen(false)}
+    <div className="relative" ref={menuRef}>
+      <button
+        className={`h-12 w-12 flex items-center justify-center rounded-md border border-slate-700 text-sm font-semibold transition ${
+          isMenuOpen
+            ? "bg-white text-slate-900 shadow-sm"
+            : "bg-slate-800/70 text-white hover:bg-slate-800"
+        }`}
+        onClick={() => setIsMenuOpen((prev) => !prev)}
+        aria-expanded={isMenuOpen}
+        aria-controls={menuId}
+        title="Menu"
+      >
+        <span className="flex flex-col gap-[3px] items-center justify-center pointer-events-none">
+          {[0, 1, 2].map((i) => (
+            <div
+              key={i}
+              className={`w-4 h-[2px] rounded-full transition-colors ${
+                isMenuOpen ? "bg-slate-900" : "bg-white"
+              }`}
             />
-            {onEvalsClick && (
-              <button className={menuItemClass} onClick={() => handleMenuAction(onEvalsClick)} role="menuitem">
-                Evals
-              </button>
-            )}
-            {isRunDisabled ? (
-              <button className={`${menuItemClass} cursor-not-allowed opacity-55`} disabled title={runDisabledReason}>
-                {runText}
-              </button>
-            ) : (
-              <button
-                className={menuItemClass}
-                onClick={() => handleMenuAction(onRunClick ?? (() => undefined))}
-                role="menuitem"
-              >
-                {runText}
-              </button>
-            )}
-            <button className={menuItemClass} onClick={() => handleMenuAction(onResetClick)} role="menuitem">
-              Reset
+          ))}
+        </span>
+      </button>
+
+      {isMenuOpen && (
+        <div
+          id={menuId}
+          className={`${menuPanelClass} !absolute !top-auto !right-auto !left-[calc(100%+12px)] !bottom-0 !w-[220px] shadow-2xl origin-bottom-left`}
+          role="menu"
+        >
+          <WorkspaceTabs
+            currentRoute={currentRoute}
+            tone={theme === "dark" ? "dark" : "light"}
+            orientation="column"
+            onItemClick={() => setIsMenuOpen(false)}
+          />
+          <div className={`my-2 h-px ${theme === "dark" ? "bg-slate-800" : "bg-slate-100"}`} />
+          {onEvalsClick && (
+            <button className={menuItemClass} onClick={() => handleMenuAction(onEvalsClick)} role="menuitem">
+              Evals
             </button>
-          </div>
-        )}
-      </div>
+          )}
+          <button
+            className={`${menuItemClass} ${isRunDisabled ? "cursor-not-allowed opacity-55" : ""}`}
+            onClick={() => !isRunDisabled && handleMenuAction(onRunClick ?? (() => undefined))}
+            disabled={isRunDisabled}
+            title={runDisabledReason}
+            role="menuitem"
+          >
+            <span className={!isRunDisabled ? "text-emerald-400 font-medium" : ""}>{runText}</span>
+          </button>
+          <button className={menuItemClass} onClick={() => handleMenuAction(onResetClick)} role="menuitem">
+            Reset
+          </button>
+        </div>
+      )}
     </div>
   );
+
 }

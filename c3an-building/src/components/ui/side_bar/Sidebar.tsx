@@ -2,7 +2,7 @@
 // Sidebar Component - Main sidebar with tabs and panels
 // =============================================================================
 
-import type { ChangeEvent, DragEvent, RefObject } from "react";
+import type { ChangeEvent, DragEvent, ReactNode, RefObject } from "react";
 import type { AgentRegistryEntry, PanelKey, Theme, ToolPreset, ViewMode } from "../../../shared/types";
 import type { PlanTemplate } from "../../../shared/types/planning";
 import { PANEL_TABS, PANEL_TITLES } from "../../../shared/constants";
@@ -28,6 +28,7 @@ type Props = {
   onAgentDragStart: (agentId: string) => (e: DragEvent<HTMLDivElement>) => void;
   onPlanDragStart: (template?: PlanTemplate) => (e: DragEvent<HTMLDivElement>) => void;
   onToolDragStart: (toolName: string) => (e: DragEvent<HTMLDivElement>) => void;
+  children?: ReactNode;
 };
 
 export default function Sidebar({
@@ -47,6 +48,7 @@ export default function Sidebar({
   onAgentDragStart,
   onPlanDragStart,
   onToolDragStart,
+  children,
 }: Props) {
   const visibleTabs = viewMode === "plan" ? PANEL_TABS.filter((t) => t.id !== "tools") : PANEL_TABS;
 
@@ -104,6 +106,9 @@ export default function Sidebar({
             </button>
           );
         })}
+        <div className="mt-auto flex flex-col gap-2">
+          {children}
+        </div>
       </div>
 
       {activePanel && (
