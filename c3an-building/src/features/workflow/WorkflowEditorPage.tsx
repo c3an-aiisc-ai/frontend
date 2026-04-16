@@ -911,7 +911,6 @@ export default function WorkflowEditorPage({ theme: appTheme }: Props) {
       {shouldShowWorkflowBackButton ? (
         <div className="absolute top-4 left-20 z-30 max-w-[calc(100vw-8rem)]">
           <PageBackButton
-            fallbackRoute="editor"
             onBack={toolbarBackHandler}
             className={theme === "dark" ? "border-slate-700 bg-slate-900/90 text-slate-100 hover:bg-slate-800" : ""}
           />

@@ -10,7 +10,6 @@ import WorkspaceTabs from "../WorkspaceTabs";
 type Props = {
   theme: Theme;
   currentRoute: WorkspaceRouteKey;
-  onPlanBackClick?: () => void;
   onEvalsClick?: () => void;
   onRunClick?: () => void;
   runButtonLabel?: string;
@@ -21,7 +20,6 @@ type Props = {
 export default function Toolbar({
   theme,
   currentRoute,
-  onPlanBackClick,
   onEvalsClick,
   onRunClick,
   runButtonLabel,
@@ -69,11 +67,6 @@ export default function Toolbar({
   return (
     <div className="absolute top-4 right-4 z-30 flex max-w-[calc(100vw-7rem)] items-start gap-3 sm:right-6">
       <div className="hidden max-w-full flex-wrap justify-end gap-3 lg:flex">
-        {onPlanBackClick && (
-          <button className={`${actionButtonClass} toolbar-back-btn`} onClick={onPlanBackClick}>
-            Back
-          </button>
-        )}
         <WorkspaceTabs currentRoute={currentRoute} tone={theme === "dark" ? "dark" : "light"} />
         {onEvalsClick && (
           <button className={actionButtonClass} onClick={onEvalsClick}>
@@ -104,15 +97,6 @@ export default function Toolbar({
         </button>
         {isMenuOpen && (
           <div id={menuId} className={menuPanelClass} role="menu">
-            {onPlanBackClick && (
-              <button
-                className={`${menuItemClass} toolbar-back-btn`}
-                onClick={() => handleMenuAction(onPlanBackClick)}
-                role="menuitem"
-              >
-                Back
-              </button>
-            )}
             <WorkspaceTabs
               currentRoute={currentRoute}
               tone={theme === "dark" ? "dark" : "light"}
