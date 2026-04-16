@@ -34,7 +34,7 @@ import {
 import { isRecord } from "../../shared/utils";
 import { readCustomAgents } from "../../shared/utils/customAgents";
 import { readCustomPlans } from "../../shared/utils/customPlans";
-import type { PlanningBlock, ViewMode } from "../../shared/types";
+import type { PlanningBlock, Theme, ViewMode } from "../../shared/types";
 
 type PlanConnection = { from: string; to: string };
 
@@ -166,7 +166,11 @@ const readPlanWorkspaceSnapshot = (): PlanWorkspaceSnapshot | null => {
   }
 };
 
-export default function WorkflowEditorPage() {
+type Props = {
+  theme: Theme;
+};
+
+export default function WorkflowEditorPage({ theme: appTheme }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const initialPlanSnapshot = useMemo(() => readPlanWorkspaceSnapshot(), []);
@@ -281,8 +285,6 @@ export default function WorkflowEditorPage() {
     connections,
     setConnections,
     theme,
-    setTheme,
-    setUserThemeLocked,
     selectedEvals,
     setSelectedEvals,
     clipboard,
@@ -322,7 +324,7 @@ export default function WorkflowEditorPage() {
     resetWorkspace,
     recalcBlockPorts,
     getBlockMode,
-  } = useWorkspace();
+  } = useWorkspace({ initialTheme: appTheme });
 
   const toolPalette = useMemo(() => TOOL_PALETTE, []);
   const evalOptions = useMemo(() => EVAL_OPTIONS, []);
@@ -569,10 +571,6 @@ export default function WorkflowEditorPage() {
     planStack,
     viewMode,
   ]);
-
-  const handleC3ANClick = useCallback(() => {
-    window.open("https://c3an.aiisc.ai/", "_blank", "noopener,noreferrer");
-  }, []);
 
   const { handleAgentDragStart, handlePlanDragStart, handleToolDragStart } = useSidebarDragHandlers();
 
@@ -877,10 +875,6 @@ export default function WorkflowEditorPage() {
         toolPalette={toolPalette}
         downloadLabel={downloadLabel}
         onPanelChange={setActivePanel}
-        onThemeChange={(value) => {
-          setTheme(value);
-          setUserThemeLocked(true);
-        }}
         onViewModeChange={(mode) => {
           if (mode === "plan" && activePanel === "tools") setActivePanel("blocks");
           if (mode === "plan") {
@@ -908,7 +902,6 @@ export default function WorkflowEditorPage() {
       <Toolbar
         theme={theme}
         currentRoute="editor"
-        onC3ANClick={handleC3ANClick}
         runButtonLabel="Run unavailable"
         runDisabledReason="Execution requires a backend runner. Editing, importing, and exporting still work."
         onResetClick={handleReset}

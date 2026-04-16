@@ -11,13 +11,11 @@ export const panelConfig = {
   titles: {
     blocks: "Blocks",
     tools: "Tools",
-    settings: "Settings",
   } as Record<string, string>,
 
   tabs: [
     { id: "blocks", label: "Blocks", symbol: "[]" },
     { id: "tools", label: "Tools", symbol: "TL" },
-    { id: "settings", label: "Settings", symbol: ":" },
   ] as const,
 } as const;
 

@@ -20,6 +20,7 @@ export default function WorkspaceTabs({
   className,
   onItemClick,
 }: Props) {
+  const navRoutes = ["home", ...workspaceTabRoutes] as const;
   const containerClass =
     orientation === "column" ? "workspace-tabs workspace-tabs-column" : "workspace-tabs workspace-tabs-row";
   const tabClass = orientation === "column" ? "workspace-tab workspace-tab-column" : "workspace-tab";
@@ -31,7 +32,7 @@ export default function WorkspaceTabs({
       aria-label="Workspace navigation"
       className={[containerClass, className].filter(Boolean).join(" ")}
     >
-      {workspaceTabRoutes.map((route) => {
+      {navRoutes.map((route) => {
         const isActive = route === currentRoute;
         return (
           <a

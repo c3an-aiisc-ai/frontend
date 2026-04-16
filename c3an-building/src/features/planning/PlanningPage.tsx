@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { navigateTo } from "../../config";
-import { PageBackButton, WorkspaceTabs } from "../../components/ui";
+import { WorkspaceTabs } from "../../components/ui";
+import type { Theme } from "../../shared/types";
 import type { PlanSubTask, PlanTemplate, PlanTriple } from "../../shared/types/planning";
 import { parsePlanningJSON } from "../../shared/planning/parsePlan";
 import { readCustomPlans, writeCustomPlans } from "../../shared/utils/customPlans";
@@ -566,7 +567,11 @@ function extractPlans(value: unknown): unknown[] {
   return [];
 }
 
-export default function PlanningPage() {
+type Props = {
+  theme: Theme;
+};
+
+export default function PlanningPage({ theme }: Props) {
   const [jsonInput, setJsonInput] = useState(() => readStoredJsonInput());
   const [parseError, setParseError] = useState<string | null>(null);
   const [plainTextInput, setPlainTextInput] = useState(SAMPLE_PLAIN_TEXT);
@@ -775,7 +780,13 @@ export default function PlanningPage() {
   };
 
   return (
-    <div className="relative h-full overflow-y-auto bg-gradient-to-br from-slate-50 via-white to-amber-50 text-slate-900">
+    <div
+      className={`relative h-full overflow-y-auto ${
+        theme === "dark"
+          ? "bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-slate-100"
+          : "bg-gradient-to-br from-slate-50 via-white to-amber-50 text-slate-900"
+      }`}
+    >
       {isGenerating && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-white/80 backdrop-blur-sm">
           <div className="flex flex-col items-center gap-4 rounded-2xl border border-slate-200 bg-white/90 px-6 py-5 shadow-lg">
@@ -790,14 +801,16 @@ export default function PlanningPage() {
       </div>
 
       <div className="page-shell">
-        <PageBackButton fallbackRoute="home" />
-
         <header className="page-header mt-6">
           <div className="min-w-0 flex-1">
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-600">
               Planning page
             </p>
-            <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-900">
+            <h1
+              className={`mt-2 text-3xl font-semibold tracking-tight ${
+                theme === "dark" ? "text-slate-100" : "text-slate-900"
+              }`}
+            >
               Plan template builder
             </h1>
             <p className="mt-2 max-w-xl text-sm text-slate-600">
@@ -805,7 +818,7 @@ export default function PlanningPage() {
             </p>
           </div>
           <div className="page-actions">
-            <WorkspaceTabs currentRoute="planning" />
+            <WorkspaceTabs currentRoute="planning" tone={theme === "dark" ? "dark" : "light"} />
             <button
               className="btn-pill btn-pill-amber"
               onClick={handleGenerate}

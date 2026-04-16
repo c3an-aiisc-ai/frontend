@@ -10,7 +10,6 @@ import { iconPaths } from "../../../shared/assets";
 import BlocksPanel from "./BlocksPanel";
 import ImportExportPanel from "./ImportExportPanel";
 import ToolsPanel from "./ToolsPanel";
-import SettingsPanel from "./SettingsPanel";
 
 type Props = {
   activePanel: PanelKey | null;
@@ -22,7 +21,6 @@ type Props = {
   toolPalette: ToolPreset[];
   downloadLabel: string;
   onPanelChange: (panel: PanelKey | null) => void;
-  onThemeChange: (theme: Theme) => void;
   onViewModeChange: (mode: ViewMode) => void;
   onDownloadClick: () => void;
   fileInputRef: RefObject<HTMLInputElement | null>;
@@ -42,7 +40,6 @@ export default function Sidebar({
   toolPalette,
   downloadLabel,
   onPanelChange,
-  onThemeChange,
   onViewModeChange,
   onDownloadClick,
   fileInputRef,
@@ -72,7 +69,6 @@ export default function Sidebar({
         {visibleTabs.map((item) => {
           const isActive = activePanel === item.id;
           const isIo = item.id === "io";
-          const isSettings = item.id === "settings";
           return (
             <button
               key={item.id}
@@ -102,13 +98,6 @@ export default function Sidebar({
                     className={`h-3.5 w-3.5 ${isActive ? "" : "invert"}`}
                   />
                 </span>
-              ) : isSettings ? (
-                <img
-                  src={iconPaths.settings}
-                  alt=""
-                  draggable={false}
-                  className={`mx-auto h-5 w-5 ${isActive ? "" : "invert"}`}
-                />
               ) : (
                 item.symbol
               )}
@@ -164,10 +153,6 @@ export default function Sidebar({
               fileInputRef={fileInputRef}
               onFileUpload={onFileUpload}
             />
-          )}
-
-          {activePanel === "settings" && (
-            <SettingsPanel theme={theme} onThemeChange={onThemeChange} />
           )}
         </div>
       )}

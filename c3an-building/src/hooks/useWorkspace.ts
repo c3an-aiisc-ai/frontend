@@ -32,6 +32,10 @@ type WorkspaceSnapshot = {
   nextConnectionId: number;
 };
 
+type UseWorkspaceOptions = {
+  initialTheme?: Theme;
+};
+
 function readWorkspaceSnapshot(): WorkspaceSnapshot | null {
   const saved = localStorage.getItem(STORAGE_KEY);
   if (!saved) return null;
@@ -55,7 +59,8 @@ function readWorkspaceSnapshot(): WorkspaceSnapshot | null {
   }
 }
 
-export function useWorkspace() {
+export function useWorkspace(options: UseWorkspaceOptions = {}) {
+  const { initialTheme } = options;
   const initialSnapshot = useMemo(() => readWorkspaceSnapshot(), []);
 
   // Refs for ID counters
@@ -67,8 +72,7 @@ export function useWorkspace() {
   const [blocks, setBlocks] = useState<AgentBlock[]>(() => initialSnapshot?.blocks ?? []);
   const [tools, setTools] = useState<ToolNode[]>(() => initialSnapshot?.tools ?? []);
   const [connections, setConnections] = useState<Connection[]>(() => initialSnapshot?.connections ?? []);
-  const [theme, setTheme] = useState<Theme>(() => initialSnapshot?.theme ?? "dark");
-  const [userThemeLocked, setUserThemeLocked] = useState(false);
+  const [theme, setTheme] = useState<Theme>(() => initialTheme ?? initialSnapshot?.theme ?? "dark");
   const [selectedEvals, setSelectedEvals] = useState<string[]>([]);
   const [clipboard, setClipboard] = useState<ClipboardItem | null>(null);
   const [selected, setSelected] = useState<Selection>(null);
@@ -121,26 +125,6 @@ export function useWorkspace() {
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
   }, [blocks, tools, connections, theme]);
-
-  // System theme detection
-  useEffect(() => {
-    const media = window.matchMedia("(prefers-color-scheme: dark)");
-    const applySystemTheme = (prefersDark: boolean) => {
-      if (userThemeLocked) return;
-      setTheme(prefersDark ? "dark" : "light");
-    };
-    applySystemTheme(media.matches);
-    const listener = (event: MediaQueryListEvent) => applySystemTheme(event.matches);
-    if (typeof media.addEventListener === "function") {
-      media.addEventListener("change", listener);
-      return () => media.removeEventListener("change", listener);
-    }
-    // Older browsers
-    if (typeof media.addListener === "function") media.addListener(listener);
-    return () => {
-      if (typeof media.removeListener === "function") media.removeListener(listener);
-    };
-  }, [userThemeLocked]);
 
   // Reset workspace
   const resetWorkspace = useCallback((resetZoom?: () => void) => {
@@ -274,8 +258,6 @@ export function useWorkspace() {
     setConnections,
     theme,
     setTheme,
-    userThemeLocked,
-    setUserThemeLocked,
     selectedEvals,
     setSelectedEvals,
     clipboard,

@@ -1,4 +1,7 @@
+import { useState } from "react";
 import { hrefForRoute } from "../../config";
+import { iconPaths } from "../../shared/assets";
+import type { Theme } from "../../shared/types";
 
 const workflowStages = [
   {
@@ -84,21 +87,101 @@ const destinations = [
   },
 ] as const;
 
-export default function HomePage() {
+type Props = {
+  theme: Theme;
+  onThemeChange: (theme: Theme) => void;
+};
+
+export default function HomePage({ theme, onThemeChange }: Props) {
   const primaryDestination = destinations[0];
   const secondaryDestinations = destinations.slice(1);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   return (
-    <div className="relative h-full overflow-y-auto bg-[radial-gradient(circle_at_top_left,rgba(125,211,252,0.18),transparent_28%),radial-gradient(circle_at_top_right,rgba(74,222,128,0.14),transparent_24%),linear-gradient(180deg,#f8fbff_0%,#f8fafc_44%,#eef6ff_100%)] text-slate-900">
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-72 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.95),transparent_70%)]" />
+    <div
+      className={`relative h-full overflow-y-auto ${
+        theme === "dark"
+          ? "bg-[radial-gradient(circle_at_top_left,rgba(56,189,248,0.16),transparent_28%),radial-gradient(circle_at_top_right,rgba(74,222,128,0.12),transparent_24%),linear-gradient(180deg,#020617_0%,#0b1220_44%,#0f172a_100%)] text-slate-100"
+          : "bg-[radial-gradient(circle_at_top_left,rgba(125,211,252,0.18),transparent_28%),radial-gradient(circle_at_top_right,rgba(74,222,128,0.14),transparent_24%),linear-gradient(180deg,#f8fbff_0%,#f8fafc_44%,#eef6ff_100%)] text-slate-900"
+      }`}
+    >
+      <div
+        className={`pointer-events-none absolute inset-x-0 top-0 h-72 ${
+          theme === "dark"
+            ? "bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.22),transparent_68%),linear-gradient(180deg,rgba(30,64,175,0.28)_0%,rgba(15,23,42,0)_72%)]"
+            : "bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.95),transparent_70%)]"
+        }`}
+      />
 
       <div className="page-shell pb-14">
+        <div className="relative mb-6 flex justify-end">
+          <button
+            type="button"
+            className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold shadow-sm transition ${
+              theme === "dark"
+                ? "border-slate-700 bg-slate-900/90 text-slate-100 hover:bg-slate-800"
+                : "border-slate-200 bg-white/90 text-slate-700 hover:bg-white"
+            }`}
+            onClick={() => setIsSettingsOpen((prev) => !prev)}
+            aria-expanded={isSettingsOpen}
+            aria-controls="home-theme-settings"
+          >
+            <img
+              src={iconPaths.settings}
+              alt=""
+              draggable={false}
+              className={`h-4 w-4 ${theme === "dark" ? "invert" : ""}`}
+            />
+            Settings
+          </button>
+
+          {isSettingsOpen && (
+            <div
+              id="home-theme-settings"
+              className={`absolute top-12 z-20 w-52 rounded-xl border p-3 shadow-lg ${
+                theme === "dark"
+                  ? "border-slate-700 bg-slate-900/95"
+                  : "border-slate-200 bg-white/95"
+              }`}
+            >
+              <p className={`text-[11px] font-semibold uppercase tracking-[0.2em] ${theme === "dark" ? "text-slate-400" : "text-slate-500"}`}>
+                Theme
+              </p>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                {(["light", "dark"] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    className={`rounded-lg border px-3 py-2 text-xs font-semibold transition ${
+                      theme === mode
+                        ? "border-slate-900 bg-slate-900 text-white"
+                        : theme === "dark"
+                          ? "border-slate-700 bg-slate-800 text-slate-100 hover:bg-slate-700"
+                          : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
+                    }`}
+                    onClick={() => {
+                      onThemeChange(mode);
+                      setIsSettingsOpen(false);
+                    }}
+                  >
+                    {mode === "light" ? "Light" : "Dark"}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
         <section className="grid gap-8 lg:grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)] lg:items-center">
           <div className="max-w-2xl">
             <div className="home-angled-chip inline-flex items-center gap-2 border border-slate-200/80 bg-white/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-600 shadow-sm backdrop-blur-sm">
               C3AN Workspace Navigator
             </div>
-            <h1 className="mt-5 max-w-xl text-4xl font-semibold tracking-[-0.04em] text-slate-950 sm:text-5xl">
+            <h1
+              className={`mt-5 max-w-xl text-4xl font-semibold tracking-[-0.04em] sm:text-5xl ${
+                theme === "dark" ? "text-slate-100" : "text-slate-950"
+              }`}
+            >
               Workflows that turn plans into solutions
             </h1>
             <p className="mt-4 max-w-lg text-sm leading-6 text-slate-600 sm:text-base">
@@ -167,7 +250,11 @@ export default function HomePage() {
               <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">
                 Workspaces
               </p>
-              <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">
+              <h2
+                className={`mt-2 text-2xl font-semibold tracking-tight ${
+                  theme === "dark" ? "text-slate-100" : "text-slate-950"
+                }`}
+              >
                 Choose an entry point
               </h2>
             </div>
@@ -262,6 +349,49 @@ export default function HomePage() {
                 );
               })}
             </div>
+          </div>
+
+          <div
+            className={`mt-6 rounded-2xl border p-5 shadow-sm ${
+              theme === "dark"
+                ? "border-slate-700/80 bg-slate-900/70"
+                : "border-slate-200/80 bg-white/80"
+            }`}
+          >
+            <p
+              className={`text-xs font-semibold uppercase tracking-[0.22em] ${
+                theme === "dark" ? "text-sky-300" : "text-sky-700"
+              }`}
+            >
+              About C3AN
+            </p>
+            <h3
+              className={`mt-2 text-xl font-semibold tracking-tight ${
+                theme === "dark" ? "text-slate-100" : "text-slate-900"
+              }`}
+            >
+              What is C3AN?
+            </h3>
+            <p
+              className={`mt-2 max-w-3xl text-sm leading-6 ${
+                theme === "dark" ? "text-slate-300" : "text-slate-600"
+              }`}
+            >
+              C3AN is a workflow-driven environment for planning tasks, generating agents, and evaluating
+              outcomes in one connected loop so teams can move from intent to production-ready execution faster.
+            </p>
+            <a
+              href="https://c3an.aiisc.ai/"
+              target="_blank"
+              rel="noreferrer"
+              className={`mt-4 inline-flex items-center rounded-full border px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] transition ${
+                theme === "dark"
+                  ? "border-sky-400/60 bg-sky-500/10 text-sky-200 hover:bg-sky-500/20"
+                  : "border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100"
+              }`}
+            >
+              Visit c3an.aiisc.ai
+            </a>
           </div>
         </section>
       </div>

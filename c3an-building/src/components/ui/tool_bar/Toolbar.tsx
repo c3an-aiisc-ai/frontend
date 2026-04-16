@@ -11,7 +11,6 @@ type Props = {
   theme: Theme;
   currentRoute: WorkspaceRouteKey;
   onPlanBackClick?: () => void;
-  onC3ANClick: () => void;
   onEvalsClick?: () => void;
   onRunClick?: () => void;
   runButtonLabel?: string;
@@ -23,7 +22,6 @@ export default function Toolbar({
   theme,
   currentRoute,
   onPlanBackClick,
-  onC3ANClick,
   onEvalsClick,
   onRunClick,
   runButtonLabel,
@@ -76,9 +74,6 @@ export default function Toolbar({
             Back
           </button>
         )}
-        <button className={actionButtonClass} onClick={onC3ANClick}>
-          C3AN
-        </button>
         <WorkspaceTabs currentRoute={currentRoute} tone={theme === "dark" ? "dark" : "light"} />
         {onEvalsClick && (
           <button className={actionButtonClass} onClick={onEvalsClick}>
@@ -118,9 +113,6 @@ export default function Toolbar({
                 Back
               </button>
             )}
-            <button className={menuItemClass} onClick={() => handleMenuAction(onC3ANClick)} role="menuitem">
-              C3AN
-            </button>
             <WorkspaceTabs
               currentRoute={currentRoute}
               tone={theme === "dark" ? "dark" : "light"}

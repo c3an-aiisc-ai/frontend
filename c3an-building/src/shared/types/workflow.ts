@@ -108,7 +108,7 @@ export type Selection =
   | { type: "connection"; id: string }
   | null;
 
-export type PanelKey = "blocks" | "tools" | "io" | "settings";
+export type PanelKey = "blocks" | "tools" | "io";
 
 export type EvalOption = {
   id: string;

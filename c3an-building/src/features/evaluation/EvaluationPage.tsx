@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from "react";
-import { PageBackButton, WorkspaceTabs } from "../../components/ui";
+import { WorkspaceTabs } from "../../components/ui";
 import { EVAL_OPTIONS } from "../../shared/constants";
 import {
   StreamPanel,
@@ -10,8 +10,13 @@ import {
 import { CATEGORY_STYLES, DEFAULT_INPUTS, DEFAULT_OUTPUTS, DEFAULT_MAPPINGS } from "./constants";
 import { normalizeMappings, uniqueList } from "./utils";
 import type { MappingRow } from "./types";
+import type { Theme } from "../../shared/types";
 
-export default function EvaluationPage() {
+type Props = {
+  theme: Theme;
+};
+
+export default function EvaluationPage({ theme }: Props) {
   const [inputs, setInputs] = useState(DEFAULT_INPUTS);
   const [outputs, setOutputs] = useState(DEFAULT_OUTPUTS);
   const [mappings, setMappings] = useState(DEFAULT_MAPPINGS);
@@ -163,21 +168,29 @@ export default function EvaluationPage() {
   };
 
   return (
-    <div className="h-full overflow-y-auto bg-gradient-to-br from-white via-slate-50 to-sky-50 text-slate-900">
+    <div
+      className={`h-full overflow-y-auto ${
+        theme === "dark"
+          ? "bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-slate-100"
+          : "bg-gradient-to-br from-white via-slate-50 to-sky-50 text-slate-900"
+      }`}
+    >
       <div className="relative overflow-hidden">
         <div className="pointer-events-none absolute -top-32 -left-20 h-72 w-72 rounded-full bg-sky-200/40 blur-3xl" />
         <div className="pointer-events-none absolute -bottom-32 right-10 h-72 w-72 rounded-full bg-emerald-200/40 blur-3xl" />
       </div>
 
       <div className="page-shell">
-        <PageBackButton fallbackRoute="home" />
-
         <header className="page-header mt-6">
           <div className="min-w-0 flex-1">
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-600">
               Evaluation page
             </p>
-            <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-900">
+            <h1
+              className={`mt-2 text-3xl font-semibold tracking-tight ${
+                theme === "dark" ? "text-slate-100" : "text-slate-900"
+              }`}
+            >
               Input to evaluation to output map
             </h1>
             <p className="mt-2 max-w-xl text-sm text-slate-600">
@@ -186,7 +199,7 @@ export default function EvaluationPage() {
             </p>
           </div>
           <div className="page-actions">
-            <WorkspaceTabs currentRoute="evaluation" />
+            <WorkspaceTabs currentRoute="evaluation" tone={theme === "dark" ? "dark" : "light"} />
             <button
               className="btn-pill btn-pill-sky"
               onClick={handleAddMapping}

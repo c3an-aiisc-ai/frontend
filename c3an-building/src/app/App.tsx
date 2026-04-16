@@ -7,13 +7,28 @@ import EvaluationPage from "../features/evaluation/EvaluationPage";
 import PlanningPage from "../features/planning/PlanningPage";
 import WorkflowEditorPage from "../features/workflow/WorkflowEditorPage";
 import { rememberPreviousRoute, resolveRoute, type RouteKey } from "../config";
+import type { Theme } from "../shared/types";
+
+const THEME_STORAGE_KEY = "c3an-theme";
 
 const getRoute = (): RouteKey => {
   return resolveRoute(window.location.hash);
 };
 
+const getInitialTheme = (): Theme => {
+  if (typeof window === "undefined") return "dark";
+  try {
+    const saved = localStorage.getItem(THEME_STORAGE_KEY);
+    if (saved === "light" || saved === "dark") return saved;
+  } catch {
+    // ignore storage read failures
+  }
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+};
+
 export default function App() {
   const [route, setRoute] = useState<RouteKey>(() => getRoute());
+  const [theme, setTheme] = useState<Theme>(() => getInitialTheme());
 
   useEffect(() => {
     const handleChange = (event?: HashChangeEvent) => {
@@ -26,21 +41,32 @@ export default function App() {
     return () => window.removeEventListener("hashchange", handleChange);
   }, []);
 
-  let page = <WorkflowEditorPage />;
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      localStorage.setItem(THEME_STORAGE_KEY, theme);
+    } catch {
+      // ignore storage write failures
+    }
+    document.documentElement.dataset.theme = theme;
+    document.documentElement.classList.toggle("dark", theme === "dark");
+  }, [theme]);
+
+  let page = <WorkflowEditorPage theme={theme} />;
   if (route === "home") {
-    page = <HomePage />;
+    page = <HomePage theme={theme} onThemeChange={setTheme} />;
   } else if (route === "planning") {
-    page = <PlanningPage />;
+    page = <PlanningPage theme={theme} />;
   } else if (route === "evaluation") {
-    page = <EvaluationPage />;
+    page = <EvaluationPage theme={theme} />;
   } else if (route === "agentgen") {
-    page = <AgentGenPage />;
+    page = <AgentGenPage theme={theme} />;
   }
 
   return (
-    <div className="flex h-full min-h-screen flex-col">
+    <div className={`flex h-full min-h-screen flex-col ${theme === "dark" ? "bg-slate-950 text-slate-100" : "bg-slate-50 text-slate-900"}`}>
       <div className="min-h-0 flex-1">{page}</div>
-      <AppFooter />
+      <AppFooter theme={theme} />
     </div>
   );
 }

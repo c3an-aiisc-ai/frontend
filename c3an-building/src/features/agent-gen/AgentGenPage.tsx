@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
-import { PageBackButton, WorkspaceTabs } from "../../components/ui";
-import type { AgentRegistryEntry, PlanningBlock } from "../../shared/types";
+import { WorkspaceTabs } from "../../components/ui";
+import type { AgentRegistryEntry, PlanningBlock, Theme } from "../../shared/types";
 import { AGENT_REGISTRY_AGENTS, PENDING_PLAN_STORAGE_KEY } from "../../shared/constants";
 import { readCustomAgents, writeCustomAgents } from "../../shared/utils/customAgents";
 import { parsePlanningJSON } from "../../shared/planning/parsePlan";
@@ -291,7 +291,11 @@ function extractAgentsFromTriples(entries: Record<string, unknown>[]) {
   return Array.from(agentsById.values());
 }
 
-export default function AgentGenPage() {
+type Props = {
+  theme: Theme;
+};
+
+export default function AgentGenPage({ theme }: Props) {
   const [jsonInput, setJsonInput] = useState(SAMPLE_JSON);
   const [parseError, setParseError] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -426,7 +430,13 @@ export default function AgentGenPage() {
   }, [customAgents]);
 
   return (
-    <div className="relative h-full overflow-y-auto bg-gradient-to-br from-slate-50 via-white to-emerald-50 text-slate-900">
+    <div
+      className={`relative h-full overflow-y-auto ${
+        theme === "dark"
+          ? "bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-slate-100"
+          : "bg-gradient-to-br from-slate-50 via-white to-emerald-50 text-slate-900"
+      }`}
+    >
       {isGenerating && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-white/80 backdrop-blur-sm">
           <div className="flex flex-col items-center gap-4 rounded-2xl border border-slate-200 bg-white/90 px-6 py-5 shadow-lg">
@@ -441,14 +451,16 @@ export default function AgentGenPage() {
       </div>
 
       <div className="page-shell">
-        <PageBackButton fallbackRoute="home" />
-
         <header className="page-header mt-6">
           <div className="min-w-0 flex-1">
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-600">
               Agent generator
             </p>
-            <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-900">
+            <h1
+              className={`mt-2 text-3xl font-semibold tracking-tight ${
+                theme === "dark" ? "text-slate-100" : "text-slate-900"
+              }`}
+            >
               AgentGen palette builder
             </h1>
             <p className="mt-2 max-w-xl text-sm text-slate-600">
@@ -456,7 +468,7 @@ export default function AgentGenPage() {
             </p>
           </div>
           <div className="page-actions">
-            <WorkspaceTabs currentRoute="agentgen" />
+            <WorkspaceTabs currentRoute="agentgen" tone={theme === "dark" ? "dark" : "light"} />
             <button
               className="btn-pill btn-pill-emerald"
               onClick={handleGenerate}

@@ -110,14 +110,12 @@ export const PANEL_TITLES: Record<string, string> = {
   blocks: "Blocks",
   tools: "Tools",
   io: "Import / Export",
-  settings: "Settings",
 };
 
 export const PANEL_TABS: { id: string; label: string; symbol: string }[] = [
   { id: "blocks", label: "Blocks", symbol: "[]" },
   { id: "tools", label: "Tools", symbol: "TL" },
   { id: "io", label: "Import / Export", symbol: "IO" },
-  { id: "settings", label: "Settings", symbol: ":" },
 ];
 
 // -----------------------------------------------------------------------------
