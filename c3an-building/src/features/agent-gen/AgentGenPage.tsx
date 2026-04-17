@@ -468,7 +468,6 @@ export default function AgentGenPage({ theme }: Props) {
             </p>
           </div>
           <div className="page-actions">
-            <WorkspaceTabs currentRoute="agentgen" tone={theme === "dark" ? "dark" : "light"} />
             <button
               className="btn-pill btn-pill-emerald"
               onClick={handleGenerate}

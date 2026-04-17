@@ -818,7 +818,6 @@ export default function PlanningPage({ theme }: Props) {
             </p>
           </div>
           <div className="page-actions">
-            <WorkspaceTabs currentRoute="planning" tone={theme === "dark" ? "dark" : "light"} />
             <button
               className="btn-pill btn-pill-amber"
               onClick={handleGenerate}

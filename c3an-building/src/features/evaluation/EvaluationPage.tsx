@@ -199,7 +199,6 @@ export default function EvaluationPage({ theme }: Props) {
             </p>
           </div>
           <div className="page-actions">
-            <WorkspaceTabs currentRoute="evaluation" tone={theme === "dark" ? "dark" : "light"} />
             <button
               className="btn-pill btn-pill-sky"
               onClick={handleAddMapping}
