@@ -9,118 +9,78 @@ import WorkspaceTabs from "../WorkspaceTabs";
 
 type Props = {
   theme: Theme;
-  currentRoute: WorkspaceRouteKey;
   onEvalsClick?: () => void;
   onRunClick?: () => void;
   runButtonLabel?: string;
   runDisabledReason?: string;
+  onGenerateClick?: () => void;
+  onAddMappingClick?: () => void;
   onResetClick: () => void;
 };
 
 export default function Toolbar({
   theme,
-  currentRoute,
   onEvalsClick,
   onRunClick,
   runButtonLabel,
   runDisabledReason,
+  onGenerateClick,
+  onAddMappingClick,
   onResetClick,
 }: Props) {
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement | null>(null);
-  const menuId = useId().replace(/:/g, "");
-
-  const actionButtonClass =
-    theme === "dark"
-      ? "toolbar-btn toolbar-btn-dark"
-      : "toolbar-btn toolbar-btn-light";
-
-  const menuPanelClass =
-    theme === "dark"
-      ? "toolbar-menu toolbar-menu-dark"
-      : "toolbar-menu toolbar-menu-light";
-
-  const menuItemClass =
-    theme === "dark"
-      ? "toolbar-menu-item toolbar-menu-item-dark"
-      : "toolbar-menu-item toolbar-menu-item-light";
-
   const runText = runButtonLabel ?? "Run";
   const isRunDisabled = Boolean(runDisabledReason) || !onRunClick;
-  const runButtonClass = `${actionButtonClass} ${isRunDisabled ? "cursor-not-allowed opacity-55" : ""}`;
-
-  useEffect(() => {
-    if (!isMenuOpen) return;
-    const handlePointerDown = (event: PointerEvent) => {
-      if (!menuRef.current || menuRef.current.contains(event.target as Node)) return;
-      setIsMenuOpen(false);
-    };
-    window.addEventListener("pointerdown", handlePointerDown);
-    return () => window.removeEventListener("pointerdown", handlePointerDown);
-  }, [isMenuOpen]);
-
-  const handleMenuAction = (action: () => void) => {
-    action();
-    setIsMenuOpen(false);
-  };
 
   return (
-    <div className="relative" ref={menuRef}>
+    <div className="fixed bottom-16 left-[4.5rem] z-40 flex items-center gap-2 bg-slate-900/95 p-2 rounded-lg border border-slate-700 shadow-xl backdrop-blur-sm">
+      {onEvalsClick && (
+        <button
+          className="px-3 py-1.5 text-xs font-semibold text-slate-300 hover:text-white hover:bg-slate-800 rounded transition-colors"
+          onClick={onEvalsClick}
+        >
+          Evals
+        </button>
+      )}
+      
       <button
-        className={`h-12 w-12 flex items-center justify-center rounded-md border border-slate-700 text-sm font-semibold transition ${
-          isMenuOpen
-            ? "bg-white text-slate-900 shadow-sm"
-            : "bg-slate-800/70 text-white hover:bg-slate-800"
+        className={`px-3 py-1.5 text-xs font-semibold rounded transition-colors ${
+          isRunDisabled 
+            ? "text-slate-500 cursor-not-allowed" 
+            : "text-emerald-400 hover:bg-emerald-400/10 hover:text-emerald-300"
         }`}
-        onClick={() => setIsMenuOpen((prev) => !prev)}
-        aria-expanded={isMenuOpen}
-        aria-controls={menuId}
-        title="Menu"
+        onClick={() => !isRunDisabled && onRunClick?.()}
+        disabled={isRunDisabled}
+        title={runDisabledReason}
       >
-        <span className="flex flex-col gap-[3px] items-center justify-center pointer-events-none">
-          {[0, 1, 2].map((i) => (
-            <div
-              key={i}
-              className={`w-4 h-[2px] rounded-full transition-colors ${
-                isMenuOpen ? "bg-slate-900" : "bg-white"
-              }`}
-            />
-          ))}
-        </span>
+        {runText}
       </button>
 
-      {isMenuOpen && (
-        <div
-          id={menuId}
-          className={`${menuPanelClass} !absolute !top-auto !right-auto !left-[calc(100%+12px)] !bottom-0 !w-[220px] shadow-2xl origin-bottom-left`}
-          role="menu"
+      {onGenerateClick && (
+        <button
+          className="px-3 py-1.5 text-xs font-semibold text-amber-400 hover:bg-amber-400/10 hover:text-amber-300 rounded transition-colors"
+          onClick={onGenerateClick}
         >
-          <WorkspaceTabs
-            currentRoute={currentRoute}
-            tone={theme === "dark" ? "dark" : "light"}
-            orientation="column"
-            onItemClick={() => setIsMenuOpen(false)}
-          />
-          <div className={`my-2 h-px ${theme === "dark" ? "bg-slate-800" : "bg-slate-100"}`} />
-          {onEvalsClick && (
-            <button className={menuItemClass} onClick={() => handleMenuAction(onEvalsClick)} role="menuitem">
-              Evals
-            </button>
-          )}
-          <button
-            className={`${menuItemClass} ${isRunDisabled ? "cursor-not-allowed opacity-55" : ""}`}
-            onClick={() => !isRunDisabled && handleMenuAction(onRunClick ?? (() => undefined))}
-            disabled={isRunDisabled}
-            title={runDisabledReason}
-            role="menuitem"
-          >
-            <span className={!isRunDisabled ? "text-emerald-400 font-medium" : ""}>{runText}</span>
-          </button>
-          <button className={menuItemClass} onClick={() => handleMenuAction(onResetClick)} role="menuitem">
-            Reset
-          </button>
-        </div>
+          Generate
+        </button>
       )}
+
+      {onAddMappingClick && (
+        <button
+          className="px-3 py-1.5 text-xs font-semibold text-sky-400 hover:bg-sky-400/10 hover:text-sky-300 rounded transition-colors"
+          onClick={onAddMappingClick}
+        >
+          Add Mapping
+        </button>
+      )}
+
+      <div className="w-px h-4 bg-slate-700 mx-1" />
+
+      <button
+        className="px-3 py-1.5 text-xs font-semibold text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded transition-colors"
+        onClick={onResetClick}
+      >
+        Reset
+      </button>
     </div>
   );
 

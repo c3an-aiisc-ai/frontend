@@ -8,6 +8,7 @@ import PlanningPage from "../features/planning/PlanningPage";
 import WorkflowEditorPage from "../features/workflow/WorkflowEditorPage";
 import { rememberPreviousRoute, resolveRoute, type RouteKey } from "../config";
 import type { Theme } from "../shared/types";
+import GlobalNavMenu from "../components/ui/tool_bar/GlobalNavMenu";
 
 const THEME_STORAGE_KEY = "c3an-theme";
 
@@ -64,7 +65,8 @@ export default function App() {
   }
 
   return (
-    <div className={`flex h-full min-h-screen flex-col ${theme === "dark" ? "bg-slate-950 text-slate-100" : "bg-slate-50 text-slate-900"}`}>
+    <div className={`flex h-full min-h-screen flex-col relative ${theme === "dark" ? "bg-slate-950 text-slate-100" : "bg-slate-50 text-slate-900"}`}>
+      <GlobalNavMenu theme={theme} currentRoute={route} />
       <div className="min-h-0 flex-1">{page}</div>
       <AppFooter theme={theme} />
     </div>

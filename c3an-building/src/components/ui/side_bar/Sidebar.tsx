@@ -54,7 +54,7 @@ export default function Sidebar({
 
   return (
     <div className="absolute left-0 top-0 bottom-0 z-30 flex">
-      <div className="flex flex-col items-center gap-2 bg-slate-900/95 px-2 py-3 text-white shadow-xl">
+      <div className="flex flex-col items-center gap-2 bg-slate-900/95 px-2 pt-16 pb-3 text-white shadow-xl">
         <button
           className={`h-12 w-12 rounded-md border border-slate-700 text-[11px] font-semibold transition whitespace-pre-line leading-tight ${
             viewMode === "plan"
