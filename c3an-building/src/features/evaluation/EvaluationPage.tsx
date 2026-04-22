@@ -1,5 +1,4 @@
 import { useMemo, useRef, useState } from "react";
-import { WorkspaceTabs } from "../../components/ui";
 import { EVAL_OPTIONS } from "../../shared/constants";
 import {
   StreamPanel,

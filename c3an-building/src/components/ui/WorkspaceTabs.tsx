@@ -2,11 +2,11 @@ import {
   hrefForRoute,
   routesConfig,
   workspaceTabRoutes,
-  type WorkspaceRouteKey,
+  type RouteKey,
 } from "../../config";
 
 type Props = {
-  currentRoute: WorkspaceRouteKey;
+  currentRoute: RouteKey;
   tone?: "light" | "dark";
   orientation?: "row" | "column";
   className?: string;

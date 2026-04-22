@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import { navigateTo } from "../../config";
-import { WorkspaceTabs } from "../../components/ui";
 import type { Theme } from "../../shared/types";
 import type { PlanSubTask, PlanTemplate, PlanTriple } from "../../shared/types/planning";
 import { parsePlanningJSON } from "../../shared/planning/parsePlan";

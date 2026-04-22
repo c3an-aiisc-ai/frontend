@@ -2,10 +2,7 @@
 // Toolbar Component - Top action buttons
 // =============================================================================
 
-import { useEffect, useId, useRef, useState } from "react";
-import type { WorkspaceRouteKey } from "../../../config";
 import type { Theme } from "../../../shared/types";
-import WorkspaceTabs from "../WorkspaceTabs";
 
 type Props = {
   theme: Theme;
@@ -19,7 +16,6 @@ type Props = {
 };
 
 export default function Toolbar({
-  theme,
   onEvalsClick,
   onRunClick,
   runButtonLabel,

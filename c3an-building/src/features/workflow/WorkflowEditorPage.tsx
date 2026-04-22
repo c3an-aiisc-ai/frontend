@@ -34,7 +34,6 @@ import {
 import { isRecord } from "../../shared/utils";
 import { readCustomAgents } from "../../shared/utils/customAgents";
 import { readCustomPlans } from "../../shared/utils/customPlans";
-import type { PlanningBlock, Theme, ViewMode } from "../../shared/types";
 import { readCustomTools } from "../../shared/utils/customTools";
 import type { PlanningBlock, Theme, ViewMode } from "../../shared/types";
 
@@ -845,17 +844,19 @@ export default function WorkflowEditorPage({ theme: appTheme }: Props) {
   const modalBlock = modalBlockId ? blocks.find((b) => b.id === modalBlockId) ?? null : null;
   const modalTool = modalToolId ? tools.find((t) => t.id === modalToolId) ?? null : null;
   const hasAgentBackContext = Boolean(activePlanId) || planStack.length > 0;
+  const canShowWorkflowBackButton =
+    viewMode === "plan" ? planStack.length > 0 : viewMode === "agent" ? hasAgentBackContext : false;
   const toolbarBackHandler =
     viewMode === "plan"
       ? planStack.length > 0
         ? handlePlanBack
-        : undefined
+      : undefined
       : viewMode === "agent"
         ? hasAgentBackContext
           ? handleAgentBack
           : undefined
         : undefined;
-  const shouldShowWorkflowBackButton = Boolean(toolbarBackHandler) && activePanel === null;
+  const shouldShowWorkflowBackButton = canShowWorkflowBackButton && activePanel === null;
 
   return (
     <div className={`relative h-full w-full overflow-hidden ${appThemeClass}`}>
@@ -904,7 +905,6 @@ export default function WorkflowEditorPage({ theme: appTheme }: Props) {
       >
         <Toolbar
           theme={theme}
-          currentRoute="editor"
           onEvalsClick={() => setShowEvalsModal(true)}
           runButtonLabel="Run unavailable"
           runDisabledReason="Execution requires a backend runner. Editing, importing, and exporting still work."

@@ -1,5 +1,4 @@
 import { useMemo, useState } from "react";
-import { WorkspaceTabs } from "../../components/ui";
 import type { AgentRegistryEntry, PlanningBlock, Theme } from "../../shared/types";
 import { AGENT_REGISTRY_AGENTS, PENDING_PLAN_STORAGE_KEY } from "../../shared/constants";
 import { readCustomAgents, writeCustomAgents } from "../../shared/utils/customAgents";

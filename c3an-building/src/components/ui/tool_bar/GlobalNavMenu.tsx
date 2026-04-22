@@ -35,10 +35,6 @@ export default function GlobalNavMenu({
     return () => window.removeEventListener("pointerdown", handlePointerDown);
   }, [isMenuOpen]);
 
-  // If currentRoute is "home", it is not a WorkspaceRouteKey according to the type,
-  // but WorkspaceTabs can handle it. We cast it to any or explicitly pass it.
-  const workspaceRoute = currentRoute as any;
-
   return (
     <div className="fixed top-3 left-3 z-[100]" ref={menuRef}>
       <button
@@ -80,7 +76,7 @@ export default function GlobalNavMenu({
             Workspace Navigation
           </div>
           <WorkspaceTabs
-            currentRoute={workspaceRoute}
+            currentRoute={currentRoute}
             tone={theme === "dark" ? "dark" : "light"}
             orientation="column"
             onItemClick={() => setIsMenuOpen(false)}
