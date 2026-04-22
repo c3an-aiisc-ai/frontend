@@ -4,7 +4,7 @@
   "outputDirectory": "c3an-building/dist",
   "functions": {
     "api/**/*.py": {
-      "excludeFiles": "{c3an-building/dist/**,c3an-building/src/**,c3an-building/node_modules/**,c3an-building/coverage/**,c3an-building/backend/demo-scripts/**}"
+      "excludeFiles": "{c3an-building/dist/**,c3an-building/src/**,c3an-building/node_modules/**,c3an-building/coverage/**}"
     }
   },
   "rewrites": [

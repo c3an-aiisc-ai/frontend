@@ -394,6 +394,12 @@ def get_sample_generated_components_script(script_name: str) -> tuple[dict[str, 
     }
 
 
+@app.get("/api/generated-components/sample-script")
+def get_sample_generated_components_script_by_query() -> tuple[dict[str, str], int] | dict[str, str]:
+    script_name = str(request.args.get("name", "")).strip()
+    return get_sample_generated_components_script(script_name)
+
+
 @app.get("/api/auth/session")
 def auth_session() -> dict[str, object]:
     username = _current_username()

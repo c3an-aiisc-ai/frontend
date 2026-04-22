@@ -489,7 +489,7 @@ export default function BridgePage() {
 
     try {
       const data = await requestJson<SampleScriptResponse>(
-        `/api/generated-components/sample-script/${encodeURIComponent(fileName)}`,
+        `/api/generated-components/sample-script?name=${encodeURIComponent(fileName)}`,
       );
       setViewerTitle(data.path);
       setViewerContent(data.content);
