@@ -35,6 +35,8 @@ import { isRecord } from "../../shared/utils";
 import { readCustomAgents } from "../../shared/utils/customAgents";
 import { readCustomPlans } from "../../shared/utils/customPlans";
 import type { PlanningBlock, Theme, ViewMode } from "../../shared/types";
+import { readCustomTools } from "../../shared/utils/customTools";
+import type { PlanningBlock, Theme, ViewMode } from "../../shared/types";
 
 type PlanConnection = { from: string; to: string };
 
@@ -326,7 +328,8 @@ export default function WorkflowEditorPage({ theme: appTheme }: Props) {
     getBlockMode,
   } = useWorkspace({ initialTheme: appTheme });
 
-  const toolPalette = useMemo(() => TOOL_PALETTE, []);
+  const customTools = useMemo(() => readCustomTools(), []);
+  const toolPalette = useMemo(() => [...TOOL_PALETTE, ...customTools], [customTools]);
   const evalOptions = useMemo(() => EVAL_OPTIONS, []);
   const customAgents = useMemo(() => readCustomAgents(), []);
   const customPlans = useMemo(() => readCustomPlans(), []);

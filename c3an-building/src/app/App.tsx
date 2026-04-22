@@ -6,6 +6,8 @@ import AgentGenPage from "../features/agent-gen/AgentGenPage";
 import EvaluationPage from "../features/evaluation/EvaluationPage";
 import PlanningPage from "../features/planning/PlanningPage";
 import WorkflowEditorPage from "../features/workflow/WorkflowEditorPage";
+import LoginPage from "../features/auth/LoginPage";
+import BridgePage from "../features/bridge/BridgePage";
 import { rememberPreviousRoute, resolveRoute, type RouteKey } from "../config";
 import type { Theme } from "../shared/types";
 import GlobalNavMenu from "../components/ui/tool_bar/GlobalNavMenu";
@@ -62,6 +64,10 @@ export default function App() {
     page = <EvaluationPage theme={theme} />;
   } else if (route === "agentgen") {
     page = <AgentGenPage theme={theme} />;
+  } else if (route === "login") {
+    page = <LoginPage />;
+  } else if (route === "bridge") {
+    page = <BridgePage />;
   }
 
   return (

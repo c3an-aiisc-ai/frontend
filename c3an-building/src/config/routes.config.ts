@@ -2,7 +2,7 @@
 // Routes Configuration
 // =============================================================================
 
-export type RouteKey = "home" | "planning" | "evaluation" | "agentgen" | "editor";
+export type RouteKey = "home" | "planning" | "evaluation" | "agentgen" | "editor" | "login" | "bridge";
 
 export type RouteDefinition = {
   key: RouteKey;
@@ -11,7 +11,7 @@ export type RouteDefinition = {
   label: string;
 };
 
-export type WorkspaceRouteKey = Exclude<RouteKey, "home">;
+export type WorkspaceRouteKey = Exclude<RouteKey, "home" | "login" | "bridge">;
 
 export const routesConfig: Record<RouteKey, RouteDefinition> = {
   home: {
@@ -44,6 +44,18 @@ export const routesConfig: Record<RouteKey, RouteDefinition> = {
     aliases: ["/workflow", "/editor"],
     label: "Workflow Builder",
   },
+  login: {
+    key: "login",
+    path: "/login",
+    aliases: ["/login"],
+    label: "Login",
+  },
+  bridge: {
+    key: "bridge",
+    path: "/bridge",
+    aliases: ["/bridge"],
+    label: "Flask Bridge",
+  },
 } as const;
 
 export const workspaceTabRoutes = [
@@ -59,6 +71,8 @@ export const navigationPaths = {
   planning: "#/planning",
   evaluation: "#/evaluation",
   agentgen: "#/agentgen",
+  login: "#/login",
+  bridge: "#/bridge",
 } as const;
 
 const PREVIOUS_ROUTE_STORAGE_KEY = "c3an_previous_route";

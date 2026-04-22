@@ -3,6 +3,8 @@ import type { Theme } from "../shared/types";
 
 const footerLinks = [
   { label: "Home", href: hrefForRoute("home") },
+  { label: "Flask Bridge", href: hrefForRoute("bridge") },
+  { label: "Login", href: hrefForRoute("login") },
 ];
 
 type Props = {

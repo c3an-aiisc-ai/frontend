@@ -85,6 +85,18 @@ const destinations = [
     chipClass: "border-emerald-200/70 bg-white/70 text-emerald-800",
     glowClass: "bg-emerald-300/35",
   },
+  {
+    title: "Flask Bridge",
+    href: hrefForRoute("bridge"),
+    stage: "05",
+    badge: "Live backend",
+    chips: ["Python", "Generated UI", "Workflow Builder"],
+    cardClass:
+      "border border-orange-200/80 bg-[linear-gradient(160deg,rgba(255,247,237,0.98),rgba(254,215,170,0.9))] text-orange-950 shadow-[0_28px_80px_-52px_rgba(234,88,12,0.42)]",
+    badgeClass: "border-orange-300/70 bg-white/70 text-orange-700",
+    chipClass: "border-orange-200/70 bg-white/70 text-orange-800",
+    glowClass: "bg-orange-300/35",
+  },
 ] as const;
 
 type Props = {
@@ -230,13 +242,13 @@ export default function HomePage({ theme, onThemeChange }: Props) {
                   >
                     <div className="flex items-center justify-between gap-3">
                       <span className={`h-2.5 w-2.5 rotate-45 ${stage.accentClass}`} />
-                      <span className={`text-[10px] font-semibold uppercase tracking-[0.24em] ${isSolution ? "text-slate-300" : "text-slate-400"}`}>
+                      <span
+                        className={`text-[10px] font-semibold uppercase tracking-[0.24em] ${isSolution ? "text-slate-300" : "text-slate-400"}`}
+                      >
                         {stage.step}
                       </span>
                     </div>
-                    <div className="mt-8 text-sm font-semibold tracking-tight">
-                      {stage.label}
-                    </div>
+                    <div className="mt-8 text-sm font-semibold tracking-tight">{stage.label}</div>
                   </div>
                 );
               })}
@@ -268,12 +280,16 @@ export default function HomePage({ theme, onThemeChange }: Props) {
               href={primaryDestination.href}
               className={`home-angled-card group relative overflow-hidden p-7 transition duration-300 hover:-translate-y-1 hover:shadow-[0_38px_120px_-46px_rgba(15,23,42,0.95)] ${primaryDestination.cardClass}`}
             >
-              <div className={`home-angled-glow pointer-events-none absolute -right-12 top-10 h-40 w-40 blur-3xl ${primaryDestination.glowClass}`} />
+              <div
+                className={`home-angled-glow pointer-events-none absolute -right-12 top-10 h-40 w-40 blur-3xl ${primaryDestination.glowClass}`}
+              />
               <div className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-white/10" />
 
               <div className="relative flex h-full flex-col gap-8">
                 <div className="flex items-start justify-between gap-4">
-                  <span className={`home-angled-chip border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] ${primaryDestination.badgeClass}`}>
+                  <span
+                    className={`home-angled-chip border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] ${primaryDestination.badgeClass}`}
+                  >
                     {primaryDestination.badge}
                   </span>
                   <span className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400">
@@ -306,18 +322,21 @@ export default function HomePage({ theme, onThemeChange }: Props) {
             </a>
 
             <div className="grid gap-5 sm:grid-cols-2">
-              {secondaryDestinations.map((item, index) => {
-                const isWide = index === secondaryDestinations.length - 1;
+              {secondaryDestinations.map((item) => {
                 return (
                   <a
                     key={item.title}
                     href={item.href}
-                    className={`home-angled-card group relative overflow-hidden p-6 transition duration-300 hover:-translate-y-1 hover:shadow-[0_30px_90px_-48px_rgba(15,23,42,0.4)] ${isWide ? "sm:col-span-2" : ""} ${item.cardClass}`}
+                    className={`home-angled-card group relative overflow-hidden p-6 transition duration-300 hover:-translate-y-1 hover:shadow-[0_30px_90px_-48px_rgba(15,23,42,0.4)] ${item.cardClass}`}
                   >
-                    <div className={`home-angled-glow pointer-events-none absolute -right-8 top-8 h-28 w-28 blur-3xl ${item.glowClass}`} />
+                    <div
+                      className={`home-angled-glow pointer-events-none absolute -right-8 top-8 h-28 w-28 blur-3xl ${item.glowClass}`}
+                    />
                     <div className="relative flex h-full flex-col gap-6">
                       <div className="flex items-start justify-between gap-4">
-                        <span className={`home-angled-chip border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] ${item.badgeClass}`}>
+                        <span
+                          className={`home-angled-chip border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] ${item.badgeClass}`}
+                        >
                           {item.badge}
                         </span>
                         <span className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-500">
@@ -325,9 +344,7 @@ export default function HomePage({ theme, onThemeChange }: Props) {
                         </span>
                       </div>
 
-                      <h3 className="text-2xl font-semibold tracking-tight">
-                        {item.title}
-                      </h3>
+                      <h3 className="text-2xl font-semibold tracking-tight">{item.title}</h3>
 
                       <div className="flex flex-wrap gap-2">
                         {item.chips.map((chip) => (

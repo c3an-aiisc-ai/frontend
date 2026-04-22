@@ -1,0 +1,529 @@
+from __future__ import annotations
+
+import json
+import os
+import random
+import subprocess
+import sys
+import tempfile
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+from threading import Lock
+
+from flask import Flask, abort, jsonify, request, send_from_directory, session
+from werkzeug.security import check_password_hash, generate_password_hash
+from werkzeug.utils import secure_filename
+
+DIST_DIR = Path(__file__).resolve().parents[1] / "dist"
+app = Flask(__name__, static_folder=str(DIST_DIR), static_url_path="")
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", "c3an-demo-secret")
+
+_items_lock = Lock()
+_items = [
+    {"id": 1, "name": "Draft backend task"},
+]
+_next_id = 2
+_generation_lock = Lock()
+_generation_run_number = 0
+_auth_store_lock = Lock()
+AUTH_STORE_PATH = Path(__file__).resolve().with_name("auth-store.local")
+SCRIPT_TIMEOUT_SECONDS = 10
+_auth_store_cache: dict[str, list[dict[str, object]]] | None = None
+
+
+def _extract_item_name() -> str | None:
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return None
+
+    name = str(payload.get("name", "")).strip()
+    return name or None
+
+
+def _find_item(item_id: int) -> dict[str, int | str] | None:
+    for item in _items:
+        if item["id"] == item_id:
+            return item
+    return None
+
+
+def _load_auth_store() -> dict[str, list[dict[str, object]]]:
+    global _auth_store_cache
+
+    if _auth_store_cache is not None:
+        return _auth_store_cache
+
+    if not AUTH_STORE_PATH.exists():
+        _auth_store_cache = {"users": []}
+        return _auth_store_cache
+
+    try:
+        raw = json.loads(AUTH_STORE_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        _auth_store_cache = {"users": []}
+        return _auth_store_cache
+
+    users = raw.get("users")
+    _auth_store_cache = {"users": users if isinstance(users, list) else []}
+    return _auth_store_cache
+
+
+def _save_auth_store(store: dict[str, list[dict[str, object]]]) -> None:
+    global _auth_store_cache
+
+    _auth_store_cache = {"users": store["users"] if isinstance(store.get("users"), list) else []}
+
+    try:
+        AUTH_STORE_PATH.write_text(json.dumps(_auth_store_cache, indent=2), encoding="utf-8")
+    except OSError:
+        # Vercel Functions use a read-only deployment filesystem. Keep demo auth data
+        # in memory for the lifetime of the warm function instance instead.
+        pass
+
+
+def _find_user(store: dict[str, list[dict[str, object]]], username: str) -> dict[str, object] | None:
+    for user in store["users"]:
+        if str(user.get("username", "")).lower() == username.lower():
+            return user
+    return None
+
+
+def _extract_credentials() -> tuple[str | None, str | None]:
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return None, None
+
+    username = str(payload.get("username", "")).strip()
+    password = str(payload.get("password", "")).strip()
+    return username or None, password or None
+
+
+def _current_username() -> str | None:
+    username = session.get("username")
+    return username if isinstance(username, str) and username.strip() else None
+
+
+def _require_session_user() -> str:
+    username = _current_username()
+    if username is None:
+        abort(401)
+    return username
+
+
+def _build_generated_components(run_number: int) -> dict[str, object]:
+    run_id = f"live-run-{run_number}"
+    suffix = f"{run_number:02d}"
+    subtask_a = f"live-{suffix}-intake"
+    subtask_b = f"live-{suffix}-handoff"
+
+    return {
+        "runId": run_id,
+        "delayMs": 1600,
+        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "plans": [
+            {
+                "id": f"live-subplan-{suffix}",
+                "task_id": f"live-subplan-{suffix}",
+                "name": f"Live Subplan {suffix}",
+                "main_task": f"Generated subplan batch {suffix}",
+                "query": f"Created by the Flask generator during {run_id}.",
+                "sub_tasks": [
+                    {
+                        "sub_task_id": subtask_a,
+                        "name": f"Live Intake {suffix}",
+                        "description": "Collect the new request and stage it for the generated workflow.",
+                    },
+                    {
+                        "sub_task_id": subtask_b,
+                        "name": f"Live Handoff {suffix}",
+                        "description": "Pass the generated output into the execution layer.",
+                    },
+                ],
+                "triples": [
+                    {"from": subtask_a, "op": "seq", "to": subtask_b},
+                ],
+            }
+        ],
+        "agents": [
+            {
+                "id": f"live-agent-{suffix}",
+                "name": f"Live Agent {suffix}",
+                "description": f"Generated by the Flask backend for {run_id}.",
+                "capabilities": ["live generation", "component sync"],
+                "input_data_streams": {
+                    "mandatory": [f"{subtask_a}-output"],
+                    "optional": ["operator notes"],
+                },
+                "output_data_streams": {
+                    "mandatory": [f"{subtask_b}-ready"],
+                    "optional": ["status trace"],
+                },
+            }
+        ],
+        "tools": [
+            {
+                "name": f"Live Tool {suffix}",
+                "tagline": f"Generated by the Flask backend for {run_id}.",
+                "gradient": "from-amber-100 via-white to-rose-100",
+                "ring": "ring-amber-200",
+                "accent": "bg-amber-600",
+                "inputCount": 1,
+                "outputCount": 1,
+                "inputRequired": [True],
+                "outputRequired": [False],
+                "inputNames": ["generated task"],
+                "outputNames": ["component payload"],
+                "mandatoryInputCount": 1,
+                "mandatoryOutputCount": 0,
+            }
+        ],
+    }
+
+
+def _extract_generated_components(
+    payload: object, *, run_id: str, generated_at: str, delay_ms: int
+) -> dict[str, object] | None:
+    if not isinstance(payload, dict):
+        return None
+
+    plans = payload.get("plans")
+    agents = payload.get("agents")
+    tools = payload.get("tools")
+    if not isinstance(plans, list) or not isinstance(agents, list) or not isinstance(tools, list):
+        return None
+
+    raw_run_id = str(payload.get("runId", "")).strip()
+    raw_generated_at = str(payload.get("generatedAt", "")).strip()
+    raw_delay_ms = payload.get("delayMs", delay_ms)
+
+    try:
+        normalized_delay_ms = int(raw_delay_ms)
+    except (TypeError, ValueError):
+        normalized_delay_ms = delay_ms
+
+    return {
+        "runId": raw_run_id or run_id,
+        "delayMs": max(0, normalized_delay_ms),
+        "generatedAt": raw_generated_at or generated_at,
+        "plans": plans,
+        "agents": agents,
+        "tools": tools,
+    }
+
+
+def _parse_script_generated_components(stdout: str, *, run_id: str, delay_ms: int) -> dict[str, object] | None:
+    generated_at = datetime.now(timezone.utc).isoformat()
+    candidates = [stdout.strip()]
+    lines = [line.strip() for line in stdout.splitlines() if line.strip()]
+    if lines:
+        candidates.append(lines[-1])
+
+    seen: set[str] = set()
+    for candidate in candidates:
+        if not candidate or candidate in seen:
+            continue
+        seen.add(candidate)
+        try:
+            parsed = json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+        components = _extract_generated_components(
+            parsed,
+            run_id=run_id,
+            generated_at=generated_at,
+            delay_ms=delay_ms,
+        )
+        if components is not None:
+            return components
+
+    return None
+
+
+@app.post("/api/slow-number")
+def slow_number() -> tuple[dict[str, int], int] | dict[str, int]:
+    delay_ms = 1200
+    time.sleep(delay_ms / 1000)
+    return {"delayMs": delay_ms, "value": random.randint(1, 100)}
+
+
+@app.post("/api/generated-components")
+def generate_components() -> dict[str, object]:
+    global _generation_run_number
+
+    with _generation_lock:
+        _generation_run_number += 1
+        run_number = _generation_run_number
+
+    payload = _build_generated_components(run_number)
+    delay_ms = int(payload["delayMs"])
+    time.sleep(delay_ms / 1000)
+    return payload
+
+
+@app.post("/api/generated-components/upload")
+def upload_generated_components_script() -> tuple[dict[str, object], int] | dict[str, object]:
+    file = request.files.get("script")
+    if file is None:
+        return {"error": "A Python script file is required."}, 400
+
+    original_name = file.filename or "uploaded-script.py"
+    file_name = secure_filename(original_name) or "uploaded-script.py"
+    if not file_name.lower().endswith(".py"):
+        return {"error": "Only .py files are supported."}, 400
+
+    global _generation_run_number
+    with _generation_lock:
+        _generation_run_number += 1
+        run_number = _generation_run_number
+
+    run_id = f"uploaded-run-{run_number:02d}"
+    started_at = time.perf_counter()
+
+    with tempfile.TemporaryDirectory(prefix="c3an-uploaded-script-") as temp_dir:
+        script_path = Path(temp_dir) / file_name
+        file.save(script_path)
+
+        try:
+            completed = subprocess.run(
+                [sys.executable, str(script_path)],
+                cwd=str(Path(__file__).resolve().parents[1]),
+                capture_output=True,
+                text=True,
+                timeout=SCRIPT_TIMEOUT_SECONDS,
+                check=False,
+            )
+        except subprocess.TimeoutExpired as error:
+            duration_ms = int((time.perf_counter() - started_at) * 1000)
+            return {
+                "fileName": file_name,
+                "runId": run_id,
+                "durationMs": duration_ms,
+                "timedOut": True,
+                "exitCode": None,
+                "stdout": error.stdout or "",
+                "stderr": error.stderr or "",
+                "generatedComponents": None,
+                "message": f"Script exceeded the {SCRIPT_TIMEOUT_SECONDS}s timeout.",
+            }, 408
+
+    duration_ms = int((time.perf_counter() - started_at) * 1000)
+    generated_components = _parse_script_generated_components(
+        completed.stdout,
+        run_id=run_id,
+        delay_ms=duration_ms,
+    )
+
+    return {
+        "fileName": file_name,
+        "runId": run_id,
+        "durationMs": duration_ms,
+        "timedOut": False,
+        "exitCode": completed.returncode,
+        "stdout": completed.stdout,
+        "stderr": completed.stderr,
+        "generatedComponents": generated_components,
+        "message": (
+            "Generated components parsed from script output."
+            if generated_components is not None
+            else "Script ran, but no component JSON was detected in stdout."
+        ),
+    }
+
+
+@app.get("/api/auth/session")
+def auth_session() -> dict[str, object]:
+    username = _current_username()
+    if username is None:
+        return {"authenticated": False}
+    return {
+        "authenticated": True,
+        "user": {
+            "username": username,
+        },
+    }
+
+
+@app.post("/api/auth/register")
+def register_user() -> tuple[dict[str, object], int] | tuple[dict[str, str], int]:
+    username, password = _extract_credentials()
+    if username is None or password is None:
+        return {"error": "A username and password are required."}, 400
+    if len(username) < 3:
+        return {"error": "Username must be at least 3 characters."}, 400
+    if len(password) < 4:
+        return {"error": "Password must be at least 4 characters."}, 400
+
+    with _auth_store_lock:
+        store = _load_auth_store()
+        if _find_user(store, username) is not None:
+            return {"error": "That username already exists."}, 409
+
+        store["users"].append(
+            {
+                "username": username,
+                "password_hash": generate_password_hash(password),
+                "saved_plans": [],
+            }
+        )
+        _save_auth_store(store)
+
+    session["username"] = username
+    return {"user": {"username": username}}, 201
+
+
+@app.post("/api/auth/login")
+def login_user() -> tuple[dict[str, object], int] | tuple[dict[str, str], int]:
+    username, password = _extract_credentials()
+    if username is None or password is None:
+        return {"error": "A username and password are required."}, 400
+
+    with _auth_store_lock:
+        store = _load_auth_store()
+        user = _find_user(store, username)
+        if user is None or not check_password_hash(str(user.get("password_hash", "")), password):
+            return {"error": "Invalid username or password."}, 401
+
+    session["username"] = str(user["username"])
+    return {"user": {"username": str(user["username"])}}, 200
+
+
+@app.post("/api/auth/logout")
+def logout_user() -> dict[str, bool]:
+    session.clear()
+    return {"ok": True}
+
+
+@app.get("/api/account/plans")
+def list_saved_plans() -> tuple[dict[str, list[dict[str, object]]], int] | dict[str, list[dict[str, object]]]:
+    username = _require_session_user()
+
+    with _auth_store_lock:
+        store = _load_auth_store()
+        user = _find_user(store, username)
+        if user is None:
+            session.clear()
+            return {"error": "Account not found."}, 404
+        saved_plans = user.get("saved_plans")
+        plans = saved_plans if isinstance(saved_plans, list) else []
+        return {"plans": plans}
+
+
+@app.post("/api/account/plans")
+def save_generated_plans() -> tuple[dict[str, object], int] | tuple[dict[str, str], int]:
+    username = _require_session_user()
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return {"error": "A JSON payload is required."}, 400
+
+    run_id = str(payload.get("runId", "")).strip()
+    plans = payload.get("plans")
+    if not run_id:
+        return {"error": "A runId is required."}, 400
+    if not isinstance(plans, list) or len(plans) == 0:
+        return {"error": "At least one plan is required."}, 400
+
+    saved_entry = {
+        "id": f"{run_id}-{int(time.time() * 1000)}",
+        "runId": run_id,
+        "savedAt": datetime.now(timezone.utc).isoformat(),
+        "plans": plans,
+    }
+
+    with _auth_store_lock:
+        store = _load_auth_store()
+        user = _find_user(store, username)
+        if user is None:
+            session.clear()
+            return {"error": "Account not found."}, 404
+
+        saved_plans = user.setdefault("saved_plans", [])
+        if not isinstance(saved_plans, list):
+            saved_plans = []
+            user["saved_plans"] = saved_plans
+        saved_plans.insert(0, saved_entry)
+        _save_auth_store(store)
+
+    return {"savedPlan": saved_entry}, 201
+
+
+@app.get("/api/items")
+def list_items() -> dict[str, list[dict[str, int | str]]]:
+    with _items_lock:
+        return {"items": [item.copy() for item in _items]}
+
+
+@app.get("/api/items/<int:item_id>")
+def get_item(item_id: int) -> tuple[dict[str, str], int] | dict[str, int | str]:
+    with _items_lock:
+        item = _find_item(item_id)
+        if item is None:
+            return {"error": "Item not found."}, 404
+        return item.copy()
+
+
+@app.post("/api/items")
+def create_item() -> tuple[dict[str, str], int] | tuple[dict[str, int | str], int]:
+    global _next_id
+
+    name = _extract_item_name()
+    if name is None:
+        return {"error": "A name is required."}, 400
+
+    with _items_lock:
+        item = {"id": _next_id, "name": name}
+        _items.append(item)
+        _next_id += 1
+
+    return item.copy(), 201
+
+
+@app.put("/api/items/<int:item_id>")
+def update_item(item_id: int) -> tuple[dict[str, str], int] | dict[str, int | str]:
+    name = _extract_item_name()
+    if name is None:
+        return {"error": "A name is required."}, 400
+
+    with _items_lock:
+        item = _find_item(item_id)
+        if item is None:
+            return {"error": "Item not found."}, 404
+        item["name"] = name
+        return item.copy()
+
+
+@app.delete("/api/items/<int:item_id>")
+def delete_item(item_id: int) -> tuple[dict[str, str], int] | dict[str, int]:
+    with _items_lock:
+        item = _find_item(item_id)
+        if item is None:
+            return {"error": "Item not found."}, 404
+        _items.remove(item)
+    return {"deleted": item_id}
+
+
+@app.route("/", defaults={"path": ""})
+@app.route("/<path:path>")
+def serve_frontend(path: str):
+    if path.startswith("api/"):
+        abort(404)
+
+    if not DIST_DIR.exists():
+        return (
+            jsonify(
+                {
+                    "error": "Frontend build not found. Run `npm run dev` for the Vite app or `npm run build` before serving through Flask."
+                }
+            ),
+            404,
+        )
+
+    asset_path = DIST_DIR / path
+    if path and asset_path.exists() and asset_path.is_file():
+        return send_from_directory(DIST_DIR, path)
+
+    return send_from_directory(DIST_DIR, "index.html")
+
+
+if __name__ == "__main__":
+    app.run(host="127.0.0.1", port=5001)
