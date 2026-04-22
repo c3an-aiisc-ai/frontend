@@ -8,6 +8,7 @@ type MappingChangeHandler = <K extends keyof MappingRow>(
 ) => void;
 
 type Props = {
+  className?: string;
   mapping: MappingRow | null;
   inputs: string[];
   outputs: string[];
@@ -19,6 +20,7 @@ type Props = {
 };
 
 export default function MappingDetails({
+  className,
   mapping,
   inputs,
   outputs,
@@ -30,7 +32,11 @@ export default function MappingDetails({
 }: Props) {
   if (!mapping) {
     return (
-      <section className="panel flex min-h-[480px] items-center justify-center bg-white/85 text-center">
+      <section
+        className={["panel flex items-center justify-center bg-white/85 text-center", className]
+          .filter(Boolean)
+          .join(" ")}
+      >
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
             Details
@@ -45,7 +51,7 @@ export default function MappingDetails({
   }
 
   return (
-    <section className="panel bg-white/85">
+    <section className={["panel flex flex-col bg-white/85", className].filter(Boolean).join(" ")}>
       <div className="flex flex-col gap-3 border-b border-slate-200 pb-5 md:flex-row md:items-start md:justify-between">
         <div className="min-w-0 flex-1">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
@@ -63,8 +69,8 @@ export default function MappingDetails({
         </button>
       </div>
 
-      <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,0.85fr)_minmax(0,1.35fr)]">
-        <div className="space-y-5">
+      <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)]">
+        <div className="space-y-4">
           <div className="rounded-xl border border-slate-100 bg-slate-50 px-4 py-4">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
               Input stream

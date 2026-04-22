@@ -9,6 +9,7 @@ from backend.app import (
     create_item,
     delete_item,
     generate_components,
+    get_sample_generated_components_script,
     get_item,
     list_items,
     list_saved_plans,
@@ -16,6 +17,7 @@ from backend.app import (
     logout_user,
     register_user,
     save_generated_plans,
+    slow_math,
     slow_number,
     update_item,
     upload_generated_components_script,
@@ -24,12 +26,18 @@ from backend.app import (
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "c3an-demo-secret")
 
+app.add_url_rule("/slow-math", view_func=slow_math, methods=["POST"])
 app.add_url_rule("/slow-number", view_func=slow_number, methods=["POST"])
 app.add_url_rule("/generated-components", view_func=generate_components, methods=["POST"])
 app.add_url_rule(
     "/generated-components/upload",
     view_func=upload_generated_components_script,
     methods=["POST"],
+)
+app.add_url_rule(
+    "/generated-components/sample-script/<script_name>",
+    view_func=get_sample_generated_components_script,
+    methods=["GET"],
 )
 app.add_url_rule("/auth/session", view_func=auth_session, methods=["GET"])
 app.add_url_rule("/auth/register", view_func=register_user, methods=["POST"])

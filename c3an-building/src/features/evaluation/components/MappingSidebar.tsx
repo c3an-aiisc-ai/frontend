@@ -8,6 +8,7 @@ type Summary = {
 };
 
 type Props = {
+  className?: string;
   mappings: MappingRow[];
   selectedMappingId: string | null;
   filterValue: string;
@@ -18,6 +19,7 @@ type Props = {
 };
 
 export default function MappingSidebar({
+  className,
   mappings,
   selectedMappingId,
   filterValue,
@@ -27,7 +29,7 @@ export default function MappingSidebar({
   onSelectMapping,
 }: Props) {
   return (
-    <div className="space-y-6">
+    <div className={["flex flex-col gap-4", className].filter(Boolean).join(" ")}>
       <section className="panel bg-white/85">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
@@ -64,7 +66,7 @@ export default function MappingSidebar({
         </div>
       </section>
 
-      <section className="panel bg-white/85">
+      <section className="panel flex flex-col bg-white/85">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">

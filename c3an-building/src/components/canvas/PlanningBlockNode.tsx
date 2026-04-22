@@ -194,7 +194,7 @@ export default function PlanningBlockNode({
                 onEnterWorkflow();
               }}
             >
-              {hasSubPlans ? "Open Subplans ->" : "Open Agents ->"}
+              {hasSubPlans ? "See Subplans" : "See Agents"}
             </button>
           </div>
         </div>

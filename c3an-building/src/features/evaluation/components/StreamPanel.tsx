@@ -1,4 +1,5 @@
 type Props = {
+  className?: string;
   title: string;
   countLabel: string;
   items: string[];
@@ -12,6 +13,7 @@ type Props = {
 };
 
 export default function StreamPanel({
+  className,
   title,
   countLabel,
   items,
@@ -24,7 +26,7 @@ export default function StreamPanel({
   inputFocusRingClass,
 }: Props) {
   return (
-    <div className="panel bg-white/85">
+    <div className={["panel bg-white/85", className].filter(Boolean).join(" ")}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <h3 className="min-w-0 flex-1 text-sm font-semibold uppercase tracking-[0.2em] text-slate-600">
           {title}
@@ -49,7 +51,7 @@ export default function StreamPanel({
             </span>
           ))
         ) : (
-          <p className="text-xs text-slate-500">{emptyLabel}</p>
+          <p className="pr-2 text-xs text-slate-500">{emptyLabel}</p>
         )}
       </div>
       <div className="mt-4 flex flex-wrap gap-2">

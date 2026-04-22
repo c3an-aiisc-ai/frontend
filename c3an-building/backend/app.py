@@ -28,6 +28,7 @@ _generation_lock = Lock()
 _generation_run_number = 0
 _auth_store_lock = Lock()
 AUTH_STORE_PATH = Path(__file__).resolve().with_name("auth-store.local")
+SAMPLE_SCRIPT_DIR = Path(__file__).resolve().with_name("demo-scripts")
 SCRIPT_TIMEOUT_SECONDS = 10
 _auth_store_cache: dict[str, list[dict[str, object]]] | None = None
 
@@ -97,6 +98,21 @@ def _extract_credentials() -> tuple[str | None, str | None]:
     username = str(payload.get("username", "")).strip()
     password = str(payload.get("password", "")).strip()
     return username or None, password or None
+
+
+def _extract_seed_value() -> int | None:
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return None
+
+    raw_seed = payload.get("seed")
+    if isinstance(raw_seed, bool):
+        return None
+
+    try:
+        return int(raw_seed)
+    except (TypeError, ValueError):
+        return None
 
 
 def _current_username() -> str | None:
@@ -247,6 +263,31 @@ def slow_number() -> tuple[dict[str, int], int] | dict[str, int]:
     return {"delayMs": delay_ms, "value": random.randint(1, 100)}
 
 
+@app.post("/api/slow-math")
+def slow_math() -> tuple[dict[str, str], int] | dict[str, int | list[int]]:
+    seed = _extract_seed_value()
+    if seed is None:
+        return {"error": "A numeric seed is required."}, 400
+
+    started_at = time.perf_counter()
+    value = abs(seed) % 2_147_483_647 or 1
+    checkpoints: list[int] = []
+
+    for step in range(4):
+        for _ in range(400_000):
+            value = (value * 48_271 + 12_821) % 2_147_483_647
+        checkpoints.append(value % 10_000)
+        time.sleep(0.55)
+
+    return {
+        "seed": seed,
+        "delayMs": int((time.perf_counter() - started_at) * 1000),
+        "iterations": 1_600_000,
+        "result": value,
+        "checkpoints": checkpoints,
+    }
+
+
 @app.post("/api/generated-components")
 def generate_components() -> dict[str, object]:
     global _generation_run_number
@@ -328,6 +369,28 @@ def upload_generated_components_script() -> tuple[dict[str, object], int] | dict
             if generated_components is not None
             else "Script ran, but no component JSON was detected in stdout."
         ),
+    }
+
+
+@app.get("/api/generated-components/sample-script/<script_name>")
+def get_sample_generated_components_script(script_name: str) -> tuple[dict[str, str], int] | dict[str, str]:
+    file_name = secure_filename(Path(script_name).name)
+    if not file_name.lower().endswith(".py"):
+        return {"error": "Only .py sample scripts are supported."}, 400
+
+    script_path = SAMPLE_SCRIPT_DIR / file_name
+    if not script_path.exists() or not script_path.is_file():
+        return {"error": "Sample script not found."}, 404
+
+    try:
+        content = script_path.read_text(encoding="utf-8")
+    except OSError:
+        return {"error": "Unable to read sample script."}, 500
+
+    return {
+        "fileName": file_name,
+        "path": f"backend/demo-scripts/{file_name}",
+        "content": content,
     }
 
 

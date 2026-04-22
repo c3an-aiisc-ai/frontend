@@ -1,11 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import { EVAL_OPTIONS } from "../../shared/constants";
-import {
-  StreamPanel,
-  MetricLibrary,
-  MappingSidebar,
-  MappingDetails,
-} from "./components";
+import { StreamPanel, MappingSidebar, MappingDetails } from "./components";
 import { CATEGORY_STYLES, DEFAULT_INPUTS, DEFAULT_OUTPUTS, DEFAULT_MAPPINGS } from "./constants";
 import { normalizeMappings, uniqueList } from "./utils";
 import type { MappingRow } from "./types";
@@ -168,7 +163,7 @@ export default function EvaluationPage({ theme }: Props) {
 
   return (
     <div
-      className={`h-full overflow-y-auto ${
+      className={`relative h-full overflow-y-auto ${
         theme === "dark"
           ? "bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-slate-100"
           : "bg-gradient-to-br from-white via-slate-50 to-sky-50 text-slate-900"
@@ -179,8 +174,8 @@ export default function EvaluationPage({ theme }: Props) {
         <div className="pointer-events-none absolute -bottom-32 right-10 h-72 w-72 rounded-full bg-emerald-200/40 blur-3xl" />
       </div>
 
-      <div className="page-shell">
-        <header className="page-header mt-6">
+      <div className="page-shell py-6">
+        <header className="page-header mt-2">
           <div className="min-w-0 flex-1">
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-600">
               Evaluation page
@@ -207,57 +202,57 @@ export default function EvaluationPage({ theme }: Props) {
           </div>
         </header>
 
-        <section className="mt-10 grid gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
-          <div className="space-y-6">
-            <MappingSidebar
-              mappings={filteredMappings}
-              selectedMappingId={activeMappingId}
-              filterValue={mappingFilter}
-              summary={summary}
-              onAddMapping={handleAddMapping}
-              onFilterChange={setMappingFilter}
-              onSelectMapping={setSelectedMappingId}
-            />
-
-            <StreamPanel
-              title="Inputs"
-              countLabel={`${inputs.length} streams`}
-              items={inputs}
-              emptyLabel="No inputs yet. Add one below."
-              placeholder="Add input stream"
-              draft={inputDraft}
-              onDraftChange={setInputDraft}
-              onAdd={handleAddInput}
-              onRemove={handleRemoveInput}
-              inputFocusRingClass="focus:ring-sky-400"
-            />
-
-            <StreamPanel
-              title="Outputs"
-              countLabel={`${outputs.length} channels`}
-              items={outputs}
-              emptyLabel="No outputs yet. Add one below."
-              placeholder="Add output channel"
-              draft={outputDraft}
-              onDraftChange={setOutputDraft}
-              onAdd={handleAddOutput}
-              onRemove={handleRemoveOutput}
-              inputFocusRingClass="focus:ring-emerald-400"
-            />
-
-            <MetricLibrary metricGroups={metricGroups} categoryStyles={CATEGORY_STYLES} />
-          </div>
-
-          <MappingDetails
-            mapping={selectedMapping}
-            inputs={inputs}
-            outputs={outputs}
-            metricGroups={metricGroups}
-            categoryStyles={CATEGORY_STYLES}
-            onRemoveMapping={handleRemoveMapping}
-            onMappingChange={handleMappingChange}
-            onToggleMetric={toggleMetric}
+        <section className="mt-6 grid gap-4 xl:grid-cols-[340px_minmax(0,1fr)]">
+          <MappingSidebar
+            mappings={filteredMappings}
+            selectedMappingId={activeMappingId}
+            filterValue={mappingFilter}
+            summary={summary}
+            onAddMapping={handleAddMapping}
+            onFilterChange={setMappingFilter}
+            onSelectMapping={setSelectedMappingId}
           />
+
+          <div className="flex flex-col gap-4">
+            <div className="grid gap-4 lg:grid-cols-2">
+              <StreamPanel
+                title="Inputs"
+                countLabel={`${inputs.length} streams`}
+                items={inputs}
+                emptyLabel="No inputs yet. Add one below."
+                placeholder="Add input stream"
+                draft={inputDraft}
+                onDraftChange={setInputDraft}
+                onAdd={handleAddInput}
+                onRemove={handleRemoveInput}
+                inputFocusRingClass="focus:ring-sky-400"
+              />
+
+              <StreamPanel
+                title="Outputs"
+                countLabel={`${outputs.length} channels`}
+                items={outputs}
+                emptyLabel="No outputs yet. Add one below."
+                placeholder="Add output channel"
+                draft={outputDraft}
+                onDraftChange={setOutputDraft}
+                onAdd={handleAddOutput}
+                onRemove={handleRemoveOutput}
+                inputFocusRingClass="focus:ring-emerald-400"
+              />
+            </div>
+
+            <MappingDetails
+              mapping={selectedMapping}
+              inputs={inputs}
+              outputs={outputs}
+              metricGroups={metricGroups}
+              categoryStyles={CATEGORY_STYLES}
+              onRemoveMapping={handleRemoveMapping}
+              onMappingChange={handleMappingChange}
+              onToggleMetric={toggleMetric}
+            />
+          </div>
         </section>
       </div>
     </div>
