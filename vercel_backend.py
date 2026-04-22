@@ -13,10 +13,13 @@ if str(PROJECT_DIR) not in sys.path:
 from backend.app import get_sample_generated_components_script  # noqa: E402
 
 
-def create_endpoint_app(view_func, methods: list[str]) -> Flask:
+def create_endpoint_app(view_func, methods: list[str], route_path: str) -> Flask:
     app = Flask(__name__)
     app.secret_key = os.environ.get("FLASK_SECRET_KEY", "c3an-demo-secret")
     app.add_url_rule("/", view_func=view_func, methods=methods)
+    app.add_url_rule(route_path, view_func=view_func, methods=methods)
+    if route_path != "/" and not route_path.endswith("/"):
+        app.add_url_rule(f"{route_path}/", view_func=view_func, methods=methods)
     return app
 
 
