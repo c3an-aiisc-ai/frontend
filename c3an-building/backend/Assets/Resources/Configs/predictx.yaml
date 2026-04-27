@@ -1,0 +1,65 @@
+# PredictX training config
+# Parameters consumed by Code/Agents/PredictX/agent.py (train)
+
+preprocess:
+  # Provide either preprocessed_csv OR cycle_csv + multimodal JSONs
+  preprocessed_csv: Data/Primary/PredictX/Sample_5/FF_Multimodal_5_samples.csv
+  cycle_csv: null
+  multimodal_json_paths: []
+  multimodal_json_glob: null
+  multimodal_json_dir: null
+  export_csv_path: null
+  include_cycle_filter: false
+  allowed_cycle_states: [4, 9]
+
+train:
+  image_csv: Data/Primary/PredictX/preprocessed/FF_Data_New_sample.csv
+  image_col: Cam1
+  image_label_col: actual_state
+  lstm_feature_cols:
+    - I_R04_Gripper_Load
+    - I_R01_Gripper_Load
+  lstm_label_col: actual_state
+
+  lstm_model_cfg:
+    in_dim: 2
+    hidden: 32
+    out_dim: 3
+    num_layers: 2
+
+  efficientnet_model_cfg:
+    in_channels: 3
+    image_size: 224
+    hidden_dim: 128
+    pretrained: true
+    backbone: efficientnet-b0
+
+  fusion_model_cfg:
+    hidden_dim: 64
+    out_dim: 3
+    include_knowledge: true
+    include_image_presence: true
+
+  train_cfg:
+    epochs: 50
+    batch_size: 1
+    lr: 0.001
+    seed: 42
+    shuffle: false
+    train_ratio: 0.8
+
+  include_cycle_filter: false
+  allowed_cycle_states: [4, 9]
+  default_knowledge_adjustment: 0.0
+  knowledge_adjustments: null
+  max_rows: null
+  sample_seed: 42
+  image_root_dir: Data/Primary/PredictX/images
+
+  output_dir: backend/Agents/PredictX/saved_models
+
+infer:
+  features_csv: Data/Primary/PredictX/fusion_features_sample.csv
+  # model_path: Workflow/Test_Workflow/saved_models/predictx_fusion_model.pth
+  model_path: backend/Agents/PredictX/saved_models/predictx_fusion_model.pth
+  out_csv: backend/Agents/PredictX/saved_models/predictx_fusion_infer_predictions.csv
