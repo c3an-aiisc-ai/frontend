@@ -1,0 +1,56 @@
+# InfoGuide DistilBERT + LoRA training config
+# All parameters used by Code/Assets/Tools/infoguide/sequence_classifier.py
+
+# ---- dataset ----
+dataset_path: Data/Primary/LLM_FT_dataset.csv
+text_cols: ["Original Time Series", "Instruction1"]
+label_col: predicted_label
+labels: null
+sort_labels: true
+
+# ---- model/tokenization ----
+model_checkpoint: distilbert-base-uncased
+max_length: 512
+
+# ---- split/reproducibility ----
+test_size: 0.2
+seed: 42
+
+# ---- training args ----
+learning_rate: 0.001
+per_device_train_batch_size: 4
+per_device_eval_batch_size: 4
+num_train_epochs: 1
+weight_decay: 0.01
+evaluation_strategy: epoch
+save_strategy: epoch
+load_best_model_at_end: true
+gradient_accumulation_steps: 1
+fp16: false
+
+# ---- LoRA ----
+lora_r: 4
+lora_alpha: 32
+lora_dropout: 0.01
+lora_target_modules: ["q_lin", "v_lin"]
+
+# ---- outputs ----
+save_merged: true
+save_adapter: true
+output_dir: Code/Agents/infoguide_agent/infoguide_distilbert_lora
+
+# ---- downstream model checkpoints ----
+anomaly_model:
+  model_checkpoint: Data\Primary\Models\final_best_model_PredictX
+
+production_model:
+  model_checkpoint: Data\Primary\Models\final_finetuned_model_ForeSight
+
+# ---- inference (InfoGuide LLM) ----
+infer:
+  knowledge_path: info1-guide_agent_info.md
+  query: "What are the key stages in the InfoGuide pipeline?"
+  top_k: 2
+  model: llama-3.3-70b-versatile
+  system_template: "You are a helpful technical assistant."
+  max_tokens: 512
