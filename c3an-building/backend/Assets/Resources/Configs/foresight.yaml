@@ -53,7 +53,9 @@ output_dir: Code/Agents/foresight_agent/saved_models
 
 # ---- inference ----
 infer:
-  production_csv: Data/Primary/foresight_test_production.csv
-  process_csv: Data/Primary/foresight_test_process.csv
+  production_csv: Data/Primary/Foresight/foresight_test_production.csv
+  process_csv: Data/Primary/Foresight/foresight_test_process.csv
+
+  # Figure this out later. 
   model_path: backend/Agents/foresight_agent/saved_models/foresight_lstm_model.pth
   out_csv: backend/Agents/foresight_agent/saved_models/foresight_infer_predictions.csv

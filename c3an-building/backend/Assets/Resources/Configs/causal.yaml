@@ -1,0 +1,17 @@
+csv_path: Data/Primary/Causal/uploaded_dataset.csv
+feature_cols:
+  - I_R01_Gripper_Pot
+  - I_R01_Gripper_Load
+  - I_R02_Gripper_Pot
+  - I_R02_Gripper_Load
+  - I_R03_Gripper_Pot
+  - I_R03_Gripper_Load
+  - I_R04_Gripper_Pot
+  - I_R04_Gripper_Load
+sample_size: 1000
+output_html_name: lingam_causal_graph.html
+run_bootstrap: false
+bootstrap_n: 20
+bootstrap_seed: 42
+run_batch_eval: false
+batch_tolerance: 50.0
