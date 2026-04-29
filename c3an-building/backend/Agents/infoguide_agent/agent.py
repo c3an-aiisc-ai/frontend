@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from ...Assets.Resources.Schemas.artifacts import TextBlob, RawFrame, HFTextClassifierExport
 from ...Assets.Tools.io.runfs import RunFS
 from ...Assets.Tools.infoguide import BuildKnowledgeStore, RetrieveContext, RouteQuery, TrainSequenceClassifier
+from ...paths import resolve_backend_path
 
 
 class InfoGuideAgent:
@@ -101,13 +102,14 @@ class InfoGuideAgent:
     def _load_label_source(label_source_path: str, label_source_column: str) -> List[str]:
         import pandas as pd
 
-        suffix = Path(label_source_path).suffix.lower()
+        source_path = resolve_backend_path(label_source_path, must_exist=True)
+        suffix = source_path.suffix.lower()
         if suffix in {".xlsx", ".xls"}:
-            df = pd.read_excel(label_source_path)
+            df = pd.read_excel(source_path)
         elif suffix == ".csv":
-            df = pd.read_csv(label_source_path)
+            df = pd.read_csv(source_path)
         elif suffix == ".json":
-            df = pd.read_json(label_source_path)
+            df = pd.read_json(source_path)
         else:
             raise ValueError(f"Unsupported label source file: {label_source_path}")
 
@@ -219,12 +221,12 @@ class InfoGuideAgent:
     def train_sequence_classifier(
         self,
         *,
-        config_path: str = "Code/Assets/Resources/Configs/infoguide.yaml",
+        config_path: str = "Assets/Resources/Configs/infoguide.yaml",
     ) -> HFTextClassifierExport:
         return TrainSequenceClassifier().run(
             RawFrame(),
             fs=self.fs,
-            config_path=config_path,
+            config_path=str(resolve_backend_path(config_path, must_exist=True)),
         )
 
     def build_context(

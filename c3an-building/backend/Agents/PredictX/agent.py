@@ -50,6 +50,7 @@ from ...Assets.Tools.predictx_preprocessing.filter_cycle_state import FilterCycl
 from ...Assets.Tools.predictx_preprocessing.load_csv import LoadCSV as PPLoadCSV
 from ...Assets.Tools.predictx_preprocessing.merge_asof import MergeAsof
 from ...Assets.Tools.fusion import train as fusion_train
+from ...paths import resolve_backend_path
 
 
 class PredictXAgent:
@@ -97,7 +98,7 @@ class PredictXAgent:
     def _load_yaml_config(config_path: Optional[str]) -> Dict[str, Any]:
         if not config_path:
             return {}
-        cfg_path = Path(config_path)
+        cfg_path = resolve_backend_path(config_path)
         if not cfg_path.exists():
             raise FileNotFoundError(f"Config not found: {cfg_path}")
         import yaml
@@ -112,6 +113,21 @@ class PredictXAgent:
         out = dict(base or {})
         out.update(override or {})
         return out
+
+    @staticmethod
+    def _resolve_path_value(path_value: Optional[str], *, must_exist: bool = False) -> Optional[str]:
+        if path_value is None:
+            return None
+        raw = str(path_value).strip()
+        if not raw:
+            return None
+        return str(resolve_backend_path(raw, must_exist=must_exist))
+
+    @classmethod
+    def _resolve_path_values(cls, values: Optional[List[str]], *, must_exist: bool = False) -> Optional[List[str]]:
+        if not values:
+            return values
+        return [resolved for value in values if (resolved := cls._resolve_path_value(value, must_exist=must_exist))]
         
     def _build_fusion_rows(
             self,
@@ -164,11 +180,17 @@ class PredictXAgent:
         allowed_cycle_states: Optional[List[int]] = None,
     ) -> Tuple[RawFrame, str]:
         if preprocessed_csv:
+            preprocessed_csv = self._resolve_path_value(preprocessed_csv, must_exist=True)
             raw = PPLoadCSV().run(RawFrame(), csv_path=preprocessed_csv)
             return raw, preprocessed_csv
 
         if not cycle_csv:
             raise ValueError("cycle_csv is required when preprocessed_csv is not provided")
+
+        cycle_csv = self._resolve_path_value(cycle_csv, must_exist=True)
+        multimodal_json_paths = self._resolve_path_values(multimodal_json_paths, must_exist=True)
+        multimodal_json_glob = self._resolve_path_value(multimodal_json_glob) if multimodal_json_glob else None
+        multimodal_json_dir = self._resolve_path_value(multimodal_json_dir, must_exist=True)
 
         combined = CombineMultimodalJSON().run(
             RawFrame(),
@@ -217,7 +239,12 @@ class PredictXAgent:
                 allowed=allowed_cycle_states or [4, 9],
             )
 
-        target_csv = export_csv_path or str((self.fs.secondary / "predictx_preprocessed.csv").resolve())
+        target_csv = (
+            self._resolve_path_value(export_csv_path)
+            if export_csv_path
+            else str((self.fs.secondary / "predictx_preprocessed.csv").resolve())
+        )
+        Path(target_csv).parent.mkdir(parents=True, exist_ok=True)
         ExportCSV().run(out, csv_path=target_csv, index=False)
         return out, target_csv
 
@@ -293,10 +320,12 @@ class PredictXAgent:
         image_root_dir = image_root_dir or _cfg_get(train_section, "image_root_dir")
         output_dir = output_dir or _cfg_get(train_section, "output_dir")
 
+        image_csv = self._resolve_path_value(image_csv, must_exist=True)
+        image_root_dir = self._resolve_path_value(image_root_dir, must_exist=True)
+        preprocess_export_csv_path = self._resolve_path_value(preprocess_export_csv_path)
+
         if output_dir:
-            export_dir = Path(output_dir)
-            if not export_dir.is_absolute():
-                export_dir = Path(self.fs.root) / export_dir
+            export_dir = resolve_backend_path(output_dir)
         else:
             export_dir = Path(self.fs.root) / "Workflow" / "Test_Workflow" / "saved_models"
         lstm_feature_cols = lstm_feature_cols or ["I_R04_Gripper_Load", "I_R01_Gripper_Load"]
@@ -502,7 +531,8 @@ class PredictXAgent:
             / "saved_models"
             / "predictx_fusion_model.pth"
         )
-        model_path = model_path or str(default_model_path)
+        features_csv = self._resolve_path_value(features_csv, must_exist=True)
+        model_path = self._resolve_path_value(model_path, must_exist=True) if model_path else str(default_model_path)
         if not Path(model_path).exists():
             raise FileNotFoundError(f"Model not found: {model_path}")
 
@@ -582,6 +612,7 @@ class PredictXAgent:
         }
 
         if export_csv_path:
+            export_csv_path = self._resolve_path_value(export_csv_path)
             Path(export_csv_path).parent.mkdir(parents=True, exist_ok=True)
             with open(export_csv_path, "w", newline="") as f:
                 writer = csv.writer(f)

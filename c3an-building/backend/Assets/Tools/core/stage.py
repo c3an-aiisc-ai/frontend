@@ -1,5 +1,5 @@
 from typing import Generic, TypeVar, Type
-from .artifact import Artifact
+from .artifacts import Artifact
 I = TypeVar("I", bound=Artifact)
 O = TypeVar("O", bound=Artifact)
 class Stage(Generic[I, O]):

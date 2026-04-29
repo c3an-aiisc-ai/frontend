@@ -1,5 +1,5 @@
 # InfoGuide DistilBERT + LoRA training config
-# All parameters used by Code/Assets/Tools/infoguide/sequence_classifier.py
+# All parameters used by backend/Assets/Tools/infoguide/sequence_classifier.py
 
 # ---- dataset ----
 dataset_path: Data/Primary/InfoGuide/LLM_FT_dataset.csv
@@ -37,18 +37,18 @@ lora_target_modules: ["q_lin", "v_lin"]
 # ---- outputs ----
 save_merged: true
 save_adapter: true
-output_dir: Code/Agents/infoguide_agent/infoguide_distilbert_lora
+output_dir: Agents/infoguide_agent/infoguide_distilbert_lora
 
 # ---- downstream model checkpoints ----
 anomaly_model:
-  model_checkpoint: Data\Primary\Models\final_best_model_PredictX
+  model_checkpoint: null
 
 production_model:
-  model_checkpoint: Data\Primary\Models\final_finetuned_model_ForeSight
+  model_checkpoint: null
 
 # ---- inference (InfoGuide LLM) ----
 infer:
-  knowledge_path: info1-guide_agent_info.md
+  knowledge_path: null
   query: "What are the key stages in the InfoGuide pipeline?"
   top_k: 2
   model: llama-3.3-70b-versatile

@@ -16,6 +16,7 @@ from ...Assets.Tools.lstm.infer import PredictOnValid
 from ...Assets.Tools.lstm.evaluate import EvaluatePredictions
 from ...Assets.Tools.lstm.export import ExportRunArtifacts
 from ...Assets.Tools.lstm import train as lstm_train
+from ...paths import resolve_backend_path
 
 
 class ForesightAgent:
@@ -26,7 +27,7 @@ class ForesightAgent:
 	def _load_yaml_config(config_path: Optional[str]) -> Dict[str, Any]:
 		if not config_path:
 			return {}
-		cfg_path = Path(config_path)
+		cfg_path = resolve_backend_path(config_path)
 		if not cfg_path.exists():
 			raise FileNotFoundError(f"Config not found: {cfg_path}")
 		import yaml
@@ -41,6 +42,16 @@ class ForesightAgent:
 		out = dict(base or {})
 		out.update(override or {})
 		return out
+
+	@staticmethod
+	def _resolve_path_value(path_value: Optional[str], *, must_exist: bool = False) -> Optional[str]:
+		if path_value is None:
+			return None
+		raw = str(path_value).strip()
+		if not raw:
+			return None
+		return str(resolve_backend_path(raw, must_exist=must_exist))
+
 	def train(
 		self,
 		*,
@@ -67,6 +78,8 @@ class ForesightAgent:
 		process_csv = process_csv or _cfg_get("process_csv")
 		if not production_csv or not process_csv:
 			raise ValueError("production_csv and process_csv are required")
+		production_csv = self._resolve_path_value(production_csv, must_exist=True)
+		process_csv = self._resolve_path_value(process_csv, must_exist=True)
 
 		seq_feature_cols = seq_feature_cols or _cfg_get("seq_feature_cols")
 		exog_feature_cols = exog_feature_cols or _cfg_get("exog_feature_cols")
@@ -127,9 +140,7 @@ class ForesightAgent:
 		preds = PredictOnValid().run(seq_batch, split=split, trained=trained)
 		metrics = EvaluatePredictions().run(preds)
 		if output_dir:
-			export_dir = Path(output_dir)
-			if not export_dir.is_absolute():
-				export_dir = Path(self.fs.root) / export_dir
+			export_dir = resolve_backend_path(output_dir)
 		else:
 			export_dir = Path(self.fs.root) / "Workflow" / "Test_Workflow" / "saved_models"
 		export = ExportRunArtifacts().run(
@@ -169,9 +180,11 @@ class ForesightAgent:
 			"Yeast - FMX_IS/TS",
 		]
 		label_cols = label_cols or ["Yeast - BRD", "Yeast - BRN", "Yeast - FMX"]
+		production_csv = self._resolve_path_value(production_csv, must_exist=True)
+		process_csv = self._resolve_path_value(process_csv, must_exist=True)
 
 		default_model_path = Path(self.fs.root) / "Workflow" / "Test_Workflow" / "saved_models" / "foresight_lstm_model.pth"
-		model_path = model_path or str(default_model_path)
+		model_path = self._resolve_path_value(model_path, must_exist=True) if model_path else str(default_model_path)
 		if not Path(model_path).exists():
 			raise FileNotFoundError(f"Model not found: {model_path}")
 
@@ -240,6 +253,7 @@ class ForesightAgent:
 		}
 
 		if export_csv_path:
+			export_csv_path = self._resolve_path_value(export_csv_path)
 			Path(export_csv_path).parent.mkdir(parents=True, exist_ok=True)
 			with open(export_csv_path, "w", newline="") as f:
 				import csv

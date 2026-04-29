@@ -2,7 +2,7 @@ from pathlib import Path
 import json
 from datetime import datetime
 from typing import Any
-from ..core.artifact import Artifact
+from ..core.artifacts import Artifact
 class RunFS:
     def __init__(self, repo_root: str):
         self.root = Path(repo_root).resolve()

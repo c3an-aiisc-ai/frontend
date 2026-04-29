@@ -1,0 +1,352 @@
+{
+  "agents": [
+    {
+      "id": "predictx-agent",
+      "name": "PredictX",
+      "description": "Multimodal prediction system combining LSTM autoencoders (time-series), EfficientNet (images), and fusion models, with preprocessing for cycle state and JSON inputs.",
+      "version": "1.0.0",
+      "capabilities": [
+        "multimodal preprocessing",
+        "time-series modeling",
+        "image modeling",
+        "fusion modeling",
+        "anomaly detection"
+      ],
+      "tools": [
+        {
+          "name": "predictx_preprocess",
+          "description": "Preprocesses multimodal data (CSV + JSON) into a consolidated CSV. Provide preprocessed_csv OR provide cycle_csv plus multimodal JSON inputs.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "preprocessed_csv": {
+                "type": "string",
+                "description": "Path to an already-preprocessed CSV (skips raw preprocessing)."
+              },
+              "cycle_csv": {
+                "type": "string",
+                "description": "Path to cycle CSV (required if preprocessed_csv is not provided)."
+              },
+              "multimodal_json_paths": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "List of multimodal JSON file paths."
+              },
+              "multimodal_json_glob": {
+                "type": "string",
+                "description": "Glob pattern for multimodal JSON files."
+              },
+              "multimodal_json_dir": {
+                "type": "string",
+                "description": "Directory containing multimodal JSON files."
+              },
+              "export_csv_path": {
+                "type": "string",
+                "description": "Optional path for the exported CSV."
+              },
+              "include_cycle_filter": {
+                "type": "boolean",
+                "description": "Whether to filter by allowed cycle states."
+              },
+              "allowed_cycle_states": {
+                "type": "array",
+                "items": { "type": "integer" },
+                "description": "Cycle states to keep if include_cycle_filter is true."
+              }
+            },
+            "required": []
+          }
+        },
+        {
+          "name": "predictx_train",
+          "description": "Runs the full PredictX training pipeline (preprocess -> LSTM autoencoder -> EfficientNet -> Fusion) and exports artifacts.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "preprocessed_csv": {
+                "type": "string",
+                "description": "Path to an already-preprocessed CSV (skips raw preprocessing)."
+              },
+              "cycle_csv": {
+                "type": "string",
+                "description": "Path to cycle CSV (required if preprocessed_csv is not provided)."
+              },
+              "multimodal_json_paths": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "List of multimodal JSON file paths."
+              },
+              "multimodal_json_glob": {
+                "type": "string",
+                "description": "Glob pattern for multimodal JSON files."
+              },
+              "multimodal_json_dir": {
+                "type": "string",
+                "description": "Directory containing multimodal JSON files."
+              },
+              "image_csv": {
+                "type": "string",
+                "description": "Optional image CSV with image paths and labels."
+              },
+              "image_col": {
+                "type": "string",
+                "description": "Column name that holds image paths in the image CSV."
+              },
+              "image_label_col": {
+                "type": "string",
+                "description": "Column name that holds labels in the image CSV."
+              },
+              "lstm_feature_cols": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Feature columns for LSTM input."
+              },
+              "lstm_label_col": {
+                "type": "string",
+                "description": "Label column for LSTM targets."
+              },
+              "lstm_model_cfg": {
+                "type": "object",
+                "description": "Configuration for LSTM model."
+              },
+              "efficientnet_model_cfg": {
+                "type": "object",
+                "description": "Configuration for EfficientNet model."
+              },
+              "fusion_model_cfg": {
+                "type": "object",
+                "description": "Configuration for fusion model."
+              },
+              "train_cfg": {
+                "type": "object",
+                "description": "Training configuration (epochs, batch_size, lr, seed, shuffle, train_ratio)."
+              },
+              "include_cycle_filter": {
+                "type": "boolean",
+                "description": "Whether to filter by allowed cycle states."
+              },
+              "allowed_cycle_states": {
+                "type": "array",
+                "items": { "type": "integer" },
+                "description": "Cycle states to keep if include_cycle_filter is true."
+              },
+              "default_knowledge_adjustment": {
+                "type": "number",
+                "description": "Default knowledge adjustment value for fusion."
+              },
+              "knowledge_adjustments": {
+                "type": "array",
+                "items": { "type": "number" },
+                "description": "Per-row knowledge adjustment values."
+              },
+              "max_rows": {
+                "type": "integer",
+                "description": "Maximum number of rows to sample."
+              },
+              "sample_seed": {
+                "type": "integer",
+                "description": "Random seed for row sampling."
+              },
+              "image_root_dir": {
+                "type": "string",
+                "description": "Root directory for resolving image paths."
+              }
+            },
+            "required": []
+          }
+        }
+      ],
+      "protocol": ["a2a", "mcp"],
+      "endpoint": "TBD",
+      "authentication": "bearer"
+    },
+    {
+      "id": "foresight-agent",
+      "name": "ForeSight",
+      "description": "Trains LSTM-based time-series forecasting models on production and process data.",
+      "version": "1.0.0",
+      "capabilities": ["time-series preprocessing", "sequence modeling", "forecasting", "trend detection"],
+      "tools": [
+        {
+          "name": "foresight_train",
+          "description": "Trains an LSTM forecasting model and exports artifacts (model, predictions, metrics).",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "production_csv": {
+                "type": "string",
+                "description": "Path to production CSV."
+              },
+              "process_csv": {
+                "type": "string",
+                "description": "Path to process CSV."
+              },
+              "seq_feature_cols": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Sequence feature columns."
+              },
+              "exog_feature_cols": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Exogenous feature columns."
+              },
+              "label_cols": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Label columns for targets."
+              },
+              "model_cfg": {
+                "type": "object",
+                "description": "Model configuration."
+              },
+              "train_cfg": {
+                "type": "object",
+                "description": "Training configuration (epochs, batch_size, lr, seed, shuffle, train_ratio)."
+              },
+              "look_back": {
+                "type": "integer",
+                "description": "Look-back window size."
+              },
+              "time_floor": {
+                "type": "string",
+                "description": "Time floor for resampling (e.g., 'h')."
+              },
+              "datetime_format": {
+                "type": "string",
+                "description": "Datetime format of input timestamps."
+              }
+            },
+            "required": ["production_csv", "process_csv"]
+          }
+        }
+      ],
+      "protocol": ["a2a", "mcp"],
+      "endpoint": "TBD",
+      "authentication": "bearer"
+    },
+    {
+      "id": "causaltrace-agent",
+      "name": "CausalTrace",
+      "description": "Performs LiNGAM causal discovery, computes total effects, and exports graphs and evaluation artifacts.",
+      "version": "1.0.0",
+      "capabilities": ["causal discovery", "root cause analysis", "graph extraction", "counterfactual evaluation"],
+      "tools": [
+        {
+          "name": "causaltrace_run",
+          "description": "Runs LiNGAM causal analysis and exports graph HTML, bootstrap results, and batch evaluation artifacts.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "csv_path": {
+                "type": "string",
+                "description": "Path to input CSV."
+              },
+              "feature_cols": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Optional list of feature columns to use."
+              },
+              "sample_size": {
+                "type": "integer",
+                "description": "Optional sample size for subsampling."
+              },
+              "output_html_name": {
+                "type": "string",
+                "description": "Filename for exported HTML causal graph."
+              },
+              "run_bootstrap": {
+                "type": "boolean",
+                "description": "Whether to run bootstrap analysis."
+              },
+              "bootstrap_n": {
+                "type": "integer",
+                "description": "Number of bootstrap iterations."
+              },
+              "bootstrap_seed": {
+                "type": "integer",
+                "description": "Random seed for bootstrap sampling."
+              },
+              "run_batch_eval": {
+                "type": "boolean",
+                "description": "Whether to run batch counterfactual evaluation."
+              },
+              "batch_tolerance": {
+                "type": "number",
+                "description": "Tolerance threshold for batch evaluation."
+              }
+            },
+            "required": ["csv_path"]
+          }
+        }
+      ],
+      "protocol": ["a2a", "mcp"],
+      "endpoint": "TBD",
+      "authentication": "bearer"
+    },
+    {
+      "id": "infoguide-agent",
+      "name": "InfoGuide",
+      "description": "Routes natural-language manufacturing queries, retrieves documentation context, and selects downstream agents for forecasting, anomaly, or causal workflows.",
+      "version": "1.0.0",
+      "capabilities": ["query routing", "documentation retrieval", "response synthesis", "agent orchestration"],
+      "tools": [
+        {
+          "name": "infoguide_route",
+          "description": "Classifies a user query and returns the target downstream agent.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "user_query": {
+                "type": "string",
+                "description": "Natural-language user query."
+              },
+              "mode": {
+                "type": "string",
+                "description": "Optional manual route override."
+              },
+              "time_series_data": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Optional time-series values included with the query."
+              }
+            },
+            "required": ["user_query"]
+          }
+        },
+        {
+          "name": "infoguide_answer_documentation",
+          "description": "Retrieves relevant context from provided knowledge text and calls a supplied LLM adapter.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "user_query": {
+                "type": "string",
+                "description": "Documentation question to answer."
+              },
+              "knowledge_text": {
+                "type": "string",
+                "description": "Source text to retrieve context from."
+              },
+              "top_k": {
+                "type": "integer",
+                "description": "Number of retrieved context chunks."
+              }
+            },
+            "required": ["user_query", "knowledge_text"]
+          }
+        }
+      ],
+      "protocol": ["a2a", "mcp"],
+      "endpoint": "TBD",
+      "authentication": "bearer"
+    }
+  ],
+  "metadata": {
+    "version": "1.0.0",
+    "registry_type": "agent_registry",
+    "compatible_protocols": ["a2a", "mcp"],
+    "created_at": "2026-03-16",
+    "last_updated": "2026-04-29"
+  }
+}

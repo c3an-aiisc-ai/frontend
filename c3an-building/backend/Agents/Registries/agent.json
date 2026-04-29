@@ -1,0 +1,70 @@
+{
+  "agents": [
+    {
+      "id": "predictx",
+      "name": "PredictX",
+      "description": "Preprocesses multimodal inputs and trains LSTM, EfficientNet, and fusion models to produce prediction artifacts.",
+      "agent_class": "backend.Agents.PredictX.agent.PredictXAgent",
+      "input_data_streams": {
+        "mandatory": ["cycle_csv_or_preprocessed_csv"],
+        "optional": [
+          "multimodal_json_paths",
+          "multimodal_json_glob",
+          "multimodal_json_dir",
+          "image_csv",
+          "image_root_dir",
+          "lstm_feature_cols",
+          "train_cfg",
+          "model_cfgs",
+          "knowledge_adjustments"
+        ]
+      },
+      "output_data_streams": {
+        "primary": ["predictx_export_paths"],
+        "secondary": ["preprocessed_csv", "rows_used", "image_rows_usable"]
+      }
+    },
+    {
+      "id": "foresight",
+      "name": "ForeSight",
+      "description": "Trains an LSTM forecasting model using production and process time-series data.",
+      "agent_class": "backend.Agents.foresight_agent.agent.ForesightAgent",
+      "input_data_streams": {
+        "mandatory": ["production_csv", "process_csv"],
+        "optional": ["seq_feature_cols", "exog_feature_cols", "label_cols", "model_cfg", "train_cfg", "look_back"]
+      },
+      "output_data_streams": {
+        "primary": ["foresight_export_paths"],
+        "secondary": ["forecast_metrics"]
+      }
+    },
+    {
+      "id": "causaltrace",
+      "name": "CausalTrace",
+      "description": "Runs LiNGAM causal analysis and exports graph, bootstrap, and batch evaluation artifacts.",
+      "agent_class": "backend.Agents.causal_trace.agent.CausalTraceAgent",
+      "input_data_streams": {
+        "mandatory": ["csv_path"],
+        "optional": ["feature_cols", "sample_size", "bootstrap_config", "batch_eval_config", "output_html_name"]
+      },
+      "output_data_streams": {
+        "primary": ["lingam_export_paths"],
+        "secondary": ["causal_graph_html", "bootstrap_rows", "batch_eval_rows"]
+      }
+    },
+    {
+      "id": "infoguide",
+      "name": "InfoGuide",
+      "description": "Routes user queries, retrieves documentation context, and delegates production, anomaly, or causal requests to downstream agents.",
+      "agent_class": "backend.Agents.infoguide_agent.agent.InfoGuideAgent",
+      "input_data_streams": {
+        "mandatory": ["user_query"],
+        "optional": ["knowledge_text", "mode", "time_series_data", "conversation_history"]
+      },
+      "output_data_streams": {
+        "primary": ["route", "target_agent", "response"],
+        "secondary": ["confidence", "routing_source", "parsed_query", "predicted_labels"]
+      }
+    }
+  ]
+}

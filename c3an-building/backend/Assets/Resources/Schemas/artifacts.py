@@ -1,9 +1,7 @@
 from dataclasses import dataclass
-from typing import List, Dict, Optional
+from typing import Dict, List, Optional
 
-# from ...Tools.core.artifact import Artifact
-
-from Tools.core.artifacts import Artifact 
+from ...Tools.core.artifacts import Artifact
 
 @dataclass
 class RawFrame(Artifact):

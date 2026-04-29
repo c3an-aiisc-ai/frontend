@@ -1,19 +1,16 @@
-from typing import Optional, List
+from typing import List, Optional
 
 import numpy as np
 import pandas as pd
 
-from ...Assets.Tools.io.runfs import RunFS
-from ...Assets.Resources.Schemas.artifacts import (
-    RawFrame,
-    LiNGAMResult,
-    LiNGAMExportPaths,
-)
-from ...Assets.Tools.causal_analysis.load_assets import LoadCSV
-from ...Assets.Tools.causal_analysis.lingam import FitLiNGAM, extract_adjacency_matrix
+from ...Assets.Resources.Schemas.artifacts import LiNGAMExportPaths, LiNGAMResult, RawFrame
 from ...Assets.Tools.causal_analysis.algorithms import algorithm_1, algorithm_2, algorithm_3
 from ...Assets.Tools.causal_analysis.display_graphs import RenderLiNGAMGraph
 from ...Assets.Tools.causal_analysis.dump_assets import ExportLiNGAMArtifacts
+from ...Assets.Tools.causal_analysis.lingam import FitLiNGAM, extract_adjacency_matrix
+from ...Assets.Tools.causal_analysis.load_assets import LoadCSV
+from ...Assets.Tools.io.runfs import RunFS
+from ...paths import resolve_backend_path
 
 
 class CausalTraceAgent:
@@ -33,6 +30,7 @@ class CausalTraceAgent:
         run_batch_eval: bool = False,
         batch_tolerance: float = 50.0,
     ) -> LiNGAMExportPaths:
+        csv_path = str(resolve_backend_path(csv_path, must_exist=True))
         features = LoadCSV().run(
             RawFrame(),
             csv_path=csv_path,
@@ -48,7 +46,7 @@ class CausalTraceAgent:
             raise ValueError("LiNGAM model instance missing on trained artifact")
 
         adj_matrix = np.asarray(extract_adjacency_matrix(model), dtype=float)
-        
+
         total_effects = algorithm_2(adj_matrix)
         edges = []
         for i in range(len(adj_matrix)):
@@ -66,7 +64,6 @@ class CausalTraceAgent:
         graph_path = str((self.fs.tertiary / output_html_name).resolve())
         RenderLiNGAMGraph().run(lingam_result, output_html=graph_path)
 
-        # Algorithm 1 output
         algo1_df = algorithm_1(
             df=df,
             selected_features=node_labels,
@@ -75,7 +72,6 @@ class CausalTraceAgent:
         )
         bootstrap_rows = algo1_df.to_dict(orient="records")
 
-        # Algorithm 3 output (final output)
         algo3_df = algorithm_3(
             df=df,
             total_effects=np.asarray(lingam_result.total_effects_matrix, dtype=float),
@@ -84,17 +80,13 @@ class CausalTraceAgent:
         )
         batch_eval_rows = algo3_df.to_dict(orient="records")
 
-        # print("Bootstrap (Algorithm 1) output:")
-        # print(algo1_df)
-        # print("Batch Counterfactual Evaluation (Algorithm 3) output:")
-        # print(algo3_df) 
-        # print(batch_eval_rows, bootstrap_rows, graph_path, lingam_result)
-        
-        export = ExportLiNGAMArtifacts().run(
+        return ExportLiNGAMArtifacts().run(
             lingam_result,
             fs=self.fs,
             graph_html=graph_path,
             bootstrap_rows=bootstrap_rows,
             batch_eval_rows=batch_eval_rows,
         )
-        return export
+
+
+__all__ = ["CausalTraceAgent"]

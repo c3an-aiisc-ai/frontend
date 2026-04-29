@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 from ..core.stage import Stage
 from ...Resources.Schemas.artifacts import RawFrame, HFTextClassifierExport
 from ..io.runfs import RunFS
+from ....paths import resolve_backend_path
 
 
 class TrainSequenceClassifier(Stage[RawFrame, HFTextClassifierExport]):
@@ -45,7 +46,7 @@ class TrainSequenceClassifier(Stage[RawFrame, HFTextClassifierExport]):
     def _load_config(config_path: str) -> Dict[str, Any]:
         import yaml
 
-        cfg_path = Path(config_path)
+        cfg_path = resolve_backend_path(config_path)
         if not cfg_path.exists():
             raise FileNotFoundError(f"Config not found: {cfg_path}")
         cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
@@ -97,7 +98,7 @@ class TrainSequenceClassifier(Stage[RawFrame, HFTextClassifierExport]):
 
         cfg = self._load_config(config_path)
 
-        dataset_path = str(cfg["dataset_path"])
+        dataset_path = str(resolve_backend_path(str(cfg["dataset_path"]), must_exist=True))
         text_cols = cfg["text_cols"] or []
         label_col = str(cfg["label_col"])
         labels = cfg["labels"]
@@ -130,7 +131,7 @@ class TrainSequenceClassifier(Stage[RawFrame, HFTextClassifierExport]):
         fs: Optional[RunFS] = kwargs.get("fs")
         output_dir = cfg.get("output_dir")
         if output_dir:
-            base_dir = Path(output_dir)
+            base_dir = resolve_backend_path(str(output_dir))
         elif fs is not None:
             base_dir = fs.tertiary / "infoguide_distilbert_lora"
         else:
