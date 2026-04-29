@@ -2,7 +2,7 @@
 # All parameters used by Code/Assets/Tools/infoguide/sequence_classifier.py
 
 # ---- dataset ----
-dataset_path: Data/Primary/LLM_FT_dataset.csv
+dataset_path: Data/Primary/InfoGuide/LLM_FT_dataset.csv
 text_cols: ["Original Time Series", "Instruction1"]
 label_col: predicted_label
 labels: null
