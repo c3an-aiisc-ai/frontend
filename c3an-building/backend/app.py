@@ -15,6 +15,11 @@ from flask import Flask, abort, jsonify, request, send_from_directory, session
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 
+if __package__ in (None, ""):
+    repo_root = Path(__file__).resolve().parents[1]
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
+
 DIST_DIR = Path(__file__).resolve().parents[1] / "dist"
 app = Flask(__name__, static_folder=str(DIST_DIR), static_url_path="")
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "c3an-demo-secret")
@@ -31,6 +36,19 @@ AUTH_STORE_PATH = Path(__file__).resolve().with_name("auth-store.local")
 SAMPLE_SCRIPT_DIR = Path(__file__).resolve().with_name("demo-scripts")
 SCRIPT_TIMEOUT_SECONDS = 10
 _auth_store_cache: dict[str, list[dict[str, object]]] | None = None
+
+
+def _json_payload() -> dict[str, object]:
+    payload = request.get_json(silent=True)
+    return payload if isinstance(payload, dict) else {}
+
+
+def _agent_error_response(exc: Exception) -> tuple[dict[str, object], int]:
+    status = 400 if isinstance(exc, (FileNotFoundError, KeyError, ValueError)) else 500
+    return {
+        "error": str(exc),
+        "errorType": type(exc).__name__,
+    }, status
 
 
 def _extract_item_name() -> str | None:
@@ -398,6 +416,72 @@ def get_sample_generated_components_script(script_name: str) -> tuple[dict[str, 
 def get_sample_generated_components_script_by_query() -> tuple[dict[str, str], int] | dict[str, str]:
     script_name = str(request.args.get("name", "")).strip()
     return get_sample_generated_components_script(script_name)
+
+
+@app.get("/api/agents/registry")
+def get_agent_registry() -> tuple[dict[str, object], int] | dict[str, object]:
+    try:
+        from backend.agent_runtime import get_agent_registry_payload
+
+        return get_agent_registry_payload()
+    except Exception as exc:
+        return _agent_error_response(exc)
+
+
+@app.get("/api/agents/<agent_id>")
+def get_agent_manifest(agent_id: str) -> tuple[dict[str, object], int] | dict[str, object]:
+    try:
+        from backend.agent_runtime import get_agent_catalog_entry, get_agent_manifest
+
+        return {
+            "agent": get_agent_manifest(agent_id),
+            "catalog": get_agent_catalog_entry(agent_id),
+        }
+    except Exception as exc:
+        return _agent_error_response(exc)
+
+
+@app.get("/api/agents/<agent_id>/tools")
+def list_agent_tools(agent_id: str) -> tuple[dict[str, object], int] | dict[str, object]:
+    try:
+        from backend.agent_runtime import get_agent_tools, normalize_agent_id
+
+        return {
+            "agent_id": normalize_agent_id(agent_id),
+            "tools": get_agent_tools(agent_id),
+        }
+    except Exception as exc:
+        return _agent_error_response(exc)
+
+
+@app.post("/api/agents/<agent_id>/tools/<tool_name>/run")
+def run_agent_tool_endpoint(agent_id: str, tool_name: str) -> tuple[dict[str, object], int] | dict[str, object]:
+    try:
+        from backend.agent_runtime import run_agent_tool
+
+        return run_agent_tool(agent_id, tool_name, _json_payload())
+    except Exception as exc:
+        return _agent_error_response(exc)
+
+
+@app.post("/api/workflows/smart-pilot/run")
+def run_smart_pilot_workflow_endpoint() -> tuple[dict[str, object], int] | dict[str, object]:
+    try:
+        from backend.agent_runtime import run_smart_pilot_workflow
+
+        return run_smart_pilot_workflow(_json_payload())
+    except Exception as exc:
+        return _agent_error_response(exc)
+
+
+@app.post("/api/workflows/smart-pilot/route")
+def route_smart_pilot_question_endpoint() -> tuple[dict[str, object], int] | dict[str, object]:
+    try:
+        from backend.agent_runtime import route_smart_pilot_question
+
+        return route_smart_pilot_question(_json_payload())
+    except Exception as exc:
+        return _agent_error_response(exc)
 
 
 @app.get("/api/auth/session")

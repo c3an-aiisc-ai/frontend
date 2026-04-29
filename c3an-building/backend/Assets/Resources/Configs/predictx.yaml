@@ -60,6 +60,6 @@ train:
   output_dir: Agents/PredictX/saved_models
 
 infer:
-  features_csv: null
+  features_csv: Data/Primary/PredictX/fusion_features_sample.csv
   model_path: Agents/PredictX/saved_models/predictx_fusion_model.pth
   out_csv: Agents/PredictX/saved_models/predictx_fusion_infer_predictions.csv

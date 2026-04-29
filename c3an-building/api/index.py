@@ -9,13 +9,19 @@ from backend.app import (
     create_item,
     delete_item,
     generate_components,
+    get_agent_manifest,
+    get_agent_registry,
     get_sample_generated_components_script,
     get_item,
+    list_agent_tools,
     list_items,
     list_saved_plans,
     login_user,
     logout_user,
     register_user,
+    route_smart_pilot_question_endpoint,
+    run_agent_tool_endpoint,
+    run_smart_pilot_workflow_endpoint,
     save_generated_plans,
     slow_math,
     slow_number,
@@ -38,6 +44,24 @@ app.add_url_rule(
     "/generated-components/sample-script/<script_name>",
     view_func=get_sample_generated_components_script,
     methods=["GET"],
+)
+app.add_url_rule("/agents/registry", view_func=get_agent_registry, methods=["GET"])
+app.add_url_rule("/agents/<agent_id>", view_func=get_agent_manifest, methods=["GET"])
+app.add_url_rule("/agents/<agent_id>/tools", view_func=list_agent_tools, methods=["GET"])
+app.add_url_rule(
+    "/agents/<agent_id>/tools/<tool_name>/run",
+    view_func=run_agent_tool_endpoint,
+    methods=["POST"],
+)
+app.add_url_rule(
+    "/workflows/smart-pilot/run",
+    view_func=run_smart_pilot_workflow_endpoint,
+    methods=["POST"],
+)
+app.add_url_rule(
+    "/workflows/smart-pilot/route",
+    view_func=route_smart_pilot_question_endpoint,
+    methods=["POST"],
 )
 app.add_url_rule("/auth/session", view_func=auth_session, methods=["GET"])
 app.add_url_rule("/auth/register", view_func=register_user, methods=["POST"])

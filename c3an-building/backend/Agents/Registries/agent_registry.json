@@ -154,6 +154,54 @@
             },
             "required": []
           }
+        },
+        {
+          "name": "predictx_infer_fusion",
+          "description": "Runs PredictX fusion inference from a feature CSV and exported fusion model.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "features_csv": {
+                "type": "string",
+                "description": "Path to CSV containing fusion features."
+              },
+              "model_path": {
+                "type": "string",
+                "description": "Optional path to fusion model weights."
+              },
+              "ts_feature_cols": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Optional time-series prediction feature columns."
+              },
+              "img_feature_cols": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Optional image probability feature columns."
+              },
+              "include_knowledge": {
+                "type": "boolean",
+                "description": "Whether to include the knowledge adjustment column."
+              },
+              "include_image_presence": {
+                "type": "boolean",
+                "description": "Whether to include the image presence column."
+              },
+              "image_present_col": {
+                "type": "string",
+                "description": "Column indicating whether image features are present."
+              },
+              "knowledge_col": {
+                "type": "string",
+                "description": "Column containing knowledge adjustment values."
+              },
+              "export_csv_path": {
+                "type": "string",
+                "description": "Optional path for exported predictions."
+              }
+            },
+            "required": ["features_csv"]
+          }
         }
       ],
       "protocol": ["a2a", "mcp"],
@@ -215,6 +263,59 @@
               "datetime_format": {
                 "type": "string",
                 "description": "Datetime format of input timestamps."
+              }
+            },
+            "required": ["production_csv", "process_csv"]
+          }
+        },
+        {
+          "name": "foresight_infer",
+          "description": "Runs ForeSight inference from production/process CSVs and an exported LSTM model.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "production_csv": {
+                "type": "string",
+                "description": "Path to production CSV."
+              },
+              "process_csv": {
+                "type": "string",
+                "description": "Path to process CSV."
+              },
+              "model_path": {
+                "type": "string",
+                "description": "Optional path to LSTM model weights."
+              },
+              "seq_feature_cols": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Sequence feature columns."
+              },
+              "exog_feature_cols": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Exogenous feature columns."
+              },
+              "label_cols": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Label columns for targets."
+              },
+              "look_back": {
+                "type": "integer",
+                "description": "Look-back window size."
+              },
+              "time_floor": {
+                "type": "string",
+                "description": "Time floor for resampling."
+              },
+              "datetime_format": {
+                "type": "string",
+                "description": "Datetime format of input timestamps."
+              },
+              "export_csv_path": {
+                "type": "string",
+                "description": "Optional path for exported predictions."
               }
             },
             "required": ["production_csv", "process_csv"]
@@ -315,8 +416,8 @@
           }
         },
         {
-          "name": "infoguide_answer_documentation",
-          "description": "Retrieves relevant context from provided knowledge text and calls a supplied LLM adapter.",
+          "name": "infoguide_build_context",
+          "description": "Retrieves relevant context from provided knowledge text for a documentation query.",
           "inputSchema": {
             "type": "object",
             "properties": {
@@ -334,6 +435,33 @@
               }
             },
             "required": ["user_query", "knowledge_text"]
+          }
+        },
+        {
+          "name": "infoguide_run",
+          "description": "Runs the full InfoGuide request handler for route classification and optional downstream-style response fields.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "user_query": {
+                "type": "string",
+                "description": "Natural-language user query."
+              },
+              "mode": {
+                "type": "string",
+                "description": "Optional manual route override."
+              },
+              "knowledge_text": {
+                "type": "string",
+                "description": "Optional source text for documentation mode."
+              },
+              "time_series_data": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Optional time-series values included with the query."
+              }
+            },
+            "required": ["user_query"]
           }
         }
       ],
