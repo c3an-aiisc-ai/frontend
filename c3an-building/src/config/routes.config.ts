@@ -2,7 +2,15 @@
 // Routes Configuration
 // =============================================================================
 
-export type RouteKey = "home" | "planning" | "evaluation" | "agentgen" | "editor" | "login" | "bridge";
+export type RouteKey =
+  | "home"
+  | "planning"
+  | "evaluation"
+  | "agentgen"
+  | "editor"
+  | "login"
+  | "smartpilotDemo"
+  | "smartpilotWorkflow";
 
 export type RouteDefinition = {
   key: RouteKey;
@@ -11,7 +19,7 @@ export type RouteDefinition = {
   label: string;
 };
 
-export type WorkspaceRouteKey = Exclude<RouteKey, "home" | "login" | "bridge">;
+export type WorkspaceRouteKey = Exclude<RouteKey, "home" | "login" | "smartpilotDemo" | "smartpilotWorkflow">;
 
 export const routesConfig: Record<RouteKey, RouteDefinition> = {
   home: {
@@ -50,11 +58,17 @@ export const routesConfig: Record<RouteKey, RouteDefinition> = {
     aliases: ["/login"],
     label: "Login",
   },
-  bridge: {
-    key: "bridge",
-    path: "/bridge",
-    aliases: ["/bridge"],
-    label: "Flask Bridge",
+  smartpilotDemo: {
+    key: "smartpilotDemo",
+    path: "/smartpilot-demo",
+    aliases: ["/smartpilot-demo", "/demo"],
+    label: "SmartPilot Demo",
+  },
+  smartpilotWorkflow: {
+    key: "smartpilotWorkflow",
+    path: "/smartpilot-workflow",
+    aliases: ["/smartpilot-workflow", "/smartpilot-demo/workflow"],
+    label: "SmartPilot Workflow",
   },
 } as const;
 
@@ -72,7 +86,8 @@ export const navigationPaths = {
   evaluation: "#/evaluation",
   agentgen: "#/agentgen",
   login: "#/login",
-  bridge: "#/bridge",
+  smartpilotDemo: "#/smartpilot-demo",
+  smartpilotWorkflow: "#/smartpilot-workflow",
 } as const;
 
 const PREVIOUS_ROUTE_STORAGE_KEY = "c3an_previous_route";

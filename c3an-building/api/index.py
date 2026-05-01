@@ -11,6 +11,7 @@ from backend.app import (
     generate_components,
     get_agent_manifest,
     get_agent_registry,
+    get_smart_pilot_demo_sample_endpoint,
     get_sample_generated_components_script,
     get_item,
     list_agent_tools,
@@ -57,6 +58,11 @@ app.add_url_rule(
     "/workflows/smart-pilot/run",
     view_func=run_smart_pilot_workflow_endpoint,
     methods=["POST"],
+)
+app.add_url_rule(
+    "/workflows/smart-pilot/sample",
+    view_func=get_smart_pilot_demo_sample_endpoint,
+    methods=["GET"],
 )
 app.add_url_rule(
     "/workflows/smart-pilot/route",

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import importlib
+import csv
 import json
+import os
+import tempfile
 from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -114,7 +117,7 @@ def normalize_pilots(raw: Any) -> list[str]:
     for part in parts:
         alias = PILOT_ALIASES.get(part.replace("-", "_")) or PILOT_ALIASES.get(part.replace("_", "-"))
         if alias is None:
-            raise ValueError("Unsupported pilot. Use predictx, foresight, causaltrace, causalpulse, or all.")
+            raise ValueError("Unsupported pilot. Use predictx, foresight, infoguide, causaltrace, causalpulse, or all.")
         if alias != "all" and alias not in pilots:
             pilots.append(alias)
     return pilots
@@ -183,31 +186,35 @@ def _call_agent_tool(agent_id: str, tool_name: str, inputs: dict[str, Any]) -> A
     tool = str(tool_name or "").strip().lower()
     agent = _load_agent(canonical)
 
-    dispatch: dict[str, dict[str, Callable[..., Any]]] = {
-        "predictx": {
+    dispatch: dict[str, Callable[..., Any]]
+    if canonical == "predictx":
+        dispatch = {
             "predictx_preprocess": agent.preprocess,
             "predictx_train": agent.train,
             "predictx_infer_fusion": agent.infer_fusion,
-        },
-        "foresight": {
+        }
+    elif canonical == "foresight":
+        dispatch = {
             "foresight_train": agent.train,
             "foresight_infer": agent.infer,
-        },
-        "causaltrace": {
+        }
+    elif canonical == "causaltrace":
+        dispatch = {
             "causaltrace_run": agent.run,
-        },
-        "infoguide": {
+        }
+    elif canonical == "infoguide":
+        dispatch = {
             "infoguide_route": agent.route_request,
             "infoguide_build_context": agent.build_context,
             "infoguide_run": agent.run,
-        },
-    }
+        }
+    else:
+        dispatch = {}
 
-    agent_tools = dispatch.get(canonical, {})
-    if tool not in agent_tools:
-        available = ", ".join(sorted(agent_tools)) or "none"
+    if tool not in dispatch:
+        available = ", ".join(sorted(dispatch)) or "none"
         raise ValueError(f"Tool '{tool_name}' is not available for agent '{agent_id}'. Available: {available}.")
-    return agent_tools[tool](**inputs)
+    return dispatch[tool](**inputs)
 
 
 def run_agent_tool(agent_id: str, tool_name: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -241,9 +248,17 @@ def _config_path(payload: dict[str, Any], name: str) -> str:
 
 def _workflow_output_dir(payload: dict[str, Any]) -> Path:
     raw_out_dir = str(payload.get("out_dir") or "Data/Tertiary/smart_pilot_outputs")
-    out_dir = resolve_backend_path(raw_out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    return out_dir
+    requested_dir = resolve_backend_path(raw_out_dir)
+    if os.environ.get("VERCEL") and not str(requested_dir).startswith(tempfile.gettempdir()):
+        requested_dir = Path(tempfile.gettempdir()) / "c3an-smartpilot" / Path(raw_out_dir).name
+
+    try:
+        requested_dir.mkdir(parents=True, exist_ok=True)
+        return requested_dir
+    except OSError:
+        out_dir = Path(tempfile.gettempdir()) / "c3an-smartpilot" / Path(raw_out_dir).name
+        out_dir.mkdir(parents=True, exist_ok=True)
+        return out_dir
 
 
 def _load_workflow_configs(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -264,6 +279,274 @@ def _require_config_value(cfg: dict[str, Any], key: str, label: str) -> Any:
     return value
 
 
+def _short_csv_value(value: Any, *, max_len: int = 120) -> str:
+    text = "" if value is None else str(value)
+    if len(text) <= max_len:
+        return text
+    return f"{text[: max_len - 3]}..."
+
+
+def _read_csv_sample(path_value: str | None, *, limit: int = 5) -> dict[str, Any]:
+    if not path_value:
+        return {
+            "path": None,
+            "columns": [],
+            "rows": [],
+            "row_count": 0,
+            "error": "Dataset path is not configured.",
+        }
+
+    resolved = resolve_backend_path(path_value, must_exist=True)
+    rows: list[dict[str, str]] = []
+    row_count = 0
+    with resolved.open("r", encoding="utf-8-sig", newline="") as f:
+        reader = csv.DictReader(f)
+        columns = list(reader.fieldnames or [])
+        for raw_row in reader:
+            row_count += 1
+            if len(rows) < limit:
+                rows.append({str(key): _short_csv_value(value) for key, value in raw_row.items() if key is not None})
+
+    return {
+        "path": path_value,
+        "resolved_path": str(resolved),
+        "columns": columns,
+        "rows": rows,
+        "row_count": row_count,
+    }
+
+
+def _read_csv_rows(path_value: str | None) -> tuple[list[dict[str, str]], str, list[str]]:
+    if not path_value:
+        raise ValueError("Dataset path is not configured.")
+    resolved = resolve_backend_path(path_value, must_exist=True)
+    with resolved.open("r", encoding="utf-8-sig", newline="") as f:
+        reader = csv.DictReader(f)
+        rows = [
+            {str(key): "" if value is None else str(value) for key, value in row.items() if key is not None}
+            for row in reader
+        ]
+        return rows, str(resolved), list(reader.fieldnames or [])
+
+
+def _float_value(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _write_predictions_csv(out_dir: Path, filename: str, predictions: list[list[float]]) -> str | None:
+    try:
+        out_path = out_dir / filename
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        with out_path.open("w", encoding="utf-8", newline="") as f:
+            writer = csv.writer(f)
+            width = max((len(row) for row in predictions), default=0)
+            writer.writerow([f"y_pred_{index}" for index in range(width)])
+            writer.writerows(predictions)
+        return str(out_path)
+    except OSError:
+        return None
+
+
+def _run_predictx_lightweight(configs: dict[str, dict[str, Any]], out_dir: Path, reason: str) -> dict[str, Any]:
+    cfg = configs["predictx"]
+    infer_cfg = cfg.get("infer") if isinstance(cfg.get("infer"), dict) else {}
+    features_csv = infer_cfg.get("features_csv")
+    rows, resolved_path, columns = _read_csv_rows(features_csv)
+    ts_feature_cols = infer_cfg.get("ts_feature_cols") or [column for column in columns if column.startswith("ts_pred_")]
+    img_feature_cols = infer_cfg.get("img_feature_cols") or [column for column in columns if column.startswith("img_prob_")]
+    knowledge_col = infer_cfg.get("knowledge_col", "knowledge_adjustment")
+    image_present_col = infer_cfg.get("image_present_col", "has_image")
+
+    predictions: list[list[float]] = []
+    explanations: list[str] = []
+    for row in rows:
+        ts_values = [_float_value(row.get(column)) for column in ts_feature_cols]
+        img_values = [_float_value(row.get(column)) for column in img_feature_cols]
+        knowledge = _float_value(row.get(knowledge_col))
+        has_image = _float_value(row.get(image_present_col), 1.0 if img_values else 0.0)
+        ts_signal = sum(ts_values) / len(ts_values) if ts_values else 0.0
+        image_signal = max(img_values) if img_values else 0.0
+        anomaly_score = max(0.0, min(1.0, abs(ts_signal) * 0.5 + image_signal * 0.4 + abs(knowledge) * 0.1))
+        if has_image <= 0:
+            anomaly_score *= 0.8
+        predictions.append([round(ts_signal, 4), round(image_signal, 4), round(anomaly_score, 4)])
+        explanations.append(
+            f"sensor={ts_signal:.3f}, image={image_signal:.3f}, knowledge={knowledge:.3f}, has_image={has_image:.0f}"
+        )
+
+    predictions_csv = _write_predictions_csv(out_dir, "predictx_lightweight_predictions.csv", predictions)
+    return {
+        "pilot": "predictx",
+        "status": "completed",
+        "count": len(predictions),
+        "artifacts": {
+            "dataset_path": resolved_path,
+            "predictions_csv": predictions_csv,
+            "execution_mode": "lightweight_dataset_fallback",
+        },
+        "result": {
+            "predictions": predictions,
+            "count": len(predictions),
+            "execution_mode": "lightweight_dataset_fallback",
+            "fallback_reason": reason,
+            "explanation": "Derived anomaly scores from checked-in PredictX fusion feature columns for serverless demo execution.",
+            "row_explanations": explanations,
+        },
+    }
+
+
+def _run_foresight_lightweight(configs: dict[str, dict[str, Any]], out_dir: Path, reason: str) -> dict[str, Any]:
+    cfg = configs["foresight"]
+    infer_cfg = cfg.get("infer") if isinstance(cfg.get("infer"), dict) else {}
+    production_csv = infer_cfg.get("production_csv") or cfg.get("production_csv")
+    process_csv = infer_cfg.get("process_csv") or cfg.get("process_csv")
+    rows, resolved_path, _ = _read_csv_rows(production_csv)
+    label_cols = infer_cfg.get("label_cols") or cfg.get("label_cols") or ["Yeast - BRD", "Yeast - BRN", "Yeast - FMX"]
+
+    values_by_part: dict[str, list[float]] = {}
+    for row in rows:
+        part = str(row.get("Part") or "").strip()
+        if not part:
+            continue
+        values_by_part.setdefault(part, []).append(_float_value(row.get("VYP - Yeast Weight")))
+
+    prediction: list[float] = []
+    explanations: list[str] = []
+    for part in label_cols:
+        series = values_by_part.get(str(part), [])
+        if not series:
+            prediction.append(0.0)
+            explanations.append(f"{part}: no production history found")
+            continue
+        last_value = series[-1]
+        previous_value = series[-2] if len(series) > 1 else last_value
+        forecast = last_value + (last_value - previous_value)
+        prediction.append(round(forecast, 4))
+        explanations.append(f"{part}: last={last_value:.3f}, previous={previous_value:.3f}, trend forecast={forecast:.3f}")
+
+    predictions = [prediction] if prediction else []
+    predictions_csv = _write_predictions_csv(out_dir, "foresight_lightweight_predictions.csv", predictions)
+    return {
+        "pilot": "foresight",
+        "status": "completed",
+        "count": len(predictions),
+        "artifacts": {
+            "production_dataset_path": resolved_path,
+            "process_dataset_path": str(resolve_backend_path(process_csv)) if process_csv else None,
+            "predictions_csv": predictions_csv,
+            "execution_mode": "lightweight_dataset_fallback",
+        },
+        "result": {
+            "predictions": predictions,
+            "count": len(predictions),
+            "label_cols": label_cols,
+            "execution_mode": "lightweight_dataset_fallback",
+            "fallback_reason": reason,
+            "explanation": "Derived a one-step trend forecast from the checked-in ForeSight production sample for serverless demo execution.",
+            "row_explanations": explanations,
+        },
+    }
+
+
+def _build_infoguide_knowledge(rows: list[dict[str, str]]) -> str:
+    chunks: list[str] = []
+    for row in rows:
+        series = row.get("Original Time Series") or row.get("time_series") or ""
+        question_1 = row.get("Instruction1") or ""
+        answer_1 = row.get("Output1_from_LLM") or row.get("predicted_label") or ""
+        question_2 = row.get("Instruction2") or ""
+        answer_2_parts = [row.get("Output2_1_from_LLM") or "", row.get("Output2_2_from_LLM") or ""]
+        answer_2 = ", ".join(part for part in answer_2_parts if part)
+
+        if question_1 or answer_1:
+            chunks.append(f"Time series: {series}\nQuestion: {question_1}\nAnswer: {answer_1}".strip())
+        if question_2 or answer_2:
+            chunks.append(f"Time series: {series}\nQuestion: {question_2}\nAnswer: {answer_2}".strip())
+
+    return "\n\n".join(chunks)
+
+
+def _build_smart_pilot_demo_sample(
+    configs: dict[str, dict[str, Any]],
+    *,
+    question: str | None = None,
+) -> dict[str, Any]:
+    predictx_cfg = configs.get("predictx", {})
+    predictx_infer = predictx_cfg.get("infer") if isinstance(predictx_cfg.get("infer"), dict) else {}
+    foresight_cfg = configs.get("foresight", {})
+    infoguide_cfg = configs.get("infoguide", {})
+
+    warnings: list[str] = []
+
+    def sample_or_error(path_value: str | None, *, limit: int = 5) -> dict[str, Any]:
+        try:
+            return _read_csv_sample(path_value, limit=limit)
+        except Exception as exc:
+            warnings.append(str(exc))
+            return {
+                "path": path_value,
+                "columns": [],
+                "rows": [],
+                "row_count": 0,
+                "error": str(exc),
+            }
+
+    predictx_sample = sample_or_error(predictx_infer.get("features_csv"), limit=4)
+    production_sample = sample_or_error(foresight_cfg.get("production_csv"), limit=6)
+    process_sample = sample_or_error(foresight_cfg.get("process_csv"), limit=6)
+    infoguide_sample = sample_or_error(infoguide_cfg.get("dataset_path"), limit=4)
+
+    info_rows = infoguide_sample.get("rows") if isinstance(infoguide_sample.get("rows"), list) else []
+    qa_row = next(
+        (
+            row
+            for row in info_rows
+            if isinstance(row, dict) and (row.get("Instruction1") or row.get("Instruction2"))
+        ),
+        info_rows[0] if info_rows else {},
+    )
+    infer_cfg = infoguide_cfg.get("infer") if isinstance(infoguide_cfg.get("infer"), dict) else {}
+    demo_question = (
+        question
+        or qa_row.get("Instruction1")
+        or qa_row.get("Instruction2")
+        or infer_cfg.get("query")
+        or "What are the anomalies that happen in next time step?"
+    )
+    demo_answer = qa_row.get("Output1_from_LLM") or qa_row.get("Output2_1_from_LLM") or qa_row.get("predicted_label") or ""
+    knowledge_text = _build_infoguide_knowledge([row for row in info_rows if isinstance(row, dict)])
+
+    return {
+        "datasets": {
+            "predictx_features": predictx_sample,
+            "foresight_production": production_sample,
+            "foresight_process": process_sample,
+            "infoguide_qa": {
+                **infoguide_sample,
+                "question": demo_question,
+                "answer": demo_answer,
+                "knowledge_text": knowledge_text,
+            },
+        },
+        "modalities": [
+            "sensor/time-series features",
+            "image probability features",
+            "production process data",
+            "domain Q&A text",
+        ],
+        "warnings": warnings,
+    }
+
+
+def get_smart_pilot_demo_sample(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    body = payload or {}
+    configs = _load_workflow_configs(body)
+    return _build_smart_pilot_demo_sample(configs, question=body.get("question") or body.get("user_query"))
+
+
 def _run_predictx_infer(configs: dict[str, dict[str, Any]], out_dir: Path) -> dict[str, Any]:
     cfg = configs["predictx"]
     infer_cfg = cfg.get("infer") if isinstance(cfg.get("infer"), dict) else {}
@@ -272,21 +555,24 @@ def _run_predictx_infer(configs: dict[str, dict[str, Any]], out_dir: Path) -> di
         raise ValueError("PredictX inference requires infer.features_csv. Add PredictX sample features or pass config_overrides.predictx.infer.features_csv.")
 
     out_csv = infer_cfg.get("out_csv") or str(out_dir / "predictx_fusion_infer_predictions.csv")
-    result = _call_agent_tool(
-        "predictx",
-        "predictx_infer_fusion",
-        {
-            "features_csv": features_csv,
-            "model_path": infer_cfg.get("model_path"),
-            "ts_feature_cols": infer_cfg.get("ts_feature_cols"),
-            "img_feature_cols": infer_cfg.get("img_feature_cols"),
-            "include_knowledge": bool(infer_cfg.get("include_knowledge", True)),
-            "include_image_presence": bool(infer_cfg.get("include_image_presence", True)),
-            "image_present_col": infer_cfg.get("image_present_col", "has_image"),
-            "knowledge_col": infer_cfg.get("knowledge_col", "knowledge_adjustment"),
-            "export_csv_path": out_csv,
-        },
-    )
+    try:
+        result = _call_agent_tool(
+            "predictx",
+            "predictx_infer_fusion",
+            {
+                "features_csv": features_csv,
+                "model_path": infer_cfg.get("model_path"),
+                "ts_feature_cols": infer_cfg.get("ts_feature_cols"),
+                "img_feature_cols": infer_cfg.get("img_feature_cols"),
+                "include_knowledge": bool(infer_cfg.get("include_knowledge", True)),
+                "include_image_presence": bool(infer_cfg.get("include_image_presence", True)),
+                "image_present_col": infer_cfg.get("image_present_col", "has_image"),
+                "knowledge_col": infer_cfg.get("knowledge_col", "knowledge_adjustment"),
+                "export_csv_path": out_csv,
+            },
+        )
+    except (ImportError, FileNotFoundError, ModuleNotFoundError) as exc:
+        return _run_predictx_lightweight(configs, out_dir, str(exc))
     return {
         "pilot": "predictx",
         "status": "completed",
@@ -308,22 +594,25 @@ def _run_foresight_infer(configs: dict[str, dict[str, Any]], out_dir: Path) -> d
         raise ValueError("ForeSight inference requires production_csv and process_csv.")
 
     out_csv = infer_cfg.get("out_csv") or str(out_dir / "foresight_infer_predictions.csv")
-    result = _call_agent_tool(
-        "foresight",
-        "foresight_infer",
-        {
-            "production_csv": production_csv,
-            "process_csv": process_csv,
-            "model_path": infer_cfg.get("model_path"),
-            "seq_feature_cols": infer_cfg.get("seq_feature_cols"),
-            "exog_feature_cols": infer_cfg.get("exog_feature_cols"),
-            "label_cols": infer_cfg.get("label_cols"),
-            "look_back": int(infer_cfg.get("look_back", cfg.get("look_back", 30))),
-            "time_floor": infer_cfg.get("time_floor", cfg.get("time_floor", "h")),
-            "datetime_format": infer_cfg.get("datetime_format", cfg.get("datetime_format", "%d/%m/%Y %H:%M:%S")),
-            "export_csv_path": out_csv,
-        },
-    )
+    try:
+        result = _call_agent_tool(
+            "foresight",
+            "foresight_infer",
+            {
+                "production_csv": production_csv,
+                "process_csv": process_csv,
+                "model_path": infer_cfg.get("model_path"),
+                "seq_feature_cols": infer_cfg.get("seq_feature_cols"),
+                "exog_feature_cols": infer_cfg.get("exog_feature_cols"),
+                "label_cols": infer_cfg.get("label_cols"),
+                "look_back": int(infer_cfg.get("look_back", cfg.get("look_back", 30))),
+                "time_floor": infer_cfg.get("time_floor", cfg.get("time_floor", "h")),
+                "datetime_format": infer_cfg.get("datetime_format", cfg.get("datetime_format", "%d/%m/%Y %H:%M:%S")),
+                "export_csv_path": out_csv,
+            },
+        )
+    except (ImportError, FileNotFoundError, ModuleNotFoundError) as exc:
+        return _run_foresight_lightweight(configs, out_dir, str(exc))
     return {
         "pilot": "foresight",
         "status": "completed",
@@ -331,6 +620,62 @@ def _run_foresight_infer(configs: dict[str, dict[str, Any]], out_dir: Path) -> d
         "artifacts": {
             "model_path": result.get("model_path") if isinstance(result, dict) else None,
             "predictions_csv": result.get("predictions_csv") if isinstance(result, dict) else None,
+        },
+        "result": to_jsonable(result),
+    }
+
+
+def _run_infoguide_demo(configs: dict[str, dict[str, Any]], out_dir: Path) -> dict[str, Any]:
+    from .simple_llm import build_smartpilot_llm
+
+    sample = _build_smart_pilot_demo_sample(configs)
+    info_sample = sample.get("datasets", {}).get("infoguide_qa", {})
+    question = str(info_sample.get("question") or "What are the anomalies that happen in next time step?")
+    knowledge_text = str(info_sample.get("knowledge_text") or info_sample.get("answer") or question)
+    dataset_answer = str(info_sample.get("answer") or "").strip()
+    if dataset_answer:
+        knowledge_text = f"Question: {question}\nAnswer: {dataset_answer}\n\n{knowledge_text}"
+    infer_cfg = configs.get("infoguide", {}).get("infer")
+    infer_cfg = infer_cfg if isinstance(infer_cfg, dict) else {}
+    llm = build_smartpilot_llm()
+
+    route = _call_agent_tool(
+        "infoguide",
+        "infoguide_route",
+        {
+            "user_query": question,
+            "mode": "documentation",
+        },
+    )
+    agent_output = _call_agent_tool(
+        "infoguide",
+        "infoguide_run",
+        {
+            "user_query": question,
+            "knowledge_text": knowledge_text,
+            "llm": llm,
+            "mode": "documentation",
+            "system_template": str(infer_cfg.get("system_template") or "You answer manufacturing questions using retrieved context."),
+            "top_k": int(infer_cfg.get("top_k", 1)),
+            "use_symbolic": True,
+            "use_neural": False,
+        },
+    )
+    result = {
+        "question": question,
+        "route": route,
+        "response": agent_output.get("response") if isinstance(agent_output, dict) else None,
+        "agent_output": agent_output,
+        "dataset_answer": dataset_answer,
+        "dataset_path": info_sample.get("path"),
+        "llm": type(llm).__name__,
+    }
+    return {
+        "pilot": "infoguide",
+        "status": "completed",
+        "count": 1 if result.get("response") else 0,
+        "artifacts": {
+            "dataset_path": info_sample.get("path"),
         },
         "result": to_jsonable(result),
     }
@@ -377,11 +722,53 @@ def _run_pilot(pilot: str, configs: dict[str, dict[str, Any]], out_dir: Path) ->
     runners = {
         "predictx": _run_predictx_infer,
         "foresight": _run_foresight_infer,
+        "infoguide": _run_infoguide_demo,
         "causaltrace": _run_causaltrace,
     }
     if pilot not in runners:
         raise ValueError(f"Unsupported pilot '{pilot}'.")
     return runners[pilot](configs, out_dir)
+
+
+def _first_prediction(result: dict[str, Any] | None) -> list[Any]:
+    payload = result.get("result") if isinstance(result, dict) else {}
+    predictions = payload.get("predictions") if isinstance(payload, dict) else None
+    if isinstance(predictions, list) and predictions:
+        first = predictions[0]
+        return first if isinstance(first, list) else [first]
+    return []
+
+
+def _build_smart_pilot_final_response(results: dict[str, Any]) -> str:
+    predictx = results.get("predictx") if isinstance(results.get("predictx"), dict) else {}
+    foresight = results.get("foresight") if isinstance(results.get("foresight"), dict) else {}
+    infoguide = results.get("infoguide") if isinstance(results.get("infoguide"), dict) else {}
+
+    predictx_prediction = _first_prediction(predictx)
+    foresight_prediction = _first_prediction(foresight)
+    infoguide_payload = infoguide.get("result") if isinstance(infoguide, dict) else {}
+    infoguide_response = (
+        infoguide_payload.get("response")
+        if isinstance(infoguide_payload, dict)
+        else None
+    )
+
+    parts = [
+        "SmartPilot run complete.",
+        f"PredictX status: {predictx.get('status', 'not requested') if isinstance(predictx, dict) else 'not requested'}.",
+    ]
+    if predictx_prediction:
+        parts.append(f"First anomaly vector: {predictx_prediction}.")
+
+    parts.append(f"ForeSight status: {foresight.get('status', 'not requested') if isinstance(foresight, dict) else 'not requested'}.")
+    if foresight_prediction:
+        parts.append(f"First forecast vector: {foresight_prediction}.")
+
+    parts.append(f"InfoGuide status: {infoguide.get('status', 'not requested') if isinstance(infoguide, dict) else 'not requested'}.")
+    if infoguide_response:
+        parts.append(f"InfoGuide answer: {infoguide_response}")
+
+    return " ".join(parts)
 
 
 def run_smart_pilot_workflow(payload: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -402,6 +789,7 @@ def run_smart_pilot_workflow(payload: dict[str, Any] | None = None) -> dict[str,
             results[pilot] = _error_result(pilot, exc)
 
     completed_at = datetime.now(timezone.utc)
+    final_response = _build_smart_pilot_final_response(results)
     summary = {
         "workflow": "smart_pilot",
         "status": "completed" if all(item.get("status") == "completed" for item in results.values()) else "partial",
@@ -409,16 +797,25 @@ def run_smart_pilot_workflow(payload: dict[str, Any] | None = None) -> dict[str,
         "started_at": started_at.isoformat(),
         "completed_at": completed_at.isoformat(),
         "output_dir": str(out_dir),
+        "final_response": final_response,
         "results": results,
     }
-    summary_path = out_dir / "smart_pilot_summary.json"
-    trace_path = out_dir / "smart_pilot_trace.json"
-    summary_path.write_text(json.dumps(to_jsonable(summary), indent=2, default=str), encoding="utf-8")
-    trace_path.write_text(json.dumps(to_jsonable(results), indent=2, default=str), encoding="utf-8")
-    summary["artifacts"] = {
-        "summary_path": str(summary_path),
-        "trace_path": str(trace_path),
-    }
+    artifacts: dict[str, Any] = {}
+    try:
+        summary_path = out_dir / "smart_pilot_summary.json"
+        trace_path = out_dir / "smart_pilot_trace.json"
+        summary_path.write_text(json.dumps(to_jsonable(summary), indent=2, default=str), encoding="utf-8")
+        trace_path.write_text(json.dumps(to_jsonable(results), indent=2, default=str), encoding="utf-8")
+        artifacts = {
+            "summary_path": str(summary_path),
+            "trace_path": str(trace_path),
+        }
+    except OSError as exc:
+        artifacts = {
+            "write_error": str(exc),
+            "output_dir": str(out_dir),
+        }
+    summary["artifacts"] = artifacts
     return summary
 
 

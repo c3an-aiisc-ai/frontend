@@ -85,18 +85,6 @@ const destinations = [
     chipClass: "border-emerald-200/70 bg-white/70 text-emerald-800",
     glowClass: "bg-emerald-300/35",
   },
-  {
-    title: "Flask Bridge",
-    href: hrefForRoute("bridge"),
-    stage: "05",
-    badge: "Live backend",
-    chips: ["Python", "Generated UI", "Workflow Builder"],
-    cardClass:
-      "border border-orange-200/80 bg-[linear-gradient(160deg,rgba(255,247,237,0.98),rgba(254,215,170,0.9))] text-orange-950 shadow-[0_28px_80px_-52px_rgba(234,88,12,0.42)]",
-    badgeClass: "border-orange-300/70 bg-white/70 text-orange-700",
-    chipClass: "border-orange-200/70 bg-white/70 text-orange-800",
-    glowClass: "bg-orange-300/35",
-  },
 ] as const;
 
 type Props = {
@@ -200,6 +188,28 @@ export default function HomePage({ theme, onThemeChange }: Props) {
               Choose the surface that matches the step you are in, then move through the system
               without losing the overall flow.
             </p>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <a
+                href={hrefForRoute("smartpilotDemo")}
+                className={`inline-flex items-center justify-center rounded-full px-5 py-3 text-sm font-semibold shadow-lg transition hover:-translate-y-0.5 ${
+                  theme === "dark"
+                    ? "bg-sky-400 text-slate-950 shadow-sky-950/30 hover:bg-sky-300"
+                    : "bg-slate-950 text-white shadow-slate-300/60 hover:bg-slate-800"
+                }`}
+              >
+                Launch SmartPilot Demo
+              </a>
+              <a
+                href={hrefForRoute("smartpilotWorkflow")}
+                className={`inline-flex items-center justify-center rounded-full border px-5 py-3 text-sm font-semibold transition ${
+                  theme === "dark"
+                    ? "border-slate-700 bg-slate-900/80 text-slate-100 hover:bg-slate-800"
+                    : "border-slate-200 bg-white/80 text-slate-700 hover:bg-white"
+                }`}
+              >
+                Open SmartPilot Workflow
+              </a>
+            </div>
           </div>
 
           <div className="home-flow-visual home-angled-panel border border-white/70 p-5 shadow-[0_28px_90px_-52px_rgba(15,23,42,0.45)] sm:p-7">

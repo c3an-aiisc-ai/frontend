@@ -47,12 +47,39 @@ type PlanContextSnapshot = {
 };
 
 type PlanWorkspaceSnapshot = {
+  workspaceId?: string;
   plans: PlanningBlock[];
   planConnections: PlanConnection[];
   activePlanId: string | null;
   viewMode: ViewMode;
   nextPlanId: number;
   planStack?: PlanContextSnapshot[];
+};
+
+type WorkflowRunState = "idle" | "loading" | "success" | "error";
+
+export type WorkflowRunOutput = {
+  id: string;
+  title: string;
+  status?: string;
+  summary: string;
+  details?: Array<{ label: string; value: string }>;
+};
+
+export type WorkflowRunResult = {
+  message: string;
+  status?: string;
+  state?: Exclude<WorkflowRunState, "loading">;
+  outputs?: WorkflowRunOutput[];
+};
+
+export type WorkflowRunAction = {
+  id: string;
+  label: string;
+  runningLabel?: string;
+  loadingMessage?: string;
+  unavailableReason?: string;
+  run: () => Promise<WorkflowRunResult>;
 };
 
 const getNextPlanId = (plans: PlanningBlock[], fallback = 1) => {
@@ -102,9 +129,9 @@ const readPlanContextSnapshot = (value: unknown): PlanContextSnapshot | null => 
   };
 };
 
-const readPlanWorkspaceSnapshot = (): PlanWorkspaceSnapshot | null => {
+const readPlanWorkspaceSnapshot = (storageKey: string): PlanWorkspaceSnapshot | null => {
   if (typeof window === "undefined" || typeof localStorage === "undefined") return null;
-  const saved = localStorage.getItem(PLAN_WORKSPACE_STORAGE_KEY);
+  const saved = localStorage.getItem(storageKey);
   if (!saved) return null;
   try {
     const parsed: unknown = JSON.parse(saved);
@@ -169,15 +196,32 @@ const readPlanWorkspaceSnapshot = (): PlanWorkspaceSnapshot | null => {
 
 type Props = {
   theme: Theme;
+  workspaceId?: string;
+  initialPlanPayload?: unknown;
+  pendingPlanStorageKey?: string | null;
+  runAction?: WorkflowRunAction;
 };
 
-export default function WorkflowEditorPage({ theme: appTheme }: Props) {
+export default function WorkflowEditorPage({
+  theme: appTheme,
+  workspaceId,
+  initialPlanPayload,
+  pendingPlanStorageKey,
+  runAction,
+}: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const initialPlanSnapshot = useMemo(() => readPlanWorkspaceSnapshot(), []);
+  const workspaceStorageKey = useMemo(
+    () => (workspaceId ? `${PLAN_WORKSPACE_STORAGE_KEY}:${workspaceId}` : PLAN_WORKSPACE_STORAGE_KEY),
+    [workspaceId]
+  );
+  const initialPlanSnapshot = useMemo(
+    () => readPlanWorkspaceSnapshot(workspaceStorageKey),
+    [workspaceStorageKey]
+  );
   const STARTUP_LOADING_MS = 900;
   const VIEW_SWITCH_LOADING_MS = 650;
-  const startupLoadingKey = "c3an_workflow_startup_loading_shown";
+  const startupLoadingKey = `c3an_workflow_startup_loading_shown:${workspaceId ?? "default"}`;
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
     try {
       if (sessionStorage.getItem(startupLoadingKey) !== "1") return "plan";
@@ -222,7 +266,7 @@ export default function WorkflowEditorPage({ theme: appTheme }: Props) {
     }, STARTUP_LOADING_MS);
 
     return () => window.clearTimeout(timeout);
-  }, [showStartupLoading]);
+  }, [showStartupLoading, startupLoadingKey]);
 
   const beginViewSwitchLoading = useCallback((nextMode: ViewMode) => {
     if (viewSwitchTimeoutRef.current !== null) {
@@ -333,6 +377,25 @@ export default function WorkflowEditorPage({ theme: appTheme }: Props) {
   const customAgents = useMemo(() => readCustomAgents(), []);
   const customPlans = useMemo(() => readCustomPlans(), []);
   const availableAgents = useMemo(() => [...AGENT_REGISTRY_AGENTS, ...customAgents], [customAgents]);
+  const [workflowRunState, setWorkflowRunState] = useState<WorkflowRunState>("idle");
+  const [workflowRunMessage, setWorkflowRunMessage] = useState<string | null>(null);
+  const [workflowRunOutputs, setWorkflowRunOutputs] = useState<WorkflowRunOutput[]>([]);
+
+  const handleRunWorkflow = useCallback(async () => {
+    if (!runAction) return;
+    setWorkflowRunState("loading");
+    setWorkflowRunMessage(runAction.loadingMessage ?? `Running ${runAction.label}.`);
+    setWorkflowRunOutputs([]);
+    try {
+      const result = await runAction.run();
+      setWorkflowRunState(result.state ?? (result.status === "error" ? "error" : "success"));
+      setWorkflowRunMessage(result.message);
+      setWorkflowRunOutputs(result.outputs ?? []);
+    } catch (error) {
+      setWorkflowRunState("error");
+      setWorkflowRunMessage(error instanceof Error ? error.message : `Unable to run ${runAction.label}.`);
+    }
+  }, [runAction]);
 
   const { bumpIdCounters } = useIdCounters({ nextBlockIdRef, nextToolIdRef, nextConnectionIdRef });
 
@@ -505,6 +568,8 @@ export default function WorkflowEditorPage({ theme: appTheme }: Props) {
 
   usePlanBench({
     applyPlanJson,
+    initialPayload: initialPlanSnapshot ? undefined : initialPlanPayload,
+    pendingPlanStorageKey,
     nextPlanIdRef,
     planLinkFromRef,
     setPlans,
@@ -557,6 +622,7 @@ export default function WorkflowEditorPage({ theme: appTheme }: Props) {
       };
     });
     const snapshot: PlanWorkspaceSnapshot = {
+      ...(workspaceId ? { workspaceId } : {}),
       plans: plansForStorage,
       planConnections: planConnectionsForStorage,
       activePlanId,
@@ -564,7 +630,7 @@ export default function WorkflowEditorPage({ theme: appTheme }: Props) {
       nextPlanId: nextPlanIdRef.current,
       planStack: planStackForStorage,
     };
-    localStorage.setItem(PLAN_WORKSPACE_STORAGE_KEY, JSON.stringify(snapshot));
+    localStorage.setItem(workspaceStorageKey, JSON.stringify(snapshot));
   }, [
     activePlanId,
     buildPlanWorkflowSnapshot,
@@ -572,6 +638,8 @@ export default function WorkflowEditorPage({ theme: appTheme }: Props) {
     plans,
     planStack,
     viewMode,
+    workspaceId,
+    workspaceStorageKey,
   ]);
 
   const { handleAgentDragStart, handlePlanDragStart, handleToolDragStart } = useSidebarDragHandlers();
@@ -857,6 +925,31 @@ export default function WorkflowEditorPage({ theme: appTheme }: Props) {
           : undefined
         : undefined;
   const shouldShowWorkflowBackButton = canShowWorkflowBackButton && activePanel === null;
+  const activeRunDisabledReason =
+    runAction && workflowRunState === "loading"
+      ? `${runAction.label} is already running.`
+      : undefined;
+  const runButtonLabel = runAction
+    ? workflowRunState === "loading"
+      ? runAction.runningLabel ?? `Running ${runAction.label}...`
+      : runAction.label
+    : "Run unavailable";
+  const runDisabledReason =
+    runAction
+      ? activeRunDisabledReason
+      : "Execution requires a configured workflow runner. Editing, importing, and exporting still work.";
+  const workflowRunBannerClass =
+    workflowRunState === "error"
+      ? theme === "dark"
+        ? "border-rose-800 bg-rose-950/90 text-rose-100"
+        : "border-rose-200 bg-rose-50 text-rose-700"
+      : workflowRunState === "success"
+        ? theme === "dark"
+          ? "border-emerald-800 bg-emerald-950/90 text-emerald-100"
+          : "border-emerald-200 bg-emerald-50 text-emerald-700"
+        : theme === "dark"
+          ? "border-sky-800 bg-sky-950/90 text-sky-100"
+          : "border-sky-200 bg-sky-50 text-sky-700";
 
   return (
     <div className={`relative h-full w-full overflow-hidden ${appThemeClass}`}>
@@ -906,8 +999,13 @@ export default function WorkflowEditorPage({ theme: appTheme }: Props) {
         <Toolbar
           theme={theme}
           onEvalsClick={() => setShowEvalsModal(true)}
-          runButtonLabel="Run unavailable"
-          runDisabledReason="Execution requires a backend runner. Editing, importing, and exporting still work."
+          onRunClick={
+            runAction && workflowRunState !== "loading"
+              ? handleRunWorkflow
+              : undefined
+          }
+          runButtonLabel={runButtonLabel}
+          runDisabledReason={runDisabledReason}
           onResetClick={handleReset}
         />
       </Sidebar>
@@ -920,6 +1018,75 @@ export default function WorkflowEditorPage({ theme: appTheme }: Props) {
             className={theme === "dark" ? "border-slate-700 bg-slate-900/90 text-slate-100 hover:bg-slate-800" : ""}
           />
         </div>
+      ) : null}
+
+      {workflowRunMessage ? (
+        <div
+          className={`absolute right-4 top-4 z-30 max-w-md rounded-lg border px-4 py-3 text-sm font-medium shadow-lg backdrop-blur ${workflowRunBannerClass}`}
+        >
+          {workflowRunMessage}
+        </div>
+      ) : null}
+
+      {workflowRunOutputs.length ? (
+        <aside
+          className={`absolute right-4 top-24 z-30 max-h-[calc(100vh-8rem)] w-[min(28rem,calc(100vw-6rem))] overflow-y-auto rounded-lg border p-4 shadow-2xl backdrop-blur ${
+            theme === "dark"
+              ? "border-slate-700 bg-slate-950/95 text-slate-100"
+              : "border-slate-200 bg-white/95 text-slate-900"
+          }`}
+          aria-label="Workflow run output"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Run Output</p>
+              <h2 className="mt-1 text-base font-semibold">End response</h2>
+            </div>
+            <button
+              type="button"
+              onClick={() => setWorkflowRunOutputs([])}
+              className={`rounded-md border px-2 py-1 text-xs font-semibold transition ${
+                theme === "dark"
+                  ? "border-slate-700 text-slate-300 hover:bg-slate-800"
+                  : "border-slate-200 text-slate-600 hover:bg-slate-100"
+              }`}
+            >
+              Close
+            </button>
+          </div>
+          <div className="mt-4 space-y-3">
+            {workflowRunOutputs.map((output) => (
+              <section
+                key={output.id}
+                className={`rounded-lg border p-3 ${
+                  theme === "dark" ? "border-slate-800 bg-slate-900/80" : "border-slate-200 bg-slate-50"
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <h3 className="text-sm font-semibold">{output.title}</h3>
+                  {output.status ? (
+                    <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-600">
+                      {output.status}
+                    </span>
+                  ) : null}
+                </div>
+                <p className={`mt-2 text-sm leading-6 ${theme === "dark" ? "text-slate-300" : "text-slate-600"}`}>
+                  {output.summary}
+                </p>
+                {output.details?.length ? (
+                  <dl className="mt-3 grid gap-2 text-xs">
+                    {output.details.map((detail) => (
+                      <div key={detail.label} className="grid grid-cols-[7rem_minmax(0,1fr)] gap-2">
+                        <dt className={theme === "dark" ? "text-slate-500" : "text-slate-500"}>{detail.label}</dt>
+                        <dd className="min-w-0 break-words font-medium">{detail.value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                ) : null}
+              </section>
+            ))}
+          </div>
+        </aside>
       ) : null}
 
       <main className="relative z-0 h-full w-full">

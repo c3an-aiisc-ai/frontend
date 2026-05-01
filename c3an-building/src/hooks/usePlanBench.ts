@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { parsePlanningJSON } from "../shared/planning/parsePlan";
 import {
   buildPlanConnectionsFromTriples,
@@ -45,6 +45,8 @@ const normalizeWorkflowSnapshot = (
 
 export function usePlanBench(args: {
   applyPlanJson: (src: unknown) => void;
+  initialPayload?: unknown;
+  pendingPlanStorageKey?: string | null;
   nextPlanIdRef: React.MutableRefObject<number>;
   planLinkFromRef: React.MutableRefObject<string | null>;
   setPlans: React.Dispatch<React.SetStateAction<PlanningBlock[]>>;
@@ -65,7 +67,9 @@ export function usePlanBench(args: {
 }) {
   const {
     applyPlanJson,
+    initialPayload,
     nextPlanIdRef,
+    pendingPlanStorageKey = PENDING_PLAN_STORAGE_KEY,
     planLinkFromRef,
     setActivePanel,
     setActivePlanId,
@@ -74,6 +78,7 @@ export function usePlanBench(args: {
     setPlanStack,
     setViewMode,
   } = args;
+  const initialPayloadAppliedRef = useRef(false);
 
   const buildPlanBlocksFromPayload = useCallback((entries: unknown[], dataAssets?: unknown[]) => {
     const demoDataAssets = Array.isArray(dataAssets) ? (dataAssets as DemoDataAsset[]) : [];
@@ -243,12 +248,25 @@ export function usePlanBench(args: {
   );
 
   useEffect(() => {
-    if (typeof window === "undefined" || typeof localStorage === "undefined") return;
-    const raw = localStorage.getItem(PENDING_PLAN_STORAGE_KEY);
-    if (!raw) return;
-    localStorage.removeItem(PENDING_PLAN_STORAGE_KEY);
+    let payload: unknown = null;
+    if (pendingPlanStorageKey && typeof window !== "undefined" && typeof localStorage !== "undefined") {
+      const raw = localStorage.getItem(pendingPlanStorageKey);
+      if (raw) {
+        localStorage.removeItem(pendingPlanStorageKey);
+        try {
+          payload = JSON.parse(raw) as unknown;
+        } catch {
+          payload = null;
+        }
+      }
+    }
+    if (!payload && !initialPayloadAppliedRef.current && initialPayload !== undefined) {
+      payload = initialPayload;
+      initialPayloadAppliedRef.current = true;
+    }
+    if (!payload) return;
+
     try {
-      const payload = JSON.parse(raw) as unknown;
       if (isRecord(payload) && payload.mode === "plan" && Array.isArray(payload.plans)) {
         const nextPlans = buildPlanBlocksFromPayload(
           payload.plans,
@@ -290,7 +308,9 @@ export function usePlanBench(args: {
     applyPlanJson,
     buildPlanBlocksFromPayload,
     buildSequentialPlanConnections,
+    initialPayload,
     nextPlanIdRef,
+    pendingPlanStorageKey,
     planLinkFromRef,
     setActivePanel,
     setActivePlanId,

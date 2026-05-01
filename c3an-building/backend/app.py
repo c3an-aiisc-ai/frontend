@@ -474,6 +474,16 @@ def run_smart_pilot_workflow_endpoint() -> tuple[dict[str, object], int] | dict[
         return _agent_error_response(exc)
 
 
+@app.get("/api/workflows/smart-pilot/sample")
+def get_smart_pilot_demo_sample_endpoint() -> tuple[dict[str, object], int] | dict[str, object]:
+    try:
+        from backend.agent_runtime import get_smart_pilot_demo_sample
+
+        return get_smart_pilot_demo_sample({})
+    except Exception as exc:
+        return _agent_error_response(exc)
+
+
 @app.post("/api/workflows/smart-pilot/route")
 def route_smart_pilot_question_endpoint() -> tuple[dict[str, object], int] | dict[str, object]:
     try:

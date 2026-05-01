@@ -37,7 +37,7 @@ PredictX fusion inference requires a feature CSV. The old pilot expected:
 Data/Primary/PredictX/fusion_features_sample.csv
 ```
 
-That file is not currently in this repo. Add it at:
+The demo sample is checked in at:
 
 ```text
 backend/Data/Primary/PredictX/fusion_features_sample.csv
@@ -169,11 +169,29 @@ Example:
 
 ```json
 {
-  "pilots": ["foresight", "causaltrace"],
+  "pilots": ["predictx", "foresight", "infoguide"],
   "continue_on_error": true,
   "out_dir": "Data/Tertiary/smart_pilot_outputs"
 }
 ```
+
+On Vercel, runtime artifacts are written under `/tmp/c3an-smartpilot/...`.
+If heavyweight model packages or `.pth` files are unavailable, PredictX and
+ForeSight return deterministic dataset-derived demo outputs instead of failing
+the whole workflow.
+
+InfoGuide uses `backend.simple_llm.SimpleManufacturingLLM` by default. To use an
+OpenAI-compatible remote model in Vercel, set:
+
+```text
+SMARTPILOT_LLM_PROVIDER=remote
+SMARTPILOT_LLM_API_KEY=...
+SMARTPILOT_LLM_MODEL=gpt-4o-mini
+SMARTPILOT_LLM_API_URL=https://api.openai.com/v1/chat/completions
+```
+
+`SMARTPILOT_LLM_API_URL` and `SMARTPILOT_LLM_MODEL` are optional; the code falls
+back to the local simple LLM if remote configuration is missing or unavailable.
 
 To pass missing or user-selected inputs without editing YAML:
 

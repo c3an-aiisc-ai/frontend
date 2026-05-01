@@ -193,6 +193,10 @@ class Retr:
 class Knowledge_Representation:
     @staticmethod
     def organize_data(article_text):
-        text_splits = Text_Preprocessor.text_splitter(article_text, split_size=100)
-        text_clusters = text_splits
-        return text_clusters
+        paragraphs = [chunk.strip() for chunk in (article_text or "").split("\n\n") if chunk.strip()]
+        if paragraphs:
+            return paragraphs
+
+        text = article_text or ""
+        split_count = min(12, max(1, len(text) // 500 or 1))
+        return Text_Preprocessor.text_splitter(text, split_size=split_count)

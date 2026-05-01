@@ -7,7 +7,8 @@ import EvaluationPage from "../features/evaluation/EvaluationPage";
 import PlanningPage from "../features/planning/PlanningPage";
 import WorkflowEditorPage from "../features/workflow/WorkflowEditorPage";
 import LoginPage from "../features/auth/LoginPage";
-import BridgePage from "../features/bridge/BridgePage";
+import SmartPilotDemoPage from "../features/smartpilot-demo/SmartPilotDemoPage";
+import SmartPilotWorkflowPage from "../features/smartpilot-demo/SmartPilotWorkflowPage";
 import { rememberPreviousRoute, resolveRoute, type RouteKey } from "../config";
 import type { Theme } from "../shared/types";
 import GlobalNavMenu from "../components/ui/tool_bar/GlobalNavMenu";
@@ -66,8 +67,10 @@ export default function App() {
     page = <AgentGenPage theme={theme} />;
   } else if (route === "login") {
     page = <LoginPage />;
-  } else if (route === "bridge") {
-    page = <BridgePage />;
+  } else if (route === "smartpilotDemo") {
+    page = <SmartPilotDemoPage theme={theme} />;
+  } else if (route === "smartpilotWorkflow") {
+    page = <SmartPilotWorkflowPage theme={theme} />;
   }
 
   return (
