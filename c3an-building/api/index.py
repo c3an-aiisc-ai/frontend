@@ -13,6 +13,7 @@ from backend.app import (
     get_agent_registry,
     get_smart_pilot_demo_sample_endpoint,
     get_sample_generated_components_script,
+    get_sample_generated_components_script_by_query,
     get_item,
     list_agent_tools,
     list_items,
@@ -56,6 +57,11 @@ add_api_url_rule(
 add_api_url_rule(
     "/generated-components/sample-script/<script_name>",
     view_func=get_sample_generated_components_script,
+    methods=["GET"],
+)
+add_api_url_rule(
+    "/generated-components/sample-script",
+    view_func=get_sample_generated_components_script_by_query,
     methods=["GET"],
 )
 add_api_url_rule("/agents/registry", view_func=get_agent_registry, methods=["GET"])
