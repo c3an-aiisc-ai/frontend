@@ -15,12 +15,30 @@ from flask import Flask, abort, jsonify, request, send_from_directory, session
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 
+def _load_dotenv_file() -> None:
+    dotenv_path = Path(__file__).resolve().parents[1] / ".env"
+    if not dotenv_path.exists():
+        return
+    try:
+        for line in dotenv_path.read_text(encoding="utf-8").splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#") or "=" not in stripped:
+                continue
+            key, _, value = stripped.partition("=")
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            if key and key not in os.environ:
+                os.environ[key] = value
+    except OSError:
+        pass
+
 if __package__ in (None, ""):
     repo_root = Path(__file__).resolve().parents[1]
     if str(repo_root) not in sys.path:
         sys.path.insert(0, str(repo_root))
 
 DIST_DIR = Path(__file__).resolve().parents[1] / "dist"
+_load_dotenv_file()
 app = Flask(__name__, static_folder=str(DIST_DIR), static_url_path="")
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "c3an-demo-secret")
 
