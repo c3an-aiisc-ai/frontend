@@ -740,35 +740,8 @@ def _first_prediction(result: dict[str, Any] | None) -> list[Any]:
 
 
 def _build_smart_pilot_final_response(results: dict[str, Any]) -> str:
-    predictx = results.get("predictx") if isinstance(results.get("predictx"), dict) else {}
-    foresight = results.get("foresight") if isinstance(results.get("foresight"), dict) else {}
-    infoguide = results.get("infoguide") if isinstance(results.get("infoguide"), dict) else {}
-
-    predictx_prediction = _first_prediction(predictx)
-    foresight_prediction = _first_prediction(foresight)
-    infoguide_payload = infoguide.get("result") if isinstance(infoguide, dict) else {}
-    infoguide_response = (
-        infoguide_payload.get("response")
-        if isinstance(infoguide_payload, dict)
-        else None
-    )
-
-    parts = [
-        "SmartPilot run complete.",
-        f"PredictX status: {predictx.get('status', 'not requested') if isinstance(predictx, dict) else 'not requested'}.",
-    ]
-    if predictx_prediction:
-        parts.append(f"First anomaly vector: {predictx_prediction}.")
-
-    parts.append(f"ForeSight status: {foresight.get('status', 'not requested') if isinstance(foresight, dict) else 'not requested'}.")
-    if foresight_prediction:
-        parts.append(f"First forecast vector: {foresight_prediction}.")
-
-    parts.append(f"InfoGuide status: {infoguide.get('status', 'not requested') if isinstance(infoguide, dict) else 'not requested'}.")
-    if infoguide_response:
-        parts.append(f"InfoGuide answer: {infoguide_response}")
-
-    return " ".join(parts)
+    from .simple_llm import synthesize_final_response
+    return synthesize_final_response(results)
 
 
 def run_smart_pilot_workflow(payload: dict[str, Any] | None = None) -> dict[str, Any]:

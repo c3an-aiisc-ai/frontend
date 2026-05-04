@@ -153,3 +153,94 @@ def build_smartpilot_llm() -> Any:
         timeout_seconds=timeout_seconds,
         fallback=fallback,
     )
+
+
+# ---------------------------------------------------------------------------
+# Stage-2: synthesize multi-agent outputs into a final natural-language response
+# ---------------------------------------------------------------------------
+
+_SYNTHESIS_SYSTEM = (
+    "You are SmartPilot, an industrial AI assistant for C3AN manufacturing analytics. "
+    "You receive structured outputs from three specialist agents — PredictX (anomaly detection), "
+    "ForeSight (production forecasting), and InfoGuide (domain Q&A) — and synthesize them into "
+    "a single, concise, human-readable summary for an operator. "
+    "Be factual, reference the numeric predictions, and highlight any anomalies or risks. "
+    "Do not fabricate data. Keep the response under 200 words."
+)
+
+def synthesize_final_response(
+    results: dict[str, Any],
+    *,
+    llm: Any | None = None,
+    user_query: str = "",
+) -> str:
+    if llm is None:
+        llm = build_smartpilot_llm()
+
+    context_parts: list[str] = []
+
+    predictx = results.get("predictx") or {}
+    foresight = results.get("foresight") or {}
+    infoguide = results.get("infoguide") or {}
+
+    px_status = predictx.get("status", "not requested")
+    px_result = predictx.get("result") or {}
+    px_preds = px_result.get("predictions") or []
+    px_first = px_preds[0] if px_preds else None
+    px_mode = px_result.get("execution_mode", "")
+    px_expls = px_result.get("row_explanations") or []
+    context_parts.append(
+        f"[PredictX — Anomaly Detection]\n"
+        f"Status: {px_status}\n"
+        f"Execution mode: {px_mode or 'standard'}\n"
+        + (f"First prediction vector: {px_first}\n" if px_first is not None else "")
+        + (f"Row explanations (first 3): {'; '.join(str(e) for e in px_expls[:3])}\n" if px_expls else "")
+    )
+
+    fs_status = foresight.get("status", "not requested")
+    fs_result = foresight.get("result") or {}
+    fs_preds = fs_result.get("predictions") or []
+    fs_first = fs_preds[0] if fs_preds else None
+    fs_labels = fs_result.get("label_cols") or []
+    fs_expls = fs_result.get("row_explanations") or []
+    fs_mode = fs_result.get("execution_mode", "")
+    context_parts.append(
+        f"[ForeSight — Production Forecasting]\n"
+        f"Status: {fs_status}\n"
+        f"Execution mode: {fs_mode or 'standard'}\n"
+        + (f"Forecast labels: {fs_labels}\n" if fs_labels else "")
+        + (f"First forecast vector: {fs_first}\n" if fs_first is not None else "")
+        + (f"Explanations (first 3): {'; '.join(str(e) for e in fs_expls[:3])}\n" if fs_expls else "")
+    )
+
+    ig_status = infoguide.get("status", "not requested")
+    ig_result = infoguide.get("result") or {}
+    ig_response = ig_result.get("response") or ""
+    ig_question = ig_result.get("question") or user_query or ""
+    ig_dataset_answer = ig_result.get("dataset_answer") or ""
+    context_parts.append(
+        f"[InfoGuide — Domain Q&A]\n"
+        f"Status: {ig_status}\n"
+        + (f"Question: {ig_question}\n" if ig_question else "")
+        + (f"LLM answer: {ig_response}\n" if ig_response else "")
+        + (f"Dataset reference answer: {ig_dataset_answer}\n" if ig_dataset_answer else "")
+    )
+
+    context = "\n\n".join(context_parts)
+    synthesis_query = (
+        user_query
+        or "Summarise the SmartPilot analysis results for the operator, "
+           "highlighting any anomalies, forecasts, and domain insights."
+    )
+
+    try:
+        return llm(_SYNTHESIS_SYSTEM, synthesis_query, context)
+    except Exception as exc:
+        parts = [
+            "SmartPilot run complete.",
+            f"PredictX: {px_status}." + (f" First anomaly vector: {px_first}." if px_first is not None else ""),
+            f"ForeSight: {fs_status}." + (f" First forecast vector: {fs_first}." if fs_first is not None else ""),
+            f"InfoGuide: {ig_status}." + (f" Answer: {ig_response}" if ig_response else ""),
+            f"(LLM synthesis unavailable: {exc})",
+        ]
+        return " ".join(parts)
